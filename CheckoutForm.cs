@@ -42,7 +42,11 @@ internal sealed class CheckoutForm : Form
         layout.Controls.Add(CreatePaymentSummary(totals), 1, 0);
         Controls.Add(layout);
         AcceptButton = complete;
+        if (totals.Lottery > 0)
+            card.Text = "Debit on terminal";
         SetCardAmount();
+        if (totals.Lottery > 0)
+            cash.Checked = true;
         Shown += (_, _) => SelectAmount();
         amount.TextChanged += (_, _) =>
         {
@@ -101,11 +105,11 @@ internal sealed class CheckoutForm : Form
         void UpdatePayment()
         {
             complete.Enabled = TryGetPayment(out Payment payment);
-            complete.Text = card.Checked ? "Record Card Sale" : "Complete Cash Sale";
+            complete.Text = card.Checked ? (totals.Lottery > 0 ? "Record Debit Sale" : "Record Card Sale") : "Complete Cash Sale";
             ChangeDue = complete.Enabled ? payment.Received - totals.Total : 0;
             feedback.ForeColor = complete.Enabled ? Navy : Color.DarkRed;
             feedback.Text = card.Checked
-                ? "Press Enter after the card terminal approves."
+                ? (totals.Lottery > 0 ? "Press Enter after the terminal approves debit." : "Press Enter after the card terminal approves.")
                 : complete.Enabled
                     ? $"Change due: {Sale.Money(ChangeDue)}"
                     : Sale.TryParseMoney(amount.Text, out decimal received)
@@ -135,7 +139,7 @@ internal sealed class CheckoutForm : Form
             CancelButton = null;
             Controls.Remove(layout);
             layout.Dispose();
-            ShowChange(payment);
+            ShowChange(payment, totals.Lottery > 0);
             changeTimer.Start();
         }
     }
@@ -154,13 +158,13 @@ internal sealed class CheckoutForm : Form
         base.Dispose(disposing);
     }
 
-    private void ShowChange(Payment payment)
+    private void ShowChange(Payment payment, bool lottery)
     {
         BackColor = Navy;
         var change = new Label
         {
             Text = $"CHANGE DUE\n{Sale.Money(ChangeDue)}\n\n" +
-                (payment.Method == PaymentMethod.Card ? "Card sale recorded" : "Cash sale recorded"),
+                (payment.Method == PaymentMethod.Card ? (lottery ? "Debit sale recorded" : "Card sale recorded") : "Cash sale recorded"),
             Font = new Font(Font.FontFamily, 30, FontStyle.Bold),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleCenter,
@@ -234,22 +238,23 @@ internal sealed class CheckoutForm : Form
             Margin = new Padding(0, 0, 0, 10), BackColor = Navy, ForeColor = Color.White
         };
         AddWide(amountDue, 0);
-        AddAmount("Subtotal", Sale.Money(totals.Subtotal), 1);
-        AddAmount("Discounts", Sale.Money(-totals.Discount), 2);
-        AddAmount($"Sales tax ({Sale.Rate(totals.TaxRate)})", Sale.Money(totals.Tax), 3);
+        AddAmount("Merchandise", Sale.Money(totals.Merchandise), 1);
+        AddAmount("Lottery", Sale.Money(totals.Lottery), 2);
+        AddAmount("Discounts", Sale.Money(-totals.Discount), 3);
+        AddAmount($"Sales tax ({Sale.Rate(totals.TaxRate)})", Sale.Money(totals.Tax), 4);
         var methods = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill, AutoSize = true, Margin = new Padding(0, 12, 0, 2)
         };
         methods.Controls.AddRange([card, cash]);
-        AddWide(methods, 4);
+        AddWide(methods, 5);
         AddWide(new Label
         {
             Text = "Amount received ($)", AutoSize = true, Margin = new Padding(3, 8, 3, 3)
-        }, 5);
+        }, 6);
         amount.Font = new Font(Font.FontFamily, 17);
-        AddWide(amount, 6);
-        AddWide(feedback, 7);
+        AddWide(amount, 7);
+        AddWide(feedback, 8);
 
         var back = new Button { Text = "Back to Sale", AutoSize = true, DialogResult = DialogResult.Cancel };
         CancelButton = back;
@@ -258,7 +263,7 @@ internal sealed class CheckoutForm : Form
             Dock = DockStyle.Fill, AutoSize = true, WrapContents = true, Margin = new Padding(0)
         };
         actions.Controls.AddRange([complete, back]);
-        AddWide(actions, 8);
+        AddWide(actions, 9);
         return summary;
 
         void AddWide(Control control, int row)

@@ -17,6 +17,9 @@ internal sealed partial class RegisterData
             WriteReport(RecordReport.Sales, "sales.csv");
             WriteReport(RecordReport.SaleLines, "sale-lines.csv");
             WriteReport(RecordReport.ItemTotals, "item-totals.csv");
+            WriteReport(RecordReport.LotterySales, "lottery-sales.csv");
+            if (ReadCloseout(day, transaction) is not null)
+                WriteReport(RecordReport.Closeout, "closeout.csv");
             WriteReport(RecordReport.PriceHistory, "price-history.csv");
             WriteReport(RecordReport.Products, "catalog-at-export.csv");
 
@@ -73,6 +76,18 @@ internal sealed partial class RegisterData
         {
             File.Delete(snapshot);
         }
+    }
+
+    public static long ReadSchemaVersion(string database)
+    {
+        using var reader = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = database, Mode = SqliteOpenMode.ReadOnly, Pooling = false, DefaultTimeout = 5
+        }.ToString());
+        reader.Open();
+        using var query = reader.CreateCommand();
+        query.CommandText = "PRAGMA user_version";
+        return (long)query.ExecuteScalar()!;
     }
 
     public static void CopyDatabase(string source, string destination)

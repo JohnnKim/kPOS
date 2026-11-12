@@ -49,6 +49,8 @@ internal sealed class RecordsForm : Form
             AddTab("Totals", RecordReport.Totals);
             AddTab("Sales History", RecordReport.Sales);
             AddTab("Item Sales Totals", RecordReport.ItemTotals);
+            AddTab("Lottery Sales", RecordReport.LotterySales);
+            AddTab("Closeouts", RecordReport.Closeout);
         }
         AddTab("Item Sales History", RecordReport.SaleLines);
         AddTab("Price History", RecordReport.PriceHistory);
@@ -213,7 +215,8 @@ internal sealed class RecordsForm : Form
                 column.Visible = false;
 
             if (column.DataPropertyName is "Subtotal" or "Discounts" or "Tax" or "Total" or "Cash" or "Card" or
-                "Received" or "Change" or "Unit price" or "Case price" or "Discount" or "Net sales")
+                "Received" or "Change" or "Unit price" or "Case price" or "Discount" or "Net sales" or "Lottery" or "Opening drawer" or "Expected cash" or "Counted cash"
+                or "Cash over/short" or "Expected card" or "Counted card" or "Card over/short" or "Next bank" or "Cash deposit")
             {
                 column.DefaultCellStyle.Format = "C2";
                 column.DefaultCellStyle.FormatProvider = CultureInfo.GetCultureInfo("en-US");

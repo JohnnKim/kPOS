@@ -39,6 +39,9 @@ internal sealed class RegisterForm : Form
     };
     private readonly Label scanPrompt = new() { Text = "Scan item or enter code", AutoSize = true };
     private readonly Label subtotal = CreateAmountLabel();
+    private readonly Label lottery = CreateAmountLabel();
+    private readonly Label legalAge = new() { AutoSize = true, ForeColor = Color.FromArgb(24, 53, 82) };
+    private readonly System.Windows.Forms.Timer legalAgeTimer = new() { Interval = 30000 };
     private readonly Label discounts = CreateAmountLabel();
     private readonly Label taxCaption = new() { Anchor = AnchorStyles.Left, AutoSize = true };
     private readonly Label tax = CreateAmountLabel();
@@ -78,7 +81,7 @@ internal sealed class RegisterForm : Form
 
         var help = new Label
         {
-            Text = "F3  Items     F4  Void Sale     F5  Delete Line     Q + Enter  Quantity     F7  Discount     F9  Finish Sale     F10  Case Sale",
+            Text = "F3 Items    F4 Void    F5 Delete    Q + Enter Quantity    L + Enter Lottery    M + Enter Misc    F7 Discount    F9 Finish    F10 Case",
             AutoSize = true,
             Margin = new Padding(3, 6, 3, 0),
             ForeColor = Color.FromArgb(48, 64, 80)
@@ -91,7 +94,11 @@ internal sealed class RegisterForm : Form
         Controls.Add(layout);
         Controls.Add(menu);
         Shown += (_, _) => FocusScanner();
-        Activated += (_, _) => FocusScanner();
+        Activated += (_, _) => { FocusScanner(); RefreshLegalAge(); };
+        legalAgeTimer.Tick += (_, _) => RefreshLegalAge();
+        legalAge.Font = new Font(Font.FontFamily, 11, FontStyle.Bold);
+        legalAgeTimer.Start();
+        RefreshLegalAge();
         menu.MenuDeactivate += (_, _) => FocusScanner();
         ticket.MouseUp += (_, _) => FocusScanner();
         RefreshTicket();
@@ -155,10 +162,9 @@ internal sealed class RegisterForm : Form
         var lists = new ToolStripMenuItem("&Lists");
         AddCommand(lists, "&Item Lookup", Keys.F3, LookupItem);
         AddCommand(lists, "&Product List", Keys.Control | Keys.L, ViewProducts);
-        var settings = new ToolStripMenuItem("&Settings");
-        settings.DropDownItems.Add(new ToolStripMenuItem("Sales &Tax Rate…", null, (_, _) => RunRegisterAction(EditTaxRate)));
-        settings.DropDownItems.Add(new ToolStripMenuItem("&Change Display Duration…", null, (_, _) => RunRegisterAction(EditChangeDuration)));
+        var settings = new ToolStripMenuItem("&Settings…", null, (_, _) => RunRegisterAction(ViewSettings));
         var reports = new ToolStripMenuItem("&Records");
+        reports.DropDownItems.Add(new ToolStripMenuItem("&End of Day…", null, (_, _) => RunRegisterAction(ViewCloseout)));
         reports.DropDownItems.Add(new ToolStripMenuItem("&Daily Reports…", null, (_, _) => RunRegisterAction(ViewRecords)));
         reports.DropDownItems.Add(new ToolStripMenuItem("Export &Backup…", null, (_, _) => ExportBackup()));
         menu.Items.AddRange([saleMenu, lists, reports, settings]);
@@ -181,7 +187,7 @@ internal sealed class RegisterForm : Form
             Dock = DockStyle.Fill,
             AutoSize = true,
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 4,
             Margin = new Padding(3, 10, 12, 0)
         };
         area.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -191,6 +197,7 @@ internal sealed class RegisterForm : Form
         scanCode.Font = new Font(Font.FontFamily, 18);
         area.Controls.Add(scanCode, 0, 1);
         area.Controls.Add(status, 0, 2);
+        area.Controls.Add(legalAge, 0, 3);
         return area;
     }
 
@@ -201,18 +208,19 @@ internal sealed class RegisterForm : Form
             Dock = DockStyle.Fill,
             AutoSize = true,
             ColumnCount = 2,
-            RowCount = 5,
+            RowCount = 6,
             BackColor = SystemColors.Window,
             Margin = new Padding(3, 10, 3, 0),
             Padding = new Padding(10, 4, 10, 4)
         };
         totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        AddTotal("Subtotal", subtotal, 0);
-        AddTotal("Discounts", discounts, 1);
-        AddTotal("Sales tax", tax, 2, taxCaption);
-        AddTotal("Total due", totalDue, 3);
-        AddTotal("Change due", changeDue, 4);
+        AddTotal("Merchandise", subtotal, 0);
+        AddTotal("Lottery", lottery, 1);
+        AddTotal("Discounts", discounts, 2);
+        AddTotal("Sales tax", tax, 3, taxCaption);
+        AddTotal("Total due", totalDue, 4);
+        AddTotal("Change due", changeDue, 5);
         return totals;
 
         void AddTotal(string label, Label amount, int row, Label? caption = null)
@@ -296,10 +304,11 @@ internal sealed class RegisterForm : Form
         if (code.Length == 0)
             return;
 
-        if (Product.IsQuantityCommand(code))
+        switch (code.ToUpperInvariant())
         {
-            EditQuantity();
-            return;
+            case "Q": EditQuantity(); return;
+            case "L": AddLottery(); return;
+            case "M": AddMisc(); return;
         }
 
         Product? product = data.FindProduct(code);
@@ -421,6 +430,12 @@ internal sealed class RegisterForm : Form
 
         int index = row.Index;
         SaleLine line = sale.Lines[index];
+        if (line.Kind == SaleLineKind.Lottery)
+        {
+            status.Text = "Lottery entries use the amount from the lottery terminal.";
+            return;
+        }
+
         using var dialog = new NumberEntryForm(
             "Line Discount", "Discount percent", line.DiscountRate,
             0, 100, 2, rate => $"Line total: {Sale.Money((line with { DiscountRate = rate }).Extended)}");
@@ -455,15 +470,39 @@ internal sealed class RegisterForm : Form
         RefreshTicket();
     }
 
-    private void EditChangeDuration()
+    private void AddLottery()
     {
-        using var dialog = new NumberEntryForm("Change Display Duration", "Seconds to show change due",
-            data.ChangeSeconds, 1, RegisterData.MaximumChangeSeconds, 0, _ => "");
+        using var dialog = new NumberEntryForm("Lottery Amount Input", "Lottery amount ($)",
+            0, 0.01m, 999999.99m, 2, amount => $"Lottery Sale: {Sale.Money(amount)}");
         if (dialog.ShowDialog(this) == DialogResult.OK)
+            AddManualLine(sale.AddLottery(dialog.Value));
+    }
+
+    private void AddMisc()
+    {
+        using var dialog = new MiscAmountForm();
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+            AddManualLine(sale.AddMisc(dialog.Category, dialog.Amount, dialog.Taxable));
+    }
+
+    private void AddManualLine(int index)
+    {
+        SetCaseSale(false);
+        changeDue.Text = "";
+        status.Text = $"Added: {sale.Lines[index].Product.Description}";
+        RefreshTicket(index);
+    }
+
+    private void ViewCloseout()
+    {
+        if (sale.Lines.Count > 0)
         {
-            data.ChangeSeconds = (int)dialog.Value;
-            status.Text = $"Change due will display for {data.ChangeSeconds} seconds.";
+            MessageBox.Show(this, "Finish or void the current ticket before closing the day.", "End of Day");
+            return;
         }
+
+        using var dialog = new CloseoutForm(data, folders);
+        dialog.ShowDialog(this);
     }
 
     private void ViewRecords()
@@ -519,18 +558,25 @@ internal sealed class RegisterForm : Form
         }
     }
 
-    private void EditTaxRate()
+    private void ViewSettings()
     {
-        using var dialog = new NumberEntryForm(
-            "Sales Tax Rate", "Sales tax rate (%)", taxRate, 0, 100, 4,
-            rate => $"Rate used at checkout: {Sale.Rate(rate)}");
-        if (dialog.ShowDialog(this) == DialogResult.OK)
-        {
-            data.TaxRate = dialog.Value;
-            taxRate = dialog.Value;
-            status.Text = $"Sales tax rate saved: {Sale.Rate(taxRate)}";
-            RefreshTicket(ticket.CurrentRow?.Index ?? 0);
-        }
+        using var dialog = new SettingsForm(data, folders);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+            return;
+
+        taxRate = data.TaxRate;
+        status.Text = "Settings saved.";
+        RefreshTicket(ticket.CurrentRow?.Index ?? 0);
+    }
+
+    private void RefreshLegalAge() =>
+        legalAge.Text = $"Legal Age 21+  •  DOB on or before {DateTime.Today.AddYears(-21):MMM d, yyyy}";
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            legalAgeTimer.Dispose();
+        base.Dispose(disposing);
     }
 
     private bool Confirm(string message, string title) =>
@@ -558,7 +604,8 @@ internal sealed class RegisterForm : Form
             ticket.CurrentCell = ticket.Rows[Math.Min(selected, ticket.RowCount - 1)].Cells[0];
 
         SaleTotals totals = sale.GetTotals(taxRate);
-        subtotal.Text = Sale.Money(totals.Subtotal);
+        subtotal.Text = Sale.Money(totals.Merchandise);
+        lottery.Text = Sale.Money(totals.Lottery);
         discounts.Text = Sale.Money(totals.Discount);
         taxCaption.Text = $"Sales tax ({Sale.Rate(taxRate)})";
         tax.Text = Sale.Money(totals.Tax);

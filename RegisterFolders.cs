@@ -55,26 +55,55 @@ internal sealed class RegisterFolders(string root)
         string legacy = Path.Combine(Path.GetDirectoryName(settings)!, "register.db");
         if (!File.Exists(Database) && File.Exists(legacy))
             RegisterData.CopyDatabase(legacy, Database);
-
-#if KPOS_SINGLE_FILE
-        string? runningApp = Environment.ProcessPath;
-        string installedApp = Path.Combine(Root, "kPOS.exe");
-        if (runningApp is not null && !string.Equals(runningApp, installedApp, StringComparison.OrdinalIgnoreCase)
-            && !File.Exists(installedApp))
-        {
-            string temporary = installedApp + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            try
-            {
-                File.Copy(runningApp, temporary);
-                File.Move(temporary, installedApp);
-            }
-            finally
-            {
-                File.Delete(temporary);
-            }
-        }
-#endif
     }
+
+    public void BackUpBeforeSchemaUpgrade()
+    {
+        if (!File.Exists(Database) || RegisterData.ReadSchemaVersion(Database) >= RegisterData.SchemaVersion)
+            return;
+
+        string path = Path.Combine(Backups, $"before-upgrade-{DateTime.Now:yyyy-MM-dd_HHmmssfff}.zip");
+        RegisterData.ExportBackup(Database, path);
+    }
+
+    public string? InstallExecutable(string runningApp)
+    {
+        string installedApp = Path.Combine(Root, "kPOS.exe");
+        if (string.Equals(runningApp, installedApp, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        bool replacing = File.Exists(installedApp);
+        if (replacing && !ReleaseVersion.IsNewerExecutable(runningApp, installedApp))
+            return null;
+
+        string temporary = installedApp + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.Copy(runningApp, temporary);
+            if (replacing)
+            {
+                string previous = installedApp + ".previous";
+                try
+                {
+                    File.Replace(temporary, installedApp, previous);
+                }
+                catch (IOException error)
+                {
+                    throw new IOException("Close the installed kPOS before running this update.", error);
+                }
+                return previous;
+            }
+            File.Move(temporary, installedApp);
+        }
+        finally
+        {
+            File.Delete(temporary);
+        }
+        return null;
+    }
+
+    public void RestoreExecutable(string previous) =>
+        File.Replace(previous, Path.Combine(Root, "kPOS.exe"), null);
 
     public void Remember(string settings)
     {

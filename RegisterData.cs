@@ -48,6 +48,14 @@ internal sealed partial class RegisterData : IDisposable
         }
     }
 
+    public void SaveSettings(decimal taxRate, int changeSeconds)
+    {
+        using var command = Command("UPDATE register_settings SET tax_rate = $rate, change_seconds = $seconds WHERE id = 1");
+        command.Parameters.AddWithValue("$rate", decimal.ToInt64(taxRate * 10000));
+        command.Parameters.AddWithValue("$seconds", changeSeconds);
+        command.ExecuteNonQuery();
+    }
+
     public Product? FindProduct(string code)
     {
         using var command = Command($"SELECT {ProductColumns} FROM products WHERE code = $code OR barcode = $code");
@@ -71,8 +79,8 @@ internal sealed partial class RegisterData : IDisposable
         if (original is not null && product.Barcode != original.Barcode)
             return "The scanned barcode stays fixed when editing a product.";
 
-        if (Product.IsQuantityCommand(product.Code) || Product.IsQuantityCommand(product.Barcode))
-            return "Q is reserved for editing the sale quantity. Enter a different code.";
+        if (Product.IsRegisterCommand(product.Code) || Product.IsRegisterCommand(product.Barcode))
+            return "Q, L, and M are register shortcuts. Enter a different code.";
 
         using var transaction = connection.BeginTransaction(deferred: false);
         if (original is not null)
@@ -129,7 +137,7 @@ internal sealed partial class RegisterData : IDisposable
 
         using var version = Command("PRAGMA user_version", transaction);
         long currentVersion = (long)version.ExecuteScalar()!;
-        if (currentVersion > 2)
+        if (currentVersion > SchemaVersion)
             throw new InvalidDataException("This register database requires a newer version of kPOS.");
         if (currentVersion == 0)
         {
@@ -138,6 +146,8 @@ internal sealed partial class RegisterData : IDisposable
         }
         if (currentVersion < 2)
             CreateLedger(transaction);
+        if (currentVersion < 3)
+            AddCloseoutsAndSaleKinds(transaction);
 
         transaction.Commit();
     }

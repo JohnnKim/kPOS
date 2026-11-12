@@ -24,11 +24,14 @@ internal sealed record Product(
 
     public bool HasCasePrice => UnitsPerCase > 1;
 
-    public static bool IsQuantityCommand(string code) => code.Equals("Q", StringComparison.OrdinalIgnoreCase);
+    public static bool IsRegisterCommand(string code) => code.ToUpperInvariant() is "Q" or "L" or "M";
 
 }
 
-internal sealed record SaleLine(Product Product, bool IsCase, int Quantity = 1, decimal DiscountRate = 0)
+internal enum SaleLineKind { Product, Lottery, Misc }
+
+internal sealed record SaleLine(Product Product, bool IsCase, int Quantity = 1, decimal DiscountRate = 0,
+    SaleLineKind Kind = SaleLineKind.Product)
 {
     public const int MaximumQuantity = 9999;
     public decimal Price => IsCase ? Product.CasePrice : Product.UnitPrice;
@@ -37,8 +40,9 @@ internal sealed record SaleLine(Product Product, bool IsCase, int Quantity = 1, 
     public decimal Extended => Gross - Discount;
 }
 
-internal readonly record struct SaleTotals(decimal Subtotal, decimal Discount, decimal TaxRate, decimal Tax)
+internal readonly record struct SaleTotals(decimal Subtotal, decimal Discount, decimal TaxRate, decimal Tax, decimal Lottery)
 {
+    public decimal Merchandise => Subtotal - Lottery;
     public decimal Total => Subtotal - Discount + Tax;
 }
 
@@ -54,7 +58,8 @@ internal sealed class Sale
     {
         decimal taxable = lines.Where(line => line.Product.IsTaxable).Sum(line => line.Extended);
         decimal tax = decimal.Round(taxable * taxRate / 100, 2, MidpointRounding.AwayFromZero);
-        return new SaleTotals(Subtotal, Discount, taxRate, tax);
+        decimal lottery = lines.Where(line => line.Kind == SaleLineKind.Lottery).Sum(line => line.Extended);
+        return new SaleTotals(Subtotal, Discount, taxRate, tax, lottery);
     }
 
     public int Add(Product product, bool isCase)
@@ -73,11 +78,28 @@ internal sealed class Sale
         return lines.Count - 1;
     }
 
+    public int AddLottery(decimal price) => AddOneTimeItem("Lottery Sale", price, false, SaleLineKind.Lottery);
+
+    public int AddMisc(string category, decimal price, bool taxable) =>
+        AddOneTimeItem($"{category} misc item", price, taxable, SaleLineKind.Misc);
+
+    private int AddOneTimeItem(string name, decimal price, bool taxable, SaleLineKind kind)
+    {
+        if (price is <= 0 or > 999999.99m || decimal.Round(price, 2) != price)
+            throw new ArgumentOutOfRangeException(nameof(price));
+
+        lines.Add(new SaleLine(new Product("", "", name, "", price, 0, 0, taxable), false, Kind: kind));
+        return lines.Count - 1;
+    }
+
     public void SetQuantity(int index, int quantity) =>
         lines[index] = lines[index] with { Quantity = quantity };
 
-    public void SetDiscount(int index, decimal rate) =>
-        lines[index] = lines[index] with { DiscountRate = rate };
+    public void SetDiscount(int index, decimal rate)
+    {
+        if (lines[index].Kind != SaleLineKind.Lottery)
+            lines[index] = lines[index] with { DiscountRate = rate };
+    }
 
     public void Delete(int index) => lines.RemoveAt(index);
 

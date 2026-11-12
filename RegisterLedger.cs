@@ -8,10 +8,11 @@ internal enum PaymentMethod { Card, Cash }
 
 internal readonly record struct Payment(PaymentMethod Method, decimal Received);
 
-internal enum RecordReport { Totals, Sales, SaleLines, ItemTotals, PriceHistory, Products }
+internal enum RecordReport { Totals, Sales, SaleLines, ItemTotals, PriceHistory, Products, LotterySales, Closeout }
 
 internal sealed partial class RegisterData
 {
+    public const int SchemaVersion = 3;
     public const int DefaultChangeSeconds = 8;
     public const int MaximumChangeSeconds = 120;
 
@@ -39,14 +40,14 @@ internal sealed partial class RegisterData
         using var transaction = connection.BeginTransaction(deferred: false);
         using var header = Command("""
             INSERT INTO sales (id, sold_at, business_date, subtotal_cents, discount_cents, tax_cents,
-                               tax_rate, total_cents, tender, received_cents, change_cents)
-            VALUES ($id, $time, $day, $subtotal, $discount, $tax, $rate, $total, $tender, $received, $change)
+                               tax_rate, total_cents, tender, received_cents, change_cents, lottery_cents)
+            VALUES ($id, $time, $day, $subtotal, $discount, $tax, $rate, $total, $tender, $received, $change, $lottery)
             ON CONFLICT (id) DO NOTHING
             """, transaction);
         string id = saleId.ToString("N");
         header.Parameters.AddWithValue("$id", id);
         header.Parameters.AddWithValue("$time", soldAt.ToString("O", CultureInfo.InvariantCulture));
-        header.Parameters.AddWithValue("$day", Day(DateOnly.FromDateTime(soldAt.DateTime)));
+        header.Parameters.AddWithValue("$day", Day(OpenBusinessDate(DateOnly.FromDateTime(soldAt.DateTime), transaction)));
         header.Parameters.AddWithValue("$subtotal", Cents(totals.Subtotal));
         header.Parameters.AddWithValue("$discount", Cents(totals.Discount));
         header.Parameters.AddWithValue("$tax", Cents(totals.Tax));
@@ -55,13 +56,14 @@ internal sealed partial class RegisterData
         header.Parameters.AddWithValue("$tender", payment.Method.ToString());
         header.Parameters.AddWithValue("$received", Cents(payment.Received));
         header.Parameters.AddWithValue("$change", Cents(payment.Received - totals.Total));
+        header.Parameters.AddWithValue("$lottery", Cents(totals.Lottery));
 
         if (header.ExecuteNonQuery() == 1)
         {
             using var lineCommand = Command("""
                 INSERT INTO sale_lines (sale_id, line_number, barcode, code, description, size, quantity,
-                                        units_per_pack, is_case, unit_cents, discount_cents, net_cents, taxable)
-                VALUES ($id, $number, $barcode, $code, $name, $size, $qty, $units, $case, $price, $discount, $net, $taxable)
+                                        units_per_pack, is_case, unit_cents, discount_cents, net_cents, taxable, kind)
+                VALUES ($id, $number, $barcode, $code, $name, $size, $qty, $units, $case, $price, $discount, $net, $taxable, $kind)
                 """, transaction);
             lineCommand.Parameters.AddWithValue("$id", id);
             var number = lineCommand.Parameters.Add("$number", SqliteType.Integer);
@@ -76,6 +78,7 @@ internal sealed partial class RegisterData
             var discount = lineCommand.Parameters.Add("$discount", SqliteType.Integer);
             var net = lineCommand.Parameters.Add("$net", SqliteType.Integer);
             var taxable = lineCommand.Parameters.Add("$taxable", SqliteType.Integer);
+            var kind = lineCommand.Parameters.Add("$kind", SqliteType.Text);
             lineCommand.Prepare();
 
             for (int index = 0; index < sale.Lines.Count; index++)
@@ -93,6 +96,7 @@ internal sealed partial class RegisterData
                 discount.Value = Cents(line.Discount);
                 net.Value = Cents(line.Extended);
                 taxable.Value = line.Product.IsTaxable;
+                kind.Value = line.Kind.ToString();
                 lineCommand.ExecuteNonQuery();
             }
         }
@@ -118,6 +122,7 @@ internal sealed partial class RegisterData
             RecordReport.Totals => """
                 SELECT $start AS "From date", $end AS "Through date", count(*) AS Sales,
                        coalesce(sum(subtotal_cents), 0) / 100.0 AS Subtotal,
+                       coalesce(sum(lottery_cents), 0) / 100.0 AS Lottery,
                        coalesce(sum(discount_cents), 0) / 100.0 AS Discounts,
                        coalesce(sum(tax_cents), 0) / 100.0 AS Tax,
                        coalesce(sum(total_cents), 0) / 100.0 AS Total,
@@ -127,16 +132,17 @@ internal sealed partial class RegisterData
                 """,
             RecordReport.Sales => """
                 SELECT id AS "Sale ID", sold_at AS "Sold at", tender AS Payment,
-                       subtotal_cents / 100.0 AS Subtotal, discount_cents / 100.0 AS Discounts,
+                       subtotal_cents / 100.0 AS Subtotal, lottery_cents / 100.0 AS Lottery,
+                       discount_cents / 100.0 AS Discounts,
                        tax_rate / 10000.0 AS "Tax rate (%)", tax_cents / 100.0 AS Tax,
                        total_cents / 100.0 AS Total, received_cents / 100.0 AS Received, change_cents / 100.0 AS "Change"
                 FROM sales WHERE business_date BETWEEN $start AND $end
                 ORDER BY business_date DESC, sold_at DESC, id DESC
                 """,
-            RecordReport.SaleLines => """
+            RecordReport.SaleLines or RecordReport.LotterySales => """
                 SELECT sales.id AS "Sale ID", sold_at AS "Sold at", line_number AS Line,
                        sale_lines.barcode AS Barcode, sale_lines.code AS Code, sale_lines.description AS Product,
-                       sale_lines.size AS Size, quantity AS Quantity, units_per_pack AS "Units per pack",
+                       kind AS Type, sale_lines.size AS Size, quantity AS Quantity, units_per_pack AS "Units per pack",
                        CASE is_case WHEN 1 THEN 'Case' ELSE 'Unit' END AS Pack,
                        sale_lines.unit_cents / 100.0 AS "Unit price", sale_lines.discount_cents / 100.0 AS Discount,
                        net_cents / 100.0 AS "Net sales", sale_lines.taxable AS Taxable
@@ -144,18 +150,20 @@ internal sealed partial class RegisterData
                 WHERE business_date BETWEEN $start AND $end
                   AND ($barcode IS NULL OR sale_lines.barcode = $barcode)
                   AND ($sale IS NULL OR sales.id = $sale)
+                  AND ($lotteryOnly = 0 OR kind = 'Lottery')
                 ORDER BY business_date DESC, sold_at DESC, sales.id DESC, line_number
                 """,
             RecordReport.ItemTotals => """
                 SELECT sale_lines.barcode AS Barcode, coalesce(products.description, max(sale_lines.description)) AS Product,
-                       sum(quantity * units_per_pack) AS "Units sold",
+                       sale_lines.kind AS Type, sum(quantity * units_per_pack) AS "Units sold",
                        sum(CASE WHEN is_case = 1 THEN quantity ELSE 0 END) AS "Cases sold",
                        sum(sale_lines.discount_cents) / 100.0 AS Discounts,
                        sum(net_cents) / 100.0 AS "Net sales"
                 FROM sales JOIN sale_lines ON sales.id = sale_lines.sale_id
                 LEFT JOIN products ON products.barcode = sale_lines.barcode
                 WHERE business_date BETWEEN $start AND $end
-                GROUP BY sale_lines.barcode
+                GROUP BY sale_lines.barcode, sale_lines.kind,
+                         CASE WHEN sale_lines.kind <> 'Product' THEN sale_lines.description END
                 ORDER BY sum(net_cents) DESC, sale_lines.barcode
                 """,
             RecordReport.PriceHistory => """
@@ -168,6 +176,7 @@ internal sealed partial class RegisterData
                   AND ($barcode IS NULL OR price_history.barcode = $barcode)
                 ORDER BY business_date DESC, changed_at DESC, id DESC
                 """,
+            RecordReport.Closeout => CloseoutReportSql,
             RecordReport.Products => """
                 SELECT barcode AS Barcode, code AS Code, description AS Product, size AS Size,
                        unit_cents / 100.0 AS "Unit price", units_per_case AS "Units per case",
@@ -182,6 +191,7 @@ internal sealed partial class RegisterData
         command.Parameters.AddWithValue("$end", Day(end));
         command.Parameters.AddWithValue("$barcode", (object?)barcode ?? DBNull.Value);
         command.Parameters.AddWithValue("$sale", (object?)saleId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$lotteryOnly", report == RecordReport.LotterySales);
         if (limit > 0)
         {
             command.Parameters.AddWithValue("$limit", limit);

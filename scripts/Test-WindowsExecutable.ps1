@@ -38,6 +38,8 @@ public static class KposExecutableTest
                 IntPtr register = FindWindow(desktop, process.ProcessId, "kPOS - Sales Entry (Training)");
                 IntPtr scanner = FindTextBox(register);
                 WaitUntil(() => HasText(register, "Ready to scan"), "initialize the scan field");
+                string cutoff = DateTime.Today.AddYears(-21).ToString("MMM d, yyyy");
+                WaitUntil(() => HasText(register, "Legal Age 21+  •  DOB on or before " + cutoff), "show the legal age cutoff");
 
                 EnterText(scanner, "000000000101");
                 WaitUntil(() => HasText(register, "Added: Pale Ale"), "accept a barcode through the scan field");
@@ -69,6 +71,29 @@ public static class KposExecutableTest
                 WaitUntil(() => HasText(checkout, "CHANGE DUE\n$0.00\n\nCard sale recorded"), "record the card sale");
                 Send(checkout, 0x0010, 0); // WM_CLOSE
                 WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "return after recording the card sale");
+
+                EnterText(scanner, "L");
+                IntPtr lottery = FindWindow(desktop, process.ProcessId, "Lottery Amount Input");
+                EnterText(FindTextBox(lottery), "5.00");
+                WaitUntil(() => HasText(register, "Added: Lottery Sale"), "add a lottery entry");
+
+                EnterText(scanner, "M");
+                IntPtr misc = FindWindow(desktop, process.ProcessId, "Misc Item");
+                IntPtr category = IntPtr.Zero;
+                WaitUntil(() => (category = FindChildWithText(misc, "Beer")) != IntPtr.Zero, "show misc categories");
+                Send(category, 0x00F5, 0); // BM_CLICK
+                EnterText(FindTextBox(misc), "3.00");
+                WaitUntil(() => HasText(register, "Added: Beer misc item"), "add the chosen misc category");
+
+                Send(scanner, 0x0100, 0x78); // F9
+                checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
+                WaitUntil(() => HasText(checkout, "Lottery") && HasText(checkout, "$5.00") &&
+                    HasText(checkout, "TOTAL DUE\n$8.09") && HasText(checkout, "Debit on terminal"),
+                    "separate lottery from the taxable misc item");
+                Send(FindTextBox(checkout), 0x0100, 0x0d); // Enter
+                WaitUntil(() => HasText(checkout, "CHANGE DUE\n$0.00\n\nCash sale recorded"), "record mixed cash sale");
+                Send(checkout, 0x0010, 0); // WM_CLOSE
+                WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "return after recording lottery");
 
                 EnterText(scanner, "000000099999");
                 IntPtr prompt = FindWindow(desktop, process.ProcessId, "Unrecognized Product Code");
@@ -161,16 +186,19 @@ public static class KposExecutableTest
         throw new InvalidOperationException("Timed out waiting to " + operation + ".");
     }
 
-    private static bool HasText(IntPtr register, string expected)
+    private static bool HasText(IntPtr register, string expected) => FindChildWithText(register, expected) != IntPtr.Zero;
+
+    private static IntPtr FindChildWithText(IntPtr register, string expected)
     {
-        bool found = false;
+        IntPtr found = IntPtr.Zero;
         EnumChildWindows(register, (window, _) =>
         {
             var text = new StringBuilder(128);
             IntPtr result;
             SendMessageTimeout(window, 0x000d, (IntPtr)text.Capacity, text, 2, 200, out result); // WM_GETTEXT
-            found = text.ToString() == expected;
-            return !found;
+            if (text.ToString() == expected)
+                found = window;
+            return found == IntPtr.Zero;
         }, IntPtr.Zero);
         return found;
     }
@@ -240,7 +268,7 @@ $smokeData = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPa
 try {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $smokeData.FullName)
     [KposExecutableTest]::Run((Resolve-Path -LiteralPath $Executable).ProviderPath)
-    Write-Output 'Packaged kPOS passed barcode entry, quick quantity, cash and external card checkout, change display, and product prompts.'
+    Write-Output 'Packaged kPOS passed barcode entry, quick quantity, lottery and misc entries, age display, checkout, and product prompts.'
 }
 finally {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $previousData)
