@@ -94,6 +94,8 @@ public sealed class CloseoutTests
                 oldSchema.CreateCollation("ITEM_CODE", StringComparer.OrdinalIgnoreCase.Compare);
                 using var command = oldSchema.CreateCommand();
                 command.CommandText = """
+                    ALTER TABLE register_settings DROP COLUMN require_item_count;
+                    ALTER TABLE register_settings DROP COLUMN start_maximized;
                     DROP TABLE day_closeouts;
                     ALTER TABLE sale_lines DROP COLUMN kind;
                     ALTER TABLE sales DROP COLUMN lottery_cents;
@@ -111,6 +113,8 @@ public sealed class CloseoutTests
             Assert.AreEqual((long)RegisterData.SchemaVersion, RegisterData.ReadSchemaVersion(paths.Database));
             Assert.AreEqual(8.275m, after.TaxRate);
             Assert.AreEqual(4, after.ChangeSeconds);
+            Assert.IsTrue(after.RequireItemCount);
+            Assert.IsTrue(after.StartMaximized);
             Assert.AreEqual(1L, after.GetDaySales(day).Count);
             Assert.AreEqual("Product", after.ReadReport(RecordReport.SaleLines, day, day).Rows[0]["Type"]);
             Assert.AreEqual(0m, after.GetDaySales(day).Lottery);

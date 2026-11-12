@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using Microsoft.Data.Sqlite;
 
@@ -5,85 +6,99 @@ namespace Kpos;
 
 internal sealed class CheckoutForm : Form
 {
-    private static readonly Color Navy = Color.FromArgb(24, 53, 82);
     private readonly TextBox amount = new() { Dock = DockStyle.Fill, MaxLength = 16, AccessibleName = "Amount received" };
-    private readonly RadioButton card = new() { Text = "Card on terminal", AutoSize = true, Checked = true };
-    private readonly RadioButton cash = new() { Text = "Cash", AutoSize = true };
-    private readonly System.Windows.Forms.Timer changeTimer = new();
-    private bool settingAmount;
+    private readonly TextBox itemCount = new() { Dock = DockStyle.Fill, MaxLength = 12, AccessibleName = "Confirm item count" };
+    private readonly Label countFeedback = PosView.Label("", 11);
+    private readonly Label feedback = PosView.Label("", 11);
+    private readonly Button verifyCount = PosView.Button("&Confirm Count", size: 11);
+    private readonly Button complete = PosView.Button("&Complete Sale", primary: true);
+    private readonly System.Windows.Forms.Timer changeTimer = new() { Interval = 150 };
+    private bool unlocked;
+    private bool amountEdited;
     private bool recorded;
-    private readonly Label feedback = new() { AutoSize = true, Margin = new Padding(3, 6, 3, 10) };
-    private readonly Button complete = new()
-    {
-        Text = "Record Card Sale", AutoSize = true
-    };
 
     public decimal ChangeDue { get; private set; }
 
-    public CheckoutForm(Sale sale, SaleTotals totals, int changeSeconds, Action<Payment> recordPayment)
+    public CheckoutForm(Sale sale, SaleTotals totals, int changeSeconds, Action<Payment> recordPayment,
+        bool requireItemCount = false, bool maximize = true)
     {
         Text = "Checkout (Training)";
-        ClientSize = new Size(1000, 600);
-        MinimumSize = new Size(900, 565);
+        ClientSize = new Size(1150, 690);
+        MinimumSize = new Size(860, 580);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
         MinimizeBox = false;
-        Font = new Font(SystemFonts.MessageBoxFont!.FontFamily, 12);
-        BackColor = Color.FromArgb(237, 242, 247);
+        WindowState = maximize ? FormWindowState.Maximized : FormWindowState.Normal;
+        Font = PosView.Text(13);
+        BackColor = PosView.Canvas;
+        unlocked = !requireItemCount;
 
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, Padding = new Padding(16), ColumnCount = 2, RowCount = 1
+            Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 2, RowCount = 2
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.Controls.Add(CreateReceipt(sale), 0, 0);
-        layout.Controls.Add(CreatePaymentSummary(totals), 1, 0);
+        var title = PosView.Label("Checkout", 26, FontStyle.Bold);
+        title.Margin = new Padding(3, 0, 3, 10);
+        layout.Controls.Add(title, 0, 0);
+        layout.SetColumnSpan(title, 2);
+        var receipt = PosView.Frame(CreateReceipt(sale), Padding.Empty);
+        receipt.Margin = new Padding(0, 0, 12, 0);
+        layout.Controls.Add(receipt, 0, 1);
+        layout.Controls.Add(PosView.Frame(CreatePaymentSummary(totals, requireItemCount), new Padding(13)), 1, 1);
         Controls.Add(layout);
-        AcceptButton = complete;
-        if (totals.Lottery > 0)
-            card.Text = "Debit on terminal";
-        SetCardAmount();
-        if (totals.Lottery > 0)
-            cash.Checked = true;
-        Shown += (_, _) => SelectAmount();
+
+        amount.Text = totals.Total.ToString("F2", CultureInfo.InvariantCulture);
+        amount.Enabled = unlocked;
+        AcceptButton = unlocked ? complete : verifyCount;
+        Shown += (_, _) =>
+        {
+            if (unlocked)
+                FocusAmount();
+            else
+                itemCount.Focus();
+        };
+        itemCount.TextChanged += (_, _) => countFeedback.Text = "";
+        verifyCount.Click += (_, _) => ConfirmCount();
         amount.TextChanged += (_, _) =>
         {
-            if (settingAmount)
+            amountEdited = true;
+            RefreshPayment();
+        };
+        complete.Click += (_, _) => CompletePayment();
+        RefreshPayment();
+
+        void ConfirmCount()
+        {
+            if (unlocked || recorded)
                 return;
 
-            cash.Checked = true;
-            UpdatePayment();
-        };
-        card.CheckedChanged += (_, _) =>
-        {
-            if (card.Checked)
+            if (!long.TryParse(itemCount.Text, NumberStyles.None, CultureInfo.InvariantCulture, out long count) ||
+                count != sale.ItemCount)
             {
-                SetCardAmount();
-                SelectAmount();
+                countFeedback.ForeColor = PosView.Error;
+                countFeedback.Text = "Count doesn’t match. Recount and try again.";
+                itemCount.Focus();
+                itemCount.SelectAll();
+                return;
             }
-        };
-        cash.Click += (_, _) => SelectAmount();
-        cash.CheckedChanged += (_, _) => UpdatePayment();
-        complete.Click += (_, _) => CompletePayment();
-        changeTimer.Interval = Math.Clamp(changeSeconds, 1, RegisterData.MaximumChangeSeconds) * 1000;
-        changeTimer.Tick += (_, _) =>
-        {
-            changeTimer.Stop();
-            DialogResult = DialogResult.OK;
-        };
-        UpdatePayment();
 
-        void SetCardAmount()
-        {
-            settingAmount = true;
-            amount.Text = totals.Total.ToString("F2", CultureInfo.InvariantCulture);
-            settingAmount = false;
-            UpdatePayment();
+            unlocked = true;
+            itemCount.ReadOnly = true;
+            itemCount.TabStop = false;
+            verifyCount.Enabled = false;
+            countFeedback.ForeColor = PosView.Muted;
+            countFeedback.Text = $"{sale.ItemCount:N0} items confirmed";
+            amount.Enabled = true;
+            AcceptButton = complete;
+            RefreshPayment();
+            FocusAmount();
         }
 
-        void SelectAmount()
+        void FocusAmount()
         {
             amount.Focus();
             amount.SelectAll();
@@ -91,7 +106,7 @@ internal sealed class CheckoutForm : Form
 
         bool TryGetPayment(out Payment payment)
         {
-            if (card.Checked)
+            if (!amountEdited)
             {
                 payment = new Payment(PaymentMethod.Card, totals.Total);
                 return true;
@@ -102,24 +117,27 @@ internal sealed class CheckoutForm : Form
             return valid && received >= totals.Total;
         }
 
-        void UpdatePayment()
+        void RefreshPayment()
         {
-            complete.Enabled = TryGetPayment(out Payment payment);
-            complete.Text = card.Checked ? (totals.Lottery > 0 ? "Record Debit Sale" : "Record Card Sale") : "Complete Cash Sale";
+            bool valid = TryGetPayment(out Payment payment);
+            complete.Enabled = unlocked && valid;
             ChangeDue = complete.Enabled ? payment.Received - totals.Total : 0;
-            feedback.ForeColor = complete.Enabled ? Navy : Color.DarkRed;
-            feedback.Text = card.Checked
-                ? (totals.Lottery > 0 ? "Press Enter after the terminal approves debit." : "Press Enter after the card terminal approves.")
-                : complete.Enabled
-                    ? $"Change due: {Sale.Money(ChangeDue)}"
-                    : Sale.TryParseMoney(amount.Text, out decimal received)
-                        ? $"Balance remaining: {Sale.Money(totals.Total - received)}"
-                        : "Enter cash received, for example 20.00.";
+            feedback.ForeColor = !unlocked || valid ? PosView.Muted : PosView.Error;
+            if (!unlocked)
+                feedback.Text = "Confirm the item count to unlock payment.";
+            else if (!amountEdited)
+                feedback.Text = totals.Lottery > 0 ? "Press Enter after debit approval." : "Press Enter after terminal approval.";
+            else if (valid)
+                feedback.Text = $"Change due: {Sale.Money(ChangeDue)}";
+            else if (Sale.TryParseMoney(amount.Text, out decimal received))
+                feedback.Text = $"Balance remaining: {Sale.Money(totals.Total - received)}";
+            else
+                feedback.Text = "Enter the amount received.";
         }
 
         void CompletePayment()
         {
-            if (recorded || !TryGetPayment(out Payment payment))
+            if (!unlocked || recorded || !TryGetPayment(out Payment payment))
                 return;
 
             try
@@ -135,13 +153,34 @@ internal sealed class CheckoutForm : Form
             }
 
             recorded = true;
+            ChangeDue = payment.Received - totals.Total;
             AcceptButton = null;
             CancelButton = null;
             Controls.Remove(layout);
             layout.Dispose();
-            ShowChange(payment, totals.Lottery > 0);
-            changeTimer.Start();
+            ShowChange(totals, payment, Math.Clamp(changeSeconds, 1, RegisterData.MaximumChangeSeconds));
         }
+    }
+
+    protected override bool ProcessCmdKey(ref Message message, Keys keys)
+    {
+        if (!recorded && keys == Keys.Escape)
+        {
+            DialogResult = DialogResult.Cancel;
+            return true;
+        }
+        if (keys == Keys.Enter)
+        {
+            // A held key must not submit the payment after confirming the count or dismiss the receipt.
+            if ((message.LParam.ToInt64() & (1L << 30)) != 0)
+                return true;
+            if (recorded)
+            {
+                Finish();
+                return true;
+            }
+        }
+        return base.ProcessCmdKey(ref message, keys);
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
@@ -158,54 +197,92 @@ internal sealed class CheckoutForm : Form
         base.Dispose(disposing);
     }
 
-    private void ShowChange(Payment payment, bool lottery)
+    private void Finish()
     {
-        BackColor = Navy;
-        var change = new Label
-        {
-            Text = $"CHANGE DUE\n{Sale.Money(ChangeDue)}\n\n" +
-                (payment.Method == PaymentMethod.Card ? (lottery ? "Debit sale recorded" : "Card sale recorded") : "Cash sale recorded"),
-            Font = new Font(Font.FontFamily, 30, FontStyle.Bold),
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleCenter,
-            ForeColor = Color.White
-        };
-        Controls.Add(change);
+        changeTimer.Stop();
+        DialogResult = DialogResult.OK;
     }
 
-    private Control CreateReceipt(Sale sale)
+    private void ShowChange(SaleTotals totals, Payment payment, int seconds)
+    {
+        var center = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 3, RowCount = 3
+        };
+        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 18));
+        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 64));
+        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 18));
+        center.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        center.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        center.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+
+        var summary = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top, AutoSize = true, BackColor = Color.White, ColumnCount = 2, Padding = new Padding(20)
+        };
+        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
+        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
+        AddAmountRow(summary, 0, "Subtotal", totals.Subtotal - totals.Discount, 18);
+        AddAmountRow(summary, 1, "Sales tax", totals.Tax, 18);
+        AddAmountRow(summary, 2, "Total", totals.Total, 22);
+        AddAmountRow(summary, 3, payment.Method == PaymentMethod.Cash ? "Cash received" : "Amount received", payment.Received, 18);
+        var result = CreateAmountBanner("CHANGE DUE", ChangeDue);
+        result.Margin = new Padding(0, 14, 0, 8);
+        AddWide(summary, 4, result);
+        var countdown = PosView.Label("", 13, FontStyle.Bold, PosView.Muted);
+        countdown.Anchor = AnchorStyles.Left;
+        var next = PosView.Button("&Next Sale", primary: true);
+        next.Anchor = AnchorStyles.Right;
+        next.Click += (_, _) => Finish();
+        summary.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        summary.Controls.Add(countdown, 0, 5);
+        summary.Controls.Add(next, 1, 5);
+        // The framed panel fits its content before the outer layout centers it.
+        var frame = PosView.Frame(summary, new Padding(1), PosView.Navy);
+        frame.AutoSize = true;
+        frame.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        frame.MinimumSize = new Size(0, 420);
+        center.Controls.Add(frame, 1, 1);
+        Controls.Add(center);
+        AcceptButton = next;
+        next.Focus();
+
+        var elapsed = Stopwatch.StartNew();
+        countdown.Text = $"Next sale in {seconds}s\nEnter to continue";
+        changeTimer.Tick += (_, _) =>
+        {
+            int remaining = (int)Math.Ceiling(seconds - elapsed.Elapsed.TotalSeconds);
+            if (remaining <= 0)
+                Finish();
+            else
+                countdown.Text = $"Next sale in {remaining}s\nEnter to continue";
+        };
+        changeTimer.Start();
+    }
+
+    private static Control CreateReceipt(Sale sale)
     {
         var grid = new DataGridView
         {
-            AccessibleName = "Items in this sale",
-            Dock = DockStyle.Fill,
-            ReadOnly = true,
-            AllowUserToAddRows = false,
-            AllowUserToDeleteRows = false,
-            AllowUserToResizeRows = false,
-            RowHeadersVisible = false,
-            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
-            ColumnHeadersHeight = 36,
-            TabStop = false,
-            BackgroundColor = SystemColors.Window,
-            Margin = new Padding(0, 0, 12, 0)
+            AccessibleName = "Items in this sale", Dock = DockStyle.Fill, ReadOnly = true,
+            AllowUserToAddRows = false, AllowUserToDeleteRows = false, AllowUserToResizeRows = false,
+            RowHeadersVisible = false, TabStop = false
         };
+        PosView.Grid(grid);
         grid.Columns.Add("Item", "Item");
         grid.Columns.Add("Quantity", "Qty");
         grid.Columns.Add("UnitPrice", "Unit Price");
         grid.Columns.Add("Extended", "Amount");
         grid.Columns["Item"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
         grid.Columns["Item"]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
-        grid.Columns["Quantity"]!.Width = 54;
-        grid.Columns["UnitPrice"]!.Width = 102;
-        grid.Columns["Extended"]!.Width = 106;
+        grid.Columns["Quantity"]!.Width = 64;
+        grid.Columns["UnitPrice"]!.Width = 114;
+        grid.Columns["Extended"]!.Width = 126;
         grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCellsExceptHeaders;
         foreach (DataGridViewColumn column in grid.Columns)
             column.SortMode = DataGridViewColumnSortMode.NotSortable;
-        foreach (string name in new[] { "Quantity", "UnitPrice", "Extended" })
-            grid.Columns[name]!.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
-        grid.DefaultCellStyle.SelectionBackColor = grid.DefaultCellStyle.BackColor = SystemColors.Window;
-        grid.DefaultCellStyle.SelectionForeColor = grid.DefaultCellStyle.ForeColor = SystemColors.WindowText;
+        PosView.AmountColumn(grid, "UnitPrice");
+        PosView.AmountColumn(grid, "Extended");
 
         foreach (SaleLine line in sale.Lines)
         {
@@ -216,68 +293,78 @@ internal sealed class CheckoutForm : Form
                 name += $" · Case of {line.Product.UnitsPerCase}";
             grid.Rows.Add(name, line.Quantity, Sale.Money(line.Price), Sale.Money(line.Extended));
         }
+
         grid.ClearSelection();
         return grid;
     }
 
-    private Control CreatePaymentSummary(SaleTotals totals)
+    private Control CreatePaymentSummary(SaleTotals totals, bool requireCount)
     {
         var summary = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, BackColor = SystemColors.Window,
-            Padding = new Padding(12), ColumnCount = 2, Margin = new Padding(0)
+            Dock = DockStyle.Fill, AutoScroll = true, ColumnCount = 2, Margin = Padding.Empty
         };
-        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 53));
-        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 47));
+        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
+        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
+        AddWide(summary, 0, CreateAmountBanner("TOTAL DUE", totals.Total));
+        AddAmountRow(summary, 1, "Merchandise", totals.Merchandise);
+        AddAmountRow(summary, 2, "Lottery", totals.Lottery);
+        AddAmountRow(summary, 3, "Discounts", -totals.Discount);
+        AddAmountRow(summary, 4, $"Sales tax ({Sale.Rate(totals.TaxRate)})", totals.Tax);
+        int row = 5;
+        if (requireCount)
+        {
+            var label = PosView.Label("Count the items and enter the quantity", 12, FontStyle.Bold);
+            label.Margin = new Padding(3, 10, 3, 3);
+            AddWide(summary, row++, label);
+            itemCount.Font = PosView.Text(17);
+            summary.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            summary.Controls.Add(itemCount, 0, row);
+            summary.Controls.Add(verifyCount, 1, row++);
+            AddWide(summary, row++, countFeedback);
+        }
 
-        var amountDue = new Label
-        {
-            Text = $"TOTAL DUE\n{Sale.Money(totals.Total)}",
-            Font = new Font(Font.FontFamily, 24, FontStyle.Bold),
-            AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(12),
-            Margin = new Padding(0, 0, 0, 10), BackColor = Navy, ForeColor = Color.White
-        };
-        AddWide(amountDue, 0);
-        AddAmount("Merchandise", Sale.Money(totals.Merchandise), 1);
-        AddAmount("Lottery", Sale.Money(totals.Lottery), 2);
-        AddAmount("Discounts", Sale.Money(-totals.Discount), 3);
-        AddAmount($"Sales tax ({Sale.Rate(totals.TaxRate)})", Sale.Money(totals.Tax), 4);
-        var methods = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill, AutoSize = true, Margin = new Padding(0, 12, 0, 2)
-        };
-        methods.Controls.AddRange([card, cash]);
-        AddWide(methods, 5);
-        AddWide(new Label
-        {
-            Text = "Amount received ($)", AutoSize = true, Margin = new Padding(3, 8, 3, 3)
-        }, 6);
-        amount.Font = new Font(Font.FontFamily, 17);
-        AddWide(amount, 7);
-        AddWide(feedback, 8);
+        var received = PosView.Label("Amount received", 12, FontStyle.Bold);
+        received.Margin = new Padding(3, 10, 3, 3);
+        AddWide(summary, row++, received);
+        amount.Font = PosView.Text(24, FontStyle.Bold);
+        AddWide(summary, row++, amount);
+        AddWide(summary, row++, feedback);
 
-        var back = new Button { Text = "Back to Sale", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var back = PosView.Button("&Back to Sale");
+        back.DialogResult = DialogResult.Cancel;
         CancelButton = back;
-        var actions = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill, AutoSize = true, WrapContents = true, Margin = new Padding(0)
-        };
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
         actions.Controls.AddRange([complete, back]);
-        AddWide(actions, 9);
+        AddWide(summary, row, actions);
         return summary;
+    }
 
-        void AddWide(Control control, int row)
-        {
-            summary.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            summary.Controls.Add(control, 0, row);
-            summary.SetColumnSpan(control, 2);
-        }
+    private static Label CreateAmountBanner(string caption, decimal value)
+    {
+        var banner = PosView.Label($"{caption}\n{Sale.Money(value)}", 30, FontStyle.Bold, Color.White);
+        banner.BackColor = PosView.Navy;
+        banner.Padding = new Padding(12, 8, 12, 8);
+        banner.Margin = new Padding(0, 0, 0, 8);
+        banner.Dock = DockStyle.Fill;
+        return banner;
+    }
 
-        void AddAmount(string label, string amount, int row)
-        {
-            summary.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            summary.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left }, 0, row);
-            summary.Controls.Add(new Label { Text = amount, AutoSize = true, Anchor = AnchorStyles.Right }, 1, row);
-        }
+    private static void AddWide(TableLayoutPanel panel, int row, Control control)
+    {
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        panel.Controls.Add(control, 0, row);
+        panel.SetColumnSpan(control, 2);
+    }
+
+    private static void AddAmountRow(TableLayoutPanel panel, int row, string label, decimal amount, int size = 14)
+    {
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var caption = PosView.Label(label, size);
+        caption.Anchor = AnchorStyles.Left;
+        panel.Controls.Add(caption, 0, row);
+        var value = PosView.Label(Sale.Money(amount), size, FontStyle.Bold);
+        value.Anchor = AnchorStyles.Right;
+        panel.Controls.Add(value, 1, row);
     }
 }

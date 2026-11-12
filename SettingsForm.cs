@@ -8,7 +8,9 @@ internal sealed class SettingsForm : Form
     {
         Text = "Settings";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(560, 310);
+        ClientSize = new Size(600, 330);
+        Font = PosView.Text(11);
+        BackColor = PosView.Canvas;
         MinimumSize = new Size(500, 300);
         ShowInTaskbar = false;
         var tabs = new TabControl { Dock = DockStyle.Fill };
@@ -17,11 +19,14 @@ internal sealed class SettingsForm : Form
         {
             Minimum = 1, Maximum = RegisterData.MaximumChangeSeconds, Value = data.ChangeSeconds
         };
-        AddTab("Checkout", "Change display duration (seconds)", duration);
+        var requireCount = new CheckBox { Text = "Require item count before payment", AutoSize = true, Checked = data.RequireItemCount };
+        var maximize = new CheckBox { Text = "Start maximized", AutoSize = true, Checked = data.StartMaximized };
+        AddTab("Checkout", "Change display duration (seconds)", duration, requireCount);
+        AddTab("Display", "", maximize);
         AddTab("Tax", "Sales tax rate (%)", rate);
         var path = new TextBox { ReadOnly = true, Text = folders.Root, Width = 430 };
         AddTab("Data", "Installation and records folder", path);
-        var updates = new Button { Text = "Check for Updates…", AutoSize = true };
+        var updates = PosView.Button("Check for Updates…", size: 11);
         updates.Click += (_, _) =>
         {
             using var window = new UpdateDownloadForm();
@@ -29,8 +34,9 @@ internal sealed class SettingsForm : Form
         };
         AddTab("Updates", $"Installed version {ReleaseVersion.RunningVersion}", updates);
 
-        var save = new Button { Text = "Save Settings", AutoSize = true };
-        var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var save = PosView.Button("&Save Settings", primary: true, size: 11);
+        var cancel = PosView.Button("Cancel", size: 11);
+        cancel.DialogResult = DialogResult.Cancel;
         var actions = new FlowLayoutPanel
         {
             AutoSize = true, Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(5)
@@ -44,7 +50,7 @@ internal sealed class SettingsForm : Form
         {
             try
             {
-                data.SaveSettings(rate.Value, (int)duration.Value);
+                data.SaveSettings(rate.Value, (int)duration.Value, requireCount.Checked, maximize.Checked);
                 DialogResult = DialogResult.OK;
             }
             catch (SqliteException error)
@@ -53,15 +59,16 @@ internal sealed class SettingsForm : Form
             }
         };
 
-        void AddTab(string name, string label, Control input)
+        void AddTab(string name, string label, params Control[] inputs)
         {
             var page = new TabPage(name);
             var fields = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(12)
             };
-            fields.Controls.Add(new Label { Text = label, AutoSize = true });
-            fields.Controls.Add(input);
+            if (label.Length > 0)
+                fields.Controls.Add(new Label { Text = label, AutoSize = true });
+            fields.Controls.AddRange(inputs);
             page.Controls.Add(fields);
             tabs.TabPages.Add(page);
         }

@@ -28,16 +28,17 @@ internal sealed class ProductEditorForm : Form
         ShowInTaskbar = false;
         MinimizeBox = false;
         MaximizeBox = false;
-        Font = SystemFonts.MessageBoxFont!;
+        Font = PosView.Text(11);
+        BackColor = PosView.Canvas;
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        MinimumSize = new Size(510, 0);
+        MinimumSize = new Size(560, 0);
 
         var fields = new TableLayoutPanel
         {
             Dock = DockStyle.Fill, Padding = new Padding(14), AutoSize = true, ColumnCount = 2
         };
-        fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 115));
+        fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 144));
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
         AddField("Scanned barcode", new TextBox
@@ -55,8 +56,9 @@ internal sealed class ProductEditorForm : Form
         fields.Controls.Add(feedback, 0, 9);
         fields.SetColumnSpan(feedback, 2);
 
-        var saveButton = new Button { Text = "Save Product", AutoSize = true };
-        var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var saveButton = PosView.Button("&Save Product", primary: true);
+        var cancel = PosView.Button("Cancel");
+        cancel.DialogResult = DialogResult.Cancel;
         var buttons = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false

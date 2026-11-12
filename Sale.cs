@@ -51,6 +51,7 @@ internal sealed class Sale
     private readonly List<SaleLine> lines = [];
 
     public IReadOnlyList<SaleLine> Lines => lines;
+    public long ItemCount => lines.Sum(line => (long)line.Quantity);
     public decimal Subtotal => lines.Sum(line => line.Gross);
     public decimal Discount => lines.Sum(line => line.Discount);
 

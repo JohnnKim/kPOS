@@ -53,24 +53,45 @@ public static class KposExecutableTest
                 IntPtr checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
                 WaitUntil(() => HasText(checkout, "Sales tax (2.9%)") && HasText(checkout, "TOTAL DUE\n$24.68"),
                     "show tax and the amount due at checkout");
-                EnterText(FindTextBox(checkout), "30.00", submit: false);
+                IntPtr cashInput;
+                IntPtr countInput = FindCountField(checkout, "24.68", out cashInput);
+                EnterText(countInput, "1");
+                WaitUntil(() => HasText(checkout, "Count doesn’t match. Recount and try again."), "reject an incorrect item count");
+                if (IsWindowEnabled(cashInput))
+                    throw new InvalidOperationException("Payment unlocked after an incorrect count.");
+                EnterText(countInput, "2");
+                WaitUntil(() => IsWindowEnabled(cashInput) && IsSelected(cashInput, 5), "unlock and highlight the exact total");
+                EnterText(cashInput, "30.00", submit: false);
                 WaitUntil(() => HasText(checkout, "Change due: $5.32"), "calculate change");
                 var changeTime = Stopwatch.StartNew();
-                Send(FindTextBox(checkout), 0x0100, 0x0d); // Enter
-                WaitUntil(() => HasText(checkout, "CHANGE DUE\n$5.32\n\nCash sale recorded"), "show the cash change screen");
+                Send(cashInput, 0x0100, 0x0d); // Enter
+                WaitUntil(() => HasText(checkout, "CHANGE DUE\n$5.32") && HasText(checkout, "Subtotal") &&
+                    HasText(checkout, "Sales tax") && HasText(checkout, "Total") && HasText(checkout, "Cash received") &&
+                    HasText(checkout, "$23.98") && HasText(checkout, "$0.70") && HasText(checkout, "$24.68") &&
+                    HasText(checkout, "$30.00"), "show the full cash change summary");
+                WaitUntil(() => HasText(checkout, "Next sale in 7s\nEnter to continue"), "count down from the default display time");
                 WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "return after the change display");
                 if (changeTime.Elapsed < TimeSpan.FromSeconds(7))
                     throw new InvalidOperationException("The change screen closed before its default display time.");
 
-                EnterText(scanner, "101");
-                WaitUntil(() => HasText(register, "Added: Pale Ale"), "start the next sale");
+                EnterText(scanner, "ale");
+                IntPtr lookup = FindWindow(desktop, process.ProcessId, "Item Lookup");
+                WaitUntil(() => HasText(lookup, "1 matching product"), "find the item by a typed name");
+                Send(FindTextBox(lookup), 0x0100, 0x0d); // Enter
+                WaitUntil(() => HasText(register, "Added: Pale Ale"), "add the lookup result without a mouse");
                 Send(scanner, 0x0100, 0x78); // F9
                 checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
-                WaitUntil(() => HasText(checkout, "12.34"), "preselect the card amount");
-                Send(FindTextBox(checkout), 0x0100, 0x0d); // Enter
-                WaitUntil(() => HasText(checkout, "CHANGE DUE\n$0.00\n\nCard sale recorded"), "record the card sale");
-                Send(checkout, 0x0010, 0); // WM_CLOSE
-                WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "return after recording the card sale");
+                countInput = FindCountField(checkout, "12.34", out cashInput);
+                EnterText(countInput, "1");
+                IntPtr terminalAmount = cashInput;
+                WaitUntil(() => IsWindowEnabled(terminalAmount) && IsSelected(terminalAmount, 5), "preselect the exact amount for the terminal payment");
+                Send(terminalAmount, 0x0100, 0x0d); // Enter
+                WaitUntil(() => HasText(checkout, "CHANGE DUE\n$0.00") && HasText(checkout, "Amount received"), "record the terminal payment");
+                changeTime.Restart();
+                Send(FindChildWithText(checkout, "&Next Sale"), 0x0100, 0x0d); // Enter
+                WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "bypass the change screen with Enter");
+                if (changeTime.Elapsed >= TimeSpan.FromSeconds(5))
+                    throw new InvalidOperationException("Enter did not dismiss the change screen before the countdown.");
 
                 EnterText(scanner, "L");
                 IntPtr lottery = FindWindow(desktop, process.ProcessId, "Lottery Amount Input");
@@ -88,11 +109,14 @@ public static class KposExecutableTest
                 Send(scanner, 0x0100, 0x78); // F9
                 checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
                 WaitUntil(() => HasText(checkout, "Lottery") && HasText(checkout, "$5.00") &&
-                    HasText(checkout, "TOTAL DUE\n$8.09") && HasText(checkout, "Debit on terminal"),
-                    "separate lottery from the taxable misc item");
-                Send(FindTextBox(checkout), 0x0100, 0x0d); // Enter
-                WaitUntil(() => HasText(checkout, "CHANGE DUE\n$0.00\n\nCash sale recorded"), "record mixed cash sale");
-                Send(checkout, 0x0010, 0); // WM_CLOSE
+                    HasText(checkout, "TOTAL DUE\n$8.09"), "separate lottery from the taxable misc item");
+                countInput = FindCountField(checkout, "8.09", out cashInput);
+                EnterText(countInput, "2");
+                IntPtr lotteryAmount = cashInput;
+                WaitUntil(() => IsWindowEnabled(lotteryAmount) && IsSelected(lotteryAmount, 4), "unlock the lottery payment");
+                EnterText(lotteryAmount, "10.00");
+                WaitUntil(() => HasText(checkout, "CHANGE DUE\n$1.91") && HasText(checkout, "Cash received"), "record mixed cash sale");
+                Send(FindChildWithText(checkout, "&Next Sale"), 0x0100, 0x0d); // Enter
                 WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "return after recording lottery");
 
                 EnterText(scanner, "000000099999");
@@ -105,6 +129,14 @@ public static class KposExecutableTest
                 Send(FindTextBox(editor), 0x0100, 0x1b); // Escape
                 WaitUntil(() => HasText(register, "Code 000000099999 was not added. Ready to scan."),
                     "return to the register after canceling product entry");
+                Send(FindChildWithText(register, "End of &Day"), 0x00F5, 0); // BM_CLICK
+                IntPtr closeout = FindWindow(desktop, process.ProcessId, "End of Day Closeout");
+                WaitUntil(() => HasText(closeout, "&Close Day"), "open closeout from its register button");
+                Send(closeout, 0x0010, 0); // WM_CLOSE
+                Send(FindChildWithText(register, "Export &Backup"), 0x00F5, 0); // BM_CLICK
+                IntPtr backup = FindWindow(desktop, process.ProcessId, "Export Backup");
+                WaitUntil(() => HasText(backup, "Choose &Location…"), "open backup options from the register");
+                Send(backup, 0x0010, 0); // WM_CLOSE
                 Send(register, 0x0010, 0); // WM_CLOSE
                 uint exit;
                 if (WaitForSingleObject(process.Process, 5000) != 0 ||
@@ -148,7 +180,24 @@ public static class KposExecutableTest
         return result;
     }
 
-    private static IntPtr FindTextBox(IntPtr parent)
+    private static IntPtr FindCountField(IntPtr checkout, string exactTotal, out IntPtr amount)
+    {
+        IntPtr input = IntPtr.Zero;
+        WaitUntil(() => (input = FindChildWithText(checkout, exactTotal)) != IntPtr.Zero, "find the prefilled amount");
+        if (IsWindowEnabled(input))
+            throw new InvalidOperationException("Payment must be locked before confirming the item count.");
+        amount = input;
+        return FindTextBox(checkout, except: input);
+    }
+
+    private static bool IsSelected(IntPtr input, int length)
+    {
+        IntPtr selection;
+        SendMessageTimeout(input, 0x00b0, IntPtr.Zero, IntPtr.Zero, 2, 200, out selection); // EM_GETSEL
+        return selection.ToInt64() == ((long)length << 16);
+    }
+
+    private static IntPtr FindTextBox(IntPtr parent, IntPtr except = default(IntPtr))
     {
         IntPtr result = IntPtr.Zero;
         WaitUntil(() =>
@@ -157,7 +206,7 @@ public static class KposExecutableTest
             {
                 var className = new StringBuilder(128);
                 GetClassName(window, className, className.Capacity);
-                if (className.ToString().StartsWith("WindowsForms10.Edit.", StringComparison.OrdinalIgnoreCase))
+                if (window != except && className.ToString().StartsWith("WindowsForms10.Edit.", StringComparison.OrdinalIgnoreCase))
                     result = window;
                 return result == IntPtr.Zero;
             }, IntPtr.Zero);
@@ -208,6 +257,11 @@ public static class KposExecutableTest
         if (!PostMessage(window, message, (IntPtr)key, (IntPtr)1))
             throw new Win32Exception();
     }
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
 
     private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
 
@@ -268,7 +322,7 @@ $smokeData = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPa
 try {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $smokeData.FullName)
     [KposExecutableTest]::Run((Resolve-Path -LiteralPath $Executable).ProviderPath)
-    Write-Output 'Packaged kPOS passed barcode entry, quick quantity, lottery and misc entries, age display, checkout, and product prompts.'
+    Write-Output 'Packaged kPOS passed barcode entry, item lookup, quantity, age display, lottery and misc entries, count confirmation, payment, countdown, and Enter dismissal.'
 }
 finally {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $previousData)

@@ -18,7 +18,10 @@ internal sealed class MiscAmountForm : Form
         Text = "Misc Item";
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
-        ClientSize = new Size(420, 188);
+        ClientSize = new Size(510, 242);
+        BackColor = PosView.Canvas;
+        Font = PosView.Text(11);
+        amount.Font = PosView.Text(21, FontStyle.Bold);
         ShowInTaskbar = false;
         MinimizeBox = MaximizeBox = false;
 
@@ -37,8 +40,11 @@ internal sealed class MiscAmountForm : Form
         layout.Controls.Add(options, 0, 2);
         layout.Controls.Add(taxable, 0, 3);
         layout.Controls.Add(feedback, 0, 4);
-        var add = new Button { Text = "Add Item", AutoSize = true, Enabled = false, DialogResult = DialogResult.OK };
-        var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var add = PosView.Button("&Add Item", primary: true);
+        add.Enabled = false;
+        add.DialogResult = DialogResult.OK;
+        var cancel = PosView.Button("Cancel");
+        cancel.DialogResult = DialogResult.Cancel;
         var buttons = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft

@@ -13,9 +13,10 @@ internal sealed class RecordsForm : Form
     private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 105 };
     private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 105 };
     private readonly TabControl tabs = new() { Dock = DockStyle.Fill };
-    private readonly Button previous = new() { Text = "Previous", AutoSize = true };
-    private readonly Button next = new() { Text = "Next", AutoSize = true };
-    private readonly Button archive = new() { Text = "Archive Day", AutoSize = true };
+    private readonly Button previous = PosView.Button("&Previous", size: 10);
+    private readonly Button next = PosView.Button("&Next", size: 10);
+    private readonly Button archive = PosView.Button("&Archive Day", size: 10);
+    private readonly Button details = PosView.Button("Sale &Details", size: 10);
     private readonly Label status = new() { AutoSize = true, Margin = new Padding(6, 8, 3, 3) };
     private long offset;
     private bool saving;
@@ -30,7 +31,8 @@ internal sealed class RecordsForm : Form
         MinimumSize = new Size(760, 430);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
-        Font = SystemFonts.MessageBoxFont!;
+        Font = PosView.Text(11);
+        BackColor = PosView.Canvas;
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(10), RowCount = 3, ColumnCount = 1 };
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -56,7 +58,11 @@ internal sealed class RecordsForm : Form
         AddTab("Price History", RecordReport.PriceHistory);
 
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
-        actions.Controls.AddRange([previous, next, archive, status]);
+        var close = PosView.Button("Close", size: 10);
+        close.DialogResult = DialogResult.Cancel;
+        CancelButton = close;
+        actions.Controls.AddRange([previous, next, details, archive, close, status]);
+        details.Click += (_, _) => OpenSelectedSale();
         archive.Visible = product is null;
         layout.Controls.Add(actions, 0, 2);
         Controls.Add(layout);
@@ -74,17 +80,31 @@ internal sealed class RecordsForm : Form
     {
         var page = new TabPage(name) { Tag = report };
         var grid = CreateGrid();
+        PosView.Grid(grid, 11, 34);
         if (report == RecordReport.Sales)
         {
-            grid.CellDoubleClick += (_, args) =>
-            {
-                if (args.RowIndex >= 0 && grid.Rows[args.RowIndex].DataBoundItem is DataRowView row &&
-                    row["Sale ID"] is string id)
-                    ViewSale(id);
-            };
+            grid.CellDoubleClick += (_, args) => { if (args.RowIndex >= 0) OpenSelectedSale(); };
+            grid.SelectionChanged += (_, _) => details.Enabled = grid.CurrentRow is not null;
         }
         page.Controls.Add(grid);
         tabs.TabPages.Add(page);
+    }
+
+    protected override bool ProcessCmdKey(ref Message message, Keys keys)
+    {
+        if (keys == Keys.Enter && tabs.SelectedTab?.Tag is RecordReport.Sales && tabs.SelectedTab.ContainsFocus)
+        {
+            OpenSelectedSale();
+            return true;
+        }
+        return base.ProcessCmdKey(ref message, keys);
+    }
+
+    private void OpenSelectedSale()
+    {
+        if (tabs.SelectedTab?.Tag is RecordReport.Sales && tabs.SelectedTab.Controls[0] is DataGridView grid &&
+            grid.CurrentRow?.DataBoundItem is DataRowView row && row["Sale ID"] is string id)
+            ViewSale(id);
     }
 
     private void RefreshReport(bool reset)
@@ -96,6 +116,8 @@ internal sealed class RecordsForm : Form
             offset = 0;
         var grid = (DataGridView)page.Controls[0];
         previous.Visible = next.Visible = report != RecordReport.Totals;
+        details.Visible = report == RecordReport.Sales;
+        details.Enabled = grid.CurrentRow is not null;
         (DateOnly start, DateOnly end) = Dates();
         archive.Enabled = !saving && start == end;
         if (end < start)

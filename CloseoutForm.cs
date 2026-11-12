@@ -17,10 +17,10 @@ internal sealed class CloseoutForm : Form
     private readonly Label salesSummary = new() { Dock = DockStyle.Fill, AutoSize = true };
     private readonly Label reconciliation = new() { Dock = DockStyle.Fill, AutoSize = true };
     private readonly Label feedback = new() { Dock = DockStyle.Fill, AutoSize = true };
-    private readonly Button count = new() { Text = "Count Bills and Coins…", AutoSize = true };
-    private readonly Button closeDay = new() { Text = "Close Day", AutoSize = true };
-    private readonly Button print = new() { Text = "Print Report…", AutoSize = true };
-    private readonly Button archive = new() { Text = "Save Archive", AutoSize = true };
+    private readonly Button count = PosView.Button("Count &Bills and Coins…", size: 10);
+    private readonly Button closeDay = PosView.Button("&Close Day", primary: true, size: 11);
+    private readonly Button print = PosView.Button("&Print Report…", size: 11);
+    private readonly Button archive = PosView.Button("Save &Archive", size: 11);
     private DaySales sales = new(0, 0, 0, 0, 0, 0, 0);
     private DayCloseout? saved;
 
@@ -29,11 +29,20 @@ internal sealed class CloseoutForm : Form
         this.data = data;
         this.folders = folders;
         Text = "End of Day Closeout";
-        ClientSize = new Size(680, 540);
+        ClientSize = new Size(800, 575);
         MinimumSize = new Size(600, 520);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
-        Font = new Font(SystemFonts.MessageBoxFont!.FontFamily, 10);
+        Font = PosView.Text(11);
+        BackColor = PosView.Canvas;
+        foreach (Label label in new[] { salesSummary, reconciliation })
+        {
+            label.BackColor = Color.White;
+            label.BorderStyle = BorderStyle.FixedSingle;
+            label.ForeColor = PosView.Ink;
+            label.Font = PosView.Text(13, FontStyle.Bold);
+            label.Padding = new Padding(9);
+        }
         date.Value = data.FirstOpenDayWithSales(DateOnly.FromDateTime(DateTime.Today)).ToDateTime(TimeOnly.MinValue);
 
         var layout = new TableLayoutPanel
@@ -61,6 +70,10 @@ internal sealed class CloseoutForm : Form
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         actions.Controls.AddRange([closeDay, print, archive]);
         Wide(actions, 9);
+        var dismiss = PosView.Button("Close", size: 10);
+        dismiss.DialogResult = DialogResult.Cancel;
+        actions.Controls.Add(dismiss);
+        CancelButton = dismiss;
         Controls.Add(layout);
 
         date.ValueChanged += (_, _) => LoadDay();

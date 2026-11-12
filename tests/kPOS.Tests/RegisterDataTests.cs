@@ -17,13 +17,18 @@ public sealed class RegisterDataTests
                 Assert.AreEqual(2.9m, first.TaxRate);
                 Assert.IsNull(first.FindProduct(product.Barcode));
                 Assert.IsNull(first.SaveProduct(product));
-                first.TaxRate = 8.275m;
+                Assert.IsTrue(first.RequireItemCount);
+                Assert.IsTrue(first.StartMaximized);
+                first.SaveSettings(8.275m, 5, requireItemCount: false, startMaximized: false);
             }
 
             using (var second = new RegisterData(database))
             {
                 Assert.AreEqual(product, second.FindProduct("q-new"));
                 Assert.AreEqual(8.275m, second.TaxRate);
+                Assert.AreEqual(5, second.ChangeSeconds);
+                Assert.IsFalse(second.RequireItemCount);
+                Assert.IsFalse(second.StartMaximized);
                 var updated = product with { Description = "New Name", UnitPrice = 13.75m, IsTaxable = false };
                 Assert.IsNull(second.SaveProduct(updated, product));
                 Assert.IsNotNull(second.SaveProduct(product, product));

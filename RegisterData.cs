@@ -9,12 +9,15 @@ internal sealed partial class RegisterData : IDisposable
     private readonly SqliteConnection connection;
     public string DatabasePath { get; }
 
-    public RegisterData(string databasePath)
+    public RegisterData(string databasePath) : this(databasePath, readOnly: false) { }
+
+    private RegisterData(string databasePath, bool readOnly)
     {
         DatabasePath = databasePath;
         connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
+            Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWriteCreate,
             DefaultTimeout = 5,
             ForeignKeys = true,
             Pooling = false
@@ -24,7 +27,8 @@ internal sealed partial class RegisterData : IDisposable
         {
             connection.Open();
             connection.CreateCollation("ITEM_CODE", StringComparer.OrdinalIgnoreCase.Compare);
-            Initialize();
+            if (!readOnly)
+                Initialize();
         }
         catch
         {
@@ -48,11 +52,25 @@ internal sealed partial class RegisterData : IDisposable
         }
     }
 
-    public void SaveSettings(decimal taxRate, int changeSeconds)
+    public bool RequireItemCount => ReadDisplaySetting("require_item_count");
+    public bool StartMaximized => ReadDisplaySetting("start_maximized");
+
+    private bool ReadDisplaySetting(string column)
     {
-        using var command = Command("UPDATE register_settings SET tax_rate = $rate, change_seconds = $seconds WHERE id = 1");
+        using var command = Command($"SELECT {column} FROM register_settings WHERE id = 1");
+        return (long)command.ExecuteScalar()! != 0;
+    }
+
+    public void SaveSettings(decimal taxRate, int changeSeconds, bool requireItemCount = true, bool startMaximized = true)
+    {
+        using var command = Command("""
+            UPDATE register_settings SET tax_rate = $rate, change_seconds = $seconds,
+                require_item_count = $count, start_maximized = $maximized WHERE id = 1
+            """);
         command.Parameters.AddWithValue("$rate", decimal.ToInt64(taxRate * 10000));
         command.Parameters.AddWithValue("$seconds", changeSeconds);
+        command.Parameters.AddWithValue("$count", requireItemCount);
+        command.Parameters.AddWithValue("$maximized", startMaximized);
         command.ExecuteNonQuery();
     }
 
@@ -148,6 +166,15 @@ internal sealed partial class RegisterData : IDisposable
             CreateLedger(transaction);
         if (currentVersion < 3)
             AddCloseoutsAndSaleKinds(transaction);
+        if (currentVersion < 4)
+        {
+            using var preferences = Command("""
+                ALTER TABLE register_settings ADD COLUMN require_item_count INTEGER NOT NULL DEFAULT 1;
+                ALTER TABLE register_settings ADD COLUMN start_maximized INTEGER NOT NULL DEFAULT 1;
+                PRAGMA user_version = 4;
+                """, transaction);
+            preferences.ExecuteNonQuery();
+        }
 
         transaction.Commit();
     }

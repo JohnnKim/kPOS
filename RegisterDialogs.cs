@@ -5,97 +5,147 @@ namespace Kpos;
 internal sealed class ProductListForm : Form
 {
     private IReadOnlyList<Product> products;
+    private Product[] matches = [];
     private readonly RegisterData? data;
     private readonly RegisterFolders? folders;
     private readonly bool selectItem;
-    private readonly TextBox search = new() { Dock = DockStyle.Fill, AccessibleName = "Find product" };
+    private readonly bool allowAddCode;
+    private readonly TextBox search = new() { Dock = DockStyle.Fill, AccessibleName = "Find product", MaxLength = 80 };
+    private readonly ComboBox field = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 152, AccessibleName = "Search by" };
+    private readonly Label matchCount = PosView.Label("", 11, color: PosView.Muted);
+    private readonly Button add = PosView.Button("Add as &Code", size: 11);
+    private readonly Button select = PosView.Button("&Add to Sale", primary: true, size: 11);
     private readonly DataGridView grid = new()
     {
-        Dock = DockStyle.Fill,
-        ReadOnly = true,
-        AllowUserToAddRows = false,
-        AllowUserToDeleteRows = false,
-        AllowUserToResizeRows = false,
-        MultiSelect = false,
-        SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-        RowHeadersVisible = false,
-        BackgroundColor = SystemColors.Window
+        Dock = DockStyle.Fill, ReadOnly = true, VirtualMode = true, AccessibleName = "Matching products",
+        AllowUserToAddRows = false, AllowUserToDeleteRows = false, AllowUserToResizeRows = false,
+        MultiSelect = false, SelectionMode = DataGridViewSelectionMode.FullRowSelect, RowHeadersVisible = false
     };
 
     public Product? SelectedProduct { get; private set; }
+    public string? UnrecognizedCode { get; private set; }
 
-    public ProductListForm(IReadOnlyList<Product> products, bool selectItem, string initialSearch = "", RegisterData? data = null, RegisterFolders? folders = null)
+    public ProductListForm(IReadOnlyList<Product> products, bool selectItem, string initialSearch = "",
+        RegisterData? data = null, RegisterFolders? folders = null, bool allowAddCode = false)
     {
         this.products = products;
         this.selectItem = selectItem;
         this.data = data;
         this.folders = folders;
-        Text = selectItem ? "Item Point & Select" : "Product List";
+        this.allowAddCode = allowAddCode;
+        Text = selectItem ? "Item Lookup" : "Product List";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(760, 420);
-        MinimumSize = new Size(620, 300);
+        ClientSize = new Size(980, 580);
+        MinimumSize = new Size(720, 360);
         MinimizeBox = false;
         ShowInTaskbar = false;
-        Font = SystemFonts.MessageBoxFont!;
+        Font = PosView.Text(12);
+        BackColor = PosView.Canvas;
 
-        var layout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(12),
-            ColumnCount = 2,
-            RowCount = data is null ? 2 : 3
-        };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(15), ColumnCount = 1, RowCount = 3 };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        layout.Controls.Add(new Label
+        var filters = new TableLayoutPanel
         {
-            Text = "&Find",
-            Anchor = AnchorStyles.Left,
-            AutoSize = true,
-            TabIndex = 0
-        }, 0, 0);
-        search.TabIndex = 1;
-        layout.Controls.Add(search, 1, 0);
-        layout.Controls.Add(grid, 0, 1);
-        layout.SetColumnSpan(grid, 2);
+            Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, Margin = new Padding(3, 3, 3, 8)
+        };
+        filters.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        filters.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        filters.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        AddFilterLabel("Search &by", 0);
+        field.Items.AddRange(["All fields", "Name", "Item code", "Barcode", "Size / pack"]);
+        field.SelectedIndex = 0;
+        field.Anchor = AnchorStyles.Left;
+        field.Margin = new Padding(3, 3, 12, 3);
+        field.TabIndex = 1;
+        filters.Controls.Add(field, 1, 0);
+        AddFilterLabel("&Find", 2);
+        search.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        search.TabIndex = 3;
+        filters.Controls.Add(search, 3, 0);
+        layout.Controls.Add(PosView.Frame(filters, new Padding(8, 0, 8, 0)), 0, 0);
+        layout.Controls.Add(PosView.Frame(grid, Padding.Empty), 0, 1);
+
+        var footer = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1 };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        matchCount.Anchor = AnchorStyles.Left;
+        footer.Controls.Add(matchCount, 0, 0);
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
         if (data is not null)
         {
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
-            var edit = new Button { Text = "Edit Product…", AutoSize = true };
+            var edit = PosView.Button("&Edit Product", size: 11);
             edit.Click += (_, _) => OpenSelectedProduct();
             actions.Controls.Add(edit);
-            var history = new Button { Text = "Item History…", AutoSize = true };
+            var history = PosView.Button("Item &History", size: 11);
             history.Click += (_, _) => ShowItemHistory();
             actions.Controls.Add(history);
-            layout.Controls.Add(actions, 1, 2);
         }
+        if (allowAddCode)
+        {
+            add.Click += (_, _) =>
+            {
+                if (!add.Enabled)
+                    return;
+                UnrecognizedCode = search.Text.Trim();
+                DialogResult = DialogResult.OK;
+            };
+            actions.Controls.Add(add);
+        }
+        var close = PosView.Button("Close", size: 11);
+        close.DialogResult = DialogResult.Cancel;
+        actions.Controls.Add(close);
+        if (selectItem)
+        {
+            select.Click += (_, _) => OpenSelectedProduct();
+            actions.Controls.Add(select);
+        }
+        CancelButton = close;
+        footer.Controls.Add(actions, 1, 0);
+        layout.Controls.Add(footer, 0, 2);
         Controls.Add(layout);
 
-        grid.Columns.Add("Code", "Code");
+        PosView.Grid(grid, 12, 38);
+        grid.Columns.Add("Code", "Item Code");
         grid.Columns.Add("Barcode", "Barcode");
-        grid.Columns.Add("Description", "Description");
+        grid.Columns.Add("Description", "Name");
         grid.Columns.Add("Size", "Size / Pack");
-        grid.Columns.Add("Price", "Price");
+        grid.Columns.Add("Price", "Unit Price");
         grid.Columns.Add("CasePrice", "Case Price");
-        grid.Columns["Code"]!.Width = 66;
-        grid.Columns["Barcode"]!.Width = 118;
+        grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
+        grid.Columns["Code"]!.Width = 112;
+        grid.Columns["Barcode"]!.Width = 136;
         grid.Columns["Description"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
-        grid.Columns["Price"]!.Width = 83;
-        grid.Columns["CasePrice"]!.Width = 85;
+        grid.Columns["Size"]!.Width = 121;
+        grid.Columns["Price"]!.Width = 111;
+        grid.Columns["CasePrice"]!.Width = 115;
+        foreach (DataGridViewColumn column in grid.Columns)
+            column.SortMode = DataGridViewColumnSortMode.NotSortable;
         foreach (string name in new[] { "Price", "CasePrice" })
         {
+            PosView.AmountColumn(grid, name, 12);
             grid.Columns[name]!.ValueType = typeof(decimal);
             grid.Columns[name]!.DefaultCellStyle.Format = "C2";
             grid.Columns[name]!.DefaultCellStyle.FormatProvider = CultureInfo.GetCultureInfo("en-US");
-            grid.Columns[name]!.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
         }
 
+        grid.CellValueNeeded += (_, e) =>
+        {
+            if ((uint)e.RowIndex >= (uint)matches.Length)
+                return;
+            Product item = matches[e.RowIndex];
+            e.Value = e.ColumnIndex switch
+            {
+                0 => item.Code, 1 => item.Barcode, 2 => item.Description, 3 => item.Size,
+                4 => item.UnitPrice, 5 when item.HasCasePrice => item.CasePrice, _ => null
+            };
+        };
         search.Text = initialSearch;
         search.TextChanged += (_, _) => Filter();
+        field.SelectedIndexChanged += (_, _) => Filter();
         grid.CellDoubleClick += (_, e) =>
         {
             if (e.RowIndex >= 0)
@@ -107,19 +157,22 @@ internal sealed class ProductListForm : Form
             search.SelectAll();
         };
         Filter();
+
+        void AddFilterLabel(string title, int column)
+        {
+            var label = PosView.Label(title, 11, FontStyle.Bold);
+            label.Anchor = AnchorStyles.Left;
+            label.TabIndex = column;
+            filters.Controls.Add(label, column, 0);
+        }
     }
 
     protected override bool ProcessCmdKey(ref Message message, Keys keys)
     {
-        if (keys == Keys.Escape)
+        if (keys == Keys.Enter && (search.Focused || grid.ContainsFocus) && (selectItem || data is not null))
         {
-            DialogResult = DialogResult.Cancel;
-            return true;
-        }
-
-        if (keys == Keys.Enter && (selectItem || data is not null))
-        {
-            OpenSelectedProduct();
+            if ((message.LParam.ToInt64() & (1L << 30)) == 0)
+                OpenSelectedProduct();
             return true;
         }
 
@@ -136,27 +189,38 @@ internal sealed class ProductListForm : Form
     private void Filter()
     {
         string query = search.Text.Trim();
-        grid.Rows.Clear();
-        foreach (Product product in products)
+        matches = products.Where(product => field.SelectedIndex switch
         {
-            if (!product.Code.Contains(query, StringComparison.OrdinalIgnoreCase) &&
-                !product.Barcode.Contains(query, StringComparison.OrdinalIgnoreCase) &&
-                !product.Description.Contains(query, StringComparison.OrdinalIgnoreCase) &&
-                !product.Size.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
+            1 => Contains(product.Description),
+            2 => Contains(product.Code),
+            3 => Contains(product.Barcode),
+            4 => Contains(product.Size),
+            _ => Contains(product.Description) || Contains(product.Code) || Contains(product.Barcode) || Contains(product.Size)
+        }).ToArray();
 
-            int row = grid.Rows.Add(
-                product.Code, product.Barcode, product.Description, product.Size,
-                product.UnitPrice, product.HasCasePrice ? (object)product.CasePrice : string.Empty);
-            grid.Rows[row].Tag = product;
-        }
+        grid.RowCount = matches.Length;
+        if (matches.Length > 0)
+            grid.CurrentCell = grid.Rows[0].Cells[0];
+        grid.Invalidate();
+        matchCount.Text = matches.Length switch
+        {
+            0 => "No matching products",
+            1 => "1 matching product",
+            _ => $"{matches.Length:N0} matching products"
+        };
+        select.Enabled = matches.Length > 0;
+        add.Enabled = allowAddCode && query.Length > 0 && matches.Length == 0 &&
+            !products.Any(product => string.Equals(product.Code, query, StringComparison.OrdinalIgnoreCase) ||
+                                     string.Equals(product.Barcode, query, StringComparison.OrdinalIgnoreCase));
+
+        bool Contains(string value) => value.Contains(query, StringComparison.OrdinalIgnoreCase);
     }
+
+    private Product? CurrentProduct => grid.CurrentRow is DataGridViewRow row ? matches[row.Index] : null;
 
     private void ShowItemHistory()
     {
-        if (data is null || folders is null || grid.CurrentRow?.Tag is not Product product)
+        if (data is null || folders is null || CurrentProduct is not Product product)
             return;
 
         using var history = new RecordsForm(data, folders, product);
@@ -166,7 +230,7 @@ internal sealed class ProductListForm : Form
 
     private void OpenSelectedProduct()
     {
-        if (grid.CurrentRow?.Tag is not Product product)
+        if (CurrentProduct is not Product product)
             return;
 
         if (selectItem)
@@ -192,7 +256,7 @@ internal sealed class NumberEntryForm : Form
     private static readonly CultureInfo InputCulture = CultureInfo.InvariantCulture;
     private readonly TextBox input = new() { Dock = DockStyle.Fill, MaxLength = 13 };
     private readonly Label status = new() { AutoSize = true, Anchor = AnchorStyles.Left, MaximumSize = new Size(330, 0) };
-    private readonly Button accept = new() { Text = "OK", AutoSize = true, DialogResult = DialogResult.OK };
+    private readonly Button accept = PosView.Button("OK", primary: true);
 
     public decimal Value { get; private set; }
 
@@ -211,8 +275,11 @@ internal sealed class NumberEntryForm : Form
         ShowInTaskbar = false;
         MinimizeBox = false;
         MaximizeBox = false;
-        Font = SystemFonts.MessageBoxFont!;
-        ClientSize = new Size(360, 150);
+        Font = PosView.Text(11);
+        BackColor = PosView.Canvas;
+        ClientSize = new Size(450, 204);
+        input.Font = PosView.Text(21, FontStyle.Bold);
+        accept.DialogResult = DialogResult.OK;
 
         var layout = new TableLayoutPanel
         {
@@ -226,11 +293,12 @@ internal sealed class NumberEntryForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         input.AccessibleName = label;
-        layout.Controls.Add(new Label { Text = label, AutoSize = true, MaximumSize = new Size(330, 0) }, 0, 0);
+        layout.Controls.Add(new Label { Text = label, AutoSize = true, Font = PosView.Text(13, FontStyle.Bold), MaximumSize = new Size(410, 0) }, 0, 0);
         layout.Controls.Add(input, 0, 1);
         layout.Controls.Add(status, 0, 2);
 
-        var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var cancel = PosView.Button("Cancel");
+        cancel.DialogResult = DialogResult.Cancel;
         var buttons = new FlowLayoutPanel
         {
             AutoSize = true,

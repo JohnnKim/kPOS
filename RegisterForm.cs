@@ -46,8 +46,8 @@ internal sealed class RegisterForm : Form
     private readonly Label taxCaption = new() { Anchor = AnchorStyles.Left, AutoSize = true };
     private readonly Label tax = CreateAmountLabel();
     private readonly Label totalDue = CreateAmountLabel();
-    private readonly Label changeDue = CreateAmountLabel();
     private bool nextItemIsCase;
+    private bool exporting;
 
     public RegisterForm(RegisterData data, RegisterFolders folders)
     {
@@ -56,38 +56,43 @@ internal sealed class RegisterForm : Form
         taxRate = data.TaxRate;
         Text = "kPOS - Sales Entry (Training)";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(980, 630);
-        MinimumSize = new Size(850, 490);
-        Font = SystemFonts.MessageBoxFont!;
-        BackColor = Color.FromArgb(237, 242, 247);
+        ClientSize = new Size(1280, 780);
+        MinimumSize = new Size(1000, 660);
+        if (data.StartMaximized)
+            WindowState = FormWindowState.Maximized;
+        Font = PosView.Text(12);
+        BackColor = PosView.Canvas;
 
         ConfigureTicket();
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(12, 8, 12, 8),
-            ColumnCount = 2,
-            RowCount = 3
+            Dock = DockStyle.Fill, Padding = new Padding(17, 11, 17, 14),
+            ColumnCount = 2, RowCount = 4
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 68));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(ticket, 0, 0);
-        layout.SetColumnSpan(ticket, 2);
-        layout.Controls.Add(CreateScanArea(), 0, 1);
-        layout.Controls.Add(CreateTotals(), 1, 1);
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 125));
+        var header = CreateHeader();
+        layout.Controls.Add(header, 0, 0);
+        layout.SetColumnSpan(header, 2);
+        var actions = CreateActions();
+        layout.Controls.Add(actions, 0, 1);
+        layout.SetColumnSpan(actions, 2);
+        var ticketFrame = PosView.Frame(ticket, new Padding(0));
+        ticketFrame.Margin = new Padding(3, 3, 7, 3);
+        layout.Controls.Add(ticketFrame, 0, 2);
+        layout.Controls.Add(CreateScanArea(), 0, 3);
 
-        var help = new Label
-        {
-            Text = "F3 Items    F4 Void    F5 Delete    Q + Enter Quantity    L + Enter Lottery    M + Enter Misc    F7 Discount    F9 Finish    F10 Case",
-            AutoSize = true,
-            Margin = new Padding(3, 6, 3, 0),
-            ForeColor = Color.FromArgb(48, 64, 80)
-        };
-        layout.Controls.Add(help, 0, 2);
-        layout.SetColumnSpan(help, 2);
+        var side = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(4, 0, 0, 0) };
+        side.RowStyles.Add(new RowStyle(SizeType.Absolute, 246));
+        side.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        side.Controls.Add(CreateTotals(), 0, 0);
+        side.Controls.Add(CreateHotkeys(), 0, 1);
+        layout.Controls.Add(side, 1, 2);
+        layout.SetRowSpan(side, 2);
 
         MenuStrip menu = CreateMenu();
         MainMenuStrip = menu;
@@ -96,7 +101,6 @@ internal sealed class RegisterForm : Form
         Shown += (_, _) => FocusScanner();
         Activated += (_, _) => { FocusScanner(); RefreshLegalAge(); };
         legalAgeTimer.Tick += (_, _) => RefreshLegalAge();
-        legalAge.Font = new Font(Font.FontFamily, 11, FontStyle.Bold);
         legalAgeTimer.Start();
         RefreshLegalAge();
         menu.MenuDeactivate += (_, _) => FocusScanner();
@@ -153,7 +157,7 @@ internal sealed class RegisterForm : Form
         AddCommand(saleMenu, "&Finish Sale", Keys.F9, FinishSale);
         AddCommand(saleMenu, "&Case Sale", Keys.F10, ArmCaseSale);
         saleMenu.DropDownItems.Add(new ToolStripSeparator());
-        AddCommand(saleMenu, "Edit &Quantity", Keys.F6, EditQuantity).ShortcutKeyDisplayString = "Q + Enter / F6";
+        AddCommand(saleMenu, "Edit &Quantity", Keys.F6, EditQuantity).ShortcutKeyDisplayString = "Q / F6";
         AddCommand(saleMenu, "Line &Discount", Keys.F7, DiscountLine);
         AddCommand(saleMenu, "De&lete Line", Keys.F5, DeleteLine);
         AddCommand(saleMenu, "&Void Sale", Keys.F4, VoidSale);
@@ -164,9 +168,9 @@ internal sealed class RegisterForm : Form
         AddCommand(lists, "&Product List", Keys.Control | Keys.L, ViewProducts);
         var settings = new ToolStripMenuItem("&Settings…", null, (_, _) => RunRegisterAction(ViewSettings));
         var reports = new ToolStripMenuItem("&Records");
-        reports.DropDownItems.Add(new ToolStripMenuItem("&End of Day…", null, (_, _) => RunRegisterAction(ViewCloseout)));
-        reports.DropDownItems.Add(new ToolStripMenuItem("&Daily Reports…", null, (_, _) => RunRegisterAction(ViewRecords)));
-        reports.DropDownItems.Add(new ToolStripMenuItem("Export &Backup…", null, (_, _) => ExportBackup()));
+        AddCommand(reports, "&End of Day…", Keys.Control | Keys.E, ViewCloseout);
+        AddCommand(reports, "&Daily Reports…", Keys.Control | Keys.R, ViewRecords);
+        AddCommand(reports, "Export &Backup…", Keys.Control | Keys.B, ExportBackup);
         menu.Items.AddRange([saleMenu, lists, reports, settings]);
         return menu;
     }
@@ -180,97 +184,172 @@ internal sealed class RegisterForm : Form
         return item;
     }
 
+    private Control CreateHeader()
+    {
+        var header = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
+            BackColor = PosView.Navy, Padding = new Padding(16, 0, 16, 0)
+        };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var title = PosView.Label("kPOS   /   Sales Entry", 22, FontStyle.Bold, Color.White);
+        title.Anchor = AnchorStyles.Left;
+        legalAge.Font = PosView.Text(14, FontStyle.Bold);
+        legalAge.ForeColor = Color.White;
+        legalAge.Anchor = AnchorStyles.Right;
+        header.Controls.Add(title, 0, 0);
+        header.Controls.Add(legalAge, 1, 0);
+        return header;
+    }
+
+    private Control CreateActions()
+    {
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Padding = new Padding(0, 3, 0, 0) };
+        Add("&Checkout · F9", FinishSale, primary: true);
+        Add("Item L&ookup", LookupItem);
+        Add("Catalo&g", ViewProducts);
+        Add("End of &Day", ViewCloseout);
+        Add("&Reports", ViewRecords);
+        Add("Export &Backup", ExportBackup);
+        Add("Se&ttings", ViewSettings);
+        return actions;
+
+        void Add(string text, Action command, bool primary = false)
+        {
+            var button = PosView.Button(text, primary, 11);
+            button.Click += (_, _) => RunRegisterAction(command);
+            actions.Controls.Add(button);
+        }
+    }
+
     private Control CreateScanArea()
     {
-        var area = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            AutoSize = true,
-            ColumnCount = 1,
-            RowCount = 4,
-            Margin = new Padding(3, 10, 12, 0)
-        };
-        area.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        area.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        area.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        var area = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+        area.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
+        area.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
+        area.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        scanPrompt.Font = PosView.Text(13, FontStyle.Bold);
+        scanPrompt.ForeColor = PosView.Ink;
+        scanCode.Font = PosView.Text(22, FontStyle.Bold);
+        scanCode.BorderStyle = BorderStyle.FixedSingle;
+        scanCode.Margin = new Padding(0, 1, 0, 2);
+        status.Font = PosView.Text(11);
+        status.ForeColor = PosView.Muted;
         area.Controls.Add(scanPrompt, 0, 0);
-        scanCode.Font = new Font(Font.FontFamily, 18);
         area.Controls.Add(scanCode, 0, 1);
         area.Controls.Add(status, 0, 2);
-        area.Controls.Add(legalAge, 0, 3);
-        return area;
+        var frame = PosView.Frame(area, new Padding(12, 7, 12, 4));
+        frame.Margin = new Padding(3, 7, 7, 3);
+        return frame;
     }
 
     private Control CreateTotals()
     {
-        var totals = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            AutoSize = true,
-            ColumnCount = 2,
-            RowCount = 6,
-            BackColor = SystemColors.Window,
-            Margin = new Padding(3, 10, 3, 0),
-            Padding = new Padding(10, 4, 10, 4)
-        };
-        totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        var totals = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 5 };
+        totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 53));
+        totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 47));
         AddTotal("Merchandise", subtotal, 0);
         AddTotal("Lottery", lottery, 1);
         AddTotal("Discounts", discounts, 2);
         AddTotal("Sales tax", tax, 3, taxCaption);
-        AddTotal("Total due", totalDue, 4);
-        AddTotal("Change due", changeDue, 5);
-        return totals;
+
+        totals.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var total = new TableLayoutPanel
+        {
+            ColumnCount = 1, RowCount = 2, Dock = DockStyle.Fill, BackColor = PosView.Navy,
+            Margin = new Padding(0, 5, 0, 0), Padding = new Padding(10, 3, 10, 2)
+        };
+        total.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
+        total.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        total.Controls.Add(PosView.Label("TOTAL DUE", 12, FontStyle.Bold, Color.White), 0, 0);
+        totalDue.Font = PosView.Text(35, FontStyle.Bold);
+        totalDue.ForeColor = Color.White;
+        total.Controls.Add(totalDue, 0, 1);
+        totals.Controls.Add(total, 0, 4);
+        totals.SetColumnSpan(total, 2);
+        return PosView.Frame(totals, new Padding(11));
 
         void AddTotal(string label, Label amount, int row, Label? caption = null)
         {
-            totals.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            totals.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
             caption ??= new Label { Anchor = AnchorStyles.Left, AutoSize = true };
             caption.Text = label;
-            if (amount == totalDue)
-            {
-                Color ink = Color.FromArgb(24, 53, 82);
-                caption.Font = new Font(Font, FontStyle.Bold);
-                caption.ForeColor = ink;
-                amount.Font = new Font(Font.FontFamily, 22, FontStyle.Bold);
-                amount.ForeColor = ink;
-            }
+            caption.ForeColor = PosView.Muted;
+            caption.Font = PosView.Text(12);
+            amount.ForeColor = PosView.Ink;
+            amount.Font = PosView.Text(15, FontStyle.Bold);
             totals.Controls.Add(caption, 0, row);
             totals.Controls.Add(amount, 1, row);
         }
+    }
+
+    private static Control CreateHotkeys()
+    {
+        var section = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        section.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        section.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        section.Controls.Add(PosView.Label("REGISTER KEYS", 11, FontStyle.Bold, PosView.Muted), 0, 0);
+        var tiles = new TableLayoutPanel { Dock = DockStyle.Top, Height = 155, ColumnCount = 2, RowCount = 5 };
+        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        for (int i = 0; i < 5; i++)
+            tiles.RowStyles.Add(new RowStyle(SizeType.Absolute, 31));
+        (string Key, string Action)[] keys =
+        [
+            ("Q", "Quantity"), ("F3", "Lookup"),
+            ("L", "Lottery"), ("F4", "Void"),
+            ("M", "Misc"), ("F5", "Delete"),
+            ("F7", "Discount"), ("F10", "Case"),
+            ("Ctrl+E", "Closeout"), ("Ctrl+R", "Reports")
+        ];
+        for (int i = 0; i < keys.Length; i++)
+        {
+            var tile = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
+                BackColor = PosView.Light, Margin = new Padding(2, 1, 2, 2)
+            };
+            tile.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 59));
+            tile.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            var key = PosView.Label(keys[i].Key, 10, FontStyle.Bold, Color.White);
+            key.Dock = DockStyle.Fill;
+            key.TextAlign = ContentAlignment.MiddleCenter;
+            key.BackColor = PosView.Navy;
+            key.Margin = new Padding(0);
+            var action = PosView.Label(keys[i].Action, 10);
+            action.Anchor = AnchorStyles.Left;
+            tile.Controls.Add(key, 0, 0);
+            tile.Controls.Add(action, 1, 0);
+            tiles.Controls.Add(tile, i % 2, i / 2);
+        }
+        section.Controls.Add(tiles, 0, 1);
+        var frame = PosView.Frame(section, new Padding(9, 7, 9, 5));
+        frame.Dock = DockStyle.Top;
+        frame.Height = 200;
+        return frame;
     }
 
     private static Label CreateAmountLabel() => new() { Anchor = AnchorStyles.Right, AutoSize = true };
 
     private void ConfigureTicket()
     {
-        ticket.ColumnHeadersHeight = 30;
-        ticket.RowTemplate.Height = 28;
-        ticket.Columns.Add("Line", "Line");
-        ticket.Columns.Add("Code", "Code");
-        ticket.Columns.Add("Description", "Description");
-        ticket.Columns.Add("Size", "Size");
-        ticket.Columns.Add("Pack", "Pack");
+        PosView.Grid(ticket, 14, 46);
+        ticket.Columns.Add("Description", "Current Sale");
         ticket.Columns.Add("Quantity", "Qty");
-        ticket.Columns.Add("Price", "Price");
+        ticket.Columns.Add("Price", "Unit Price");
         ticket.Columns.Add("Discount", "Disc %");
-        ticket.Columns.Add("Extended", "Extended");
-        ticket.Columns["Line"]!.Width = 48;
-        ticket.Columns["Code"]!.Width = 70;
+        ticket.Columns.Add("Extended", "Amount");
         ticket.Columns["Description"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
         ticket.Columns["Description"]!.MinimumWidth = 120;
-        ticket.Columns["Size"]!.Width = 92;
-        ticket.Columns["Pack"]!.Width = 80;
-        ticket.Columns["Quantity"]!.Width = 57;
-        ticket.Columns["Price"]!.Width = 94;
-        ticket.Columns["Discount"]!.Width = 70;
-        ticket.Columns["Extended"]!.Width = 108;
-        ticket.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(246, 249, 252);
+        ticket.Columns["Quantity"]!.Width = 53;
+        ticket.Columns["Price"]!.Width = 117;
+        ticket.Columns["Discount"]!.Width = 76;
+        ticket.Columns["Extended"]!.Width = 128;
         foreach (DataGridViewColumn column in ticket.Columns)
             column.SortMode = DataGridViewColumnSortMode.NotSortable;
-        foreach (string name in new[] { "Line", "Quantity", "Price", "Discount", "Extended" })
-            ticket.Columns[name]!.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+        foreach (string name in new[] { "Quantity", "Price", "Discount", "Extended" })
+            PosView.AmountColumn(ticket, name, name == "Extended" ? 16 : 13);
     }
 
     private void FocusScanner()
@@ -318,6 +397,14 @@ internal sealed class RegisterForm : Form
             return;
         }
 
+        if (code.Any(char.IsLetter))
+            LookupItem(code, allowAddCode: true);
+        else
+            PromptAddProduct(code);
+    }
+
+    private void PromptAddProduct(string code)
+    {
         var choice = MessageBox.Show(this,
             $"No product matches code {code}.\n\nAdd it to the product database?",
             "Unrecognized Product Code", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
@@ -346,7 +433,6 @@ internal sealed class RegisterForm : Form
         int selected = sale.Add(product, nextItemIsCase);
         status.Text = nextItemIsCase ? $"Case added: {product.Description}" : $"Added: {product.Description}";
         SetCaseSale(false);
-        changeDue.Text = string.Empty;
         RefreshTicket(selected);
     }
 
@@ -363,14 +449,19 @@ internal sealed class RegisterForm : Form
         scanCode.AccessibleName = scanPrompt.Text;
     }
 
-    private void LookupItem()
+    private void LookupItem() => LookupItem(scanCode.Text, allowAddCode: scanCode.Text.Any(char.IsLetter));
+
+    private void LookupItem(string query, bool allowAddCode)
     {
-        using var dialog = new ProductListForm(data.ListProducts(), selectItem: true, scanCode.Text);
-        if (dialog.ShowDialog(this) == DialogResult.OK && dialog.SelectedProduct is Product product)
-        {
-            scanCode.Clear();
+        using var dialog = new ProductListForm(data.ListProducts(), selectItem: true, query, allowAddCode: allowAddCode);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+            return;
+
+        scanCode.Clear();
+        if (dialog.SelectedProduct is Product product)
             AddItem(product);
-        }
+        else if (dialog.UnrecognizedCode is string code)
+            PromptAddProduct(code);
     }
 
     private void ViewProducts()
@@ -458,11 +549,11 @@ internal sealed class RegisterForm : Form
         Guid saleId = Guid.NewGuid();
         SaleTotals totals = sale.GetTotals(taxRate);
         using var dialog = new CheckoutForm(sale, totals, data.ChangeSeconds,
-            payment => data.RecordSale(saleId, DateTimeOffset.Now, sale, totals, payment));
+            payment => data.RecordSale(saleId, DateTimeOffset.Now, sale, totals, payment),
+            data.RequireItemCount, data.StartMaximized);
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
 
-        changeDue.Text = Sale.Money(dialog.ChangeDue);
         sale.Clear();
         SetCaseSale(false);
         scanCode.Clear();
@@ -488,7 +579,6 @@ internal sealed class RegisterForm : Form
     private void AddManualLine(int index)
     {
         SetCaseSale(false);
-        changeDue.Text = "";
         status.Text = $"Added: {sale.Lines[index].Product.Description}";
         RefreshTicket(index);
     }
@@ -513,12 +603,20 @@ internal sealed class RegisterForm : Form
 
     private async void ExportBackup()
     {
+        if (exporting)
+            return;
+
+        using var settings = new BackupOptionsForm();
+        if (settings.ShowDialog(this) != DialogResult.OK)
+            return;
+
+        BackupExportOptions options = settings.Options;
         using var picker = new SaveFileDialog
         {
             Title = "Export Register Backup",
             Filter = "ZIP archives (*.zip)|*.zip",
             InitialDirectory = folders.Backups,
-            FileName = $"kPOS-backup-{DateTime.Now:yyyy-MM-dd_HHmmss}.zip",
+            FileName = $"kPOS-{(options.IncludeDatabase ? "backup" : "records")}-{DateTime.Now:yyyy-MM-dd_HHmmss}.zip",
             OverwritePrompt = false
         };
         if (picker.ShowDialog(this) != DialogResult.OK)
@@ -531,25 +629,27 @@ internal sealed class RegisterForm : Form
         string source = data.DatabasePath;
         try
         {
+            exporting = true;
             UseWaitCursor = true;
-            status.Text = "Creating database backup…";
-            await Task.Run(() => RegisterData.ExportBackup(source, destination));
+            status.Text = "Creating export…";
+            await Task.Run(() => RegisterData.ExportBackup(source, destination, folders.DailyArchives, options));
             if (!IsDisposed)
             {
-                status.Text = $"Backup saved: {Path.GetFileName(destination)}";
-                MessageBox.Show(this, $"Backup saved to:\n{destination}", "Backup Complete");
+                status.Text = $"Export saved: {Path.GetFileName(destination)}";
+                MessageBox.Show(this, $"Export saved to:\n{destination}", "Export Complete");
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or SqliteException)
         {
             if (!IsDisposed)
             {
-                status.Text = "The backup could not be saved.";
+                status.Text = "The export could not be saved.";
                 MessageBox.Show(this, error.Message, "Backup Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
         finally
         {
+            exporting = false;
             if (!IsDisposed)
             {
                 UseWaitCursor = false;
@@ -565,6 +665,7 @@ internal sealed class RegisterForm : Form
             return;
 
         taxRate = data.TaxRate;
+        WindowState = data.StartMaximized ? FormWindowState.Maximized : FormWindowState.Normal;
         status.Text = "Settings saved.";
         RefreshTicket(ticket.CurrentRow?.Index ?? 0);
     }
@@ -588,15 +689,14 @@ internal sealed class RegisterForm : Form
         ticket.Rows.Clear();
         foreach (SaleLine line in sale.Lines)
         {
-            ticket.Rows.Add(
-                ticket.RowCount + 1,
-                line.Product.Code,
-                line.Product.Description,
-                line.Product.Size,
-                line.IsCase ? $"Case of {line.Product.UnitsPerCase}" : "Unit",
-                line.Quantity,
-                Sale.Money(line.Price),
-                line.DiscountRate.ToString("0.##", CultureInfo.InvariantCulture),
+            string description = line.Product.Description;
+            if (!string.IsNullOrWhiteSpace(line.Product.Size))
+                description += $"  ·  {line.Product.Size}";
+            if (line.IsCase)
+                description += $"  ·  Case of {line.Product.UnitsPerCase}";
+
+            ticket.Rows.Add(description, line.Quantity, Sale.Money(line.Price),
+                line.DiscountRate == 0 ? "" : line.DiscountRate.ToString("0.##", CultureInfo.InvariantCulture),
                 Sale.Money(line.Extended));
         }
 

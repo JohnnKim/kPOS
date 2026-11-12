@@ -34,6 +34,18 @@ public sealed class RegisterTests
         search.Text = "000000000201";
         Assert.AreEqual(1, grid.RowCount);
         Assert.AreEqual("201", grid.Rows[0].Cells["Code"].Value);
+        var field = Find<ComboBox>(catalog);
+        field.SelectedIndex = 1; // Name
+        Assert.AreEqual(0, grid.RowCount);
+        field.SelectedIndex = 3; // Barcode
+        Assert.AreEqual(1, grid.RowCount);
+        field.SelectedIndex = 2; // Item code
+        Assert.AreEqual(0, grid.RowCount);
+        search.Text = "201";
+        Assert.AreEqual("201", grid.Rows[0].Cells["Code"].Value);
+        field.SelectedIndex = 4; // Size
+        search.Text = "750";
+        Assert.IsTrue(grid.RowCount > 0);
         search.Text = "unknown";
         Assert.AreEqual(0, grid.RowCount);
     }
@@ -50,7 +62,7 @@ public sealed class RegisterTests
         sale.Add(Product.TrainingCatalog[0], isCase: false);
         using var checkout = new CheckoutForm(sale, sale.GetTotals(2.9m), 8, _ => { });
 
-        Find<TextBox>(checkout).Text = amount;
+        Descendants(checkout).OfType<TextBox>().Single(box => box.AccessibleName == "Amount received").Text = amount;
 
         Assert.AreEqual(accepted, ((Button)checkout.AcceptButton!).Enabled);
         Assert.AreEqual(decimal.Parse(change, System.Globalization.CultureInfo.InvariantCulture), checkout.ChangeDue);
