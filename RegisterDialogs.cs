@@ -6,6 +6,7 @@ internal sealed class ProductListForm : Form
 {
     private IReadOnlyList<Product> products;
     private readonly RegisterData? data;
+    private readonly RegisterFolders? folders;
     private readonly bool selectItem;
     private readonly TextBox search = new() { Dock = DockStyle.Fill, AccessibleName = "Find product" };
     private readonly DataGridView grid = new()
@@ -23,11 +24,12 @@ internal sealed class ProductListForm : Form
 
     public Product? SelectedProduct { get; private set; }
 
-    public ProductListForm(IReadOnlyList<Product> products, bool selectItem, string initialSearch = "", RegisterData? data = null)
+    public ProductListForm(IReadOnlyList<Product> products, bool selectItem, string initialSearch = "", RegisterData? data = null, RegisterFolders? folders = null)
     {
         this.products = products;
         this.selectItem = selectItem;
         this.data = data;
+        this.folders = folders;
         Text = selectItem ? "Item Point & Select" : "Product List";
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(760, 420);
@@ -62,9 +64,14 @@ internal sealed class ProductListForm : Form
         if (data is not null)
         {
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            var edit = new Button { Text = "Edit Product…", AutoSize = true, Anchor = AnchorStyles.Right };
+            var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
+            var edit = new Button { Text = "Edit Product…", AutoSize = true };
             edit.Click += (_, _) => OpenSelectedProduct();
-            layout.Controls.Add(edit, 1, 2);
+            actions.Controls.Add(edit);
+            var history = new Button { Text = "Item History…", AutoSize = true };
+            history.Click += (_, _) => ShowItemHistory();
+            actions.Controls.Add(history);
+            layout.Controls.Add(actions, 1, 2);
         }
         Controls.Add(layout);
 
@@ -145,6 +152,16 @@ internal sealed class ProductListForm : Form
                 product.UnitPrice, product.HasCasePrice ? (object)product.CasePrice : string.Empty);
             grid.Rows[row].Tag = product;
         }
+    }
+
+    private void ShowItemHistory()
+    {
+        if (data is null || folders is null || grid.CurrentRow?.Tag is not Product product)
+            return;
+
+        using var history = new RecordsForm(data, folders, product);
+        history.ShowDialog(this);
+        search.Focus();
     }
 
     private void OpenSelectedProduct()

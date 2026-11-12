@@ -7,6 +7,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
+    <DefineConstants>$(DefineConstants);KPOS_SINGLE_FILE</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <Compile Remove="tests/**/*.cs" />
     <InternalsVisibleTo Include="kPOS.Tests" />

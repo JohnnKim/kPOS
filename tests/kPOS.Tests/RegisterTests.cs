@@ -9,7 +9,7 @@ public sealed class RegisterTests
     public void RegisterStartsWithAnEmptyTicketAndEditableScanField()
     {
         using var data = new RegisterData(":memory:");
-        using var register = new RegisterForm(data);
+        using var register = new RegisterForm(data, new RegisterFolders(Path.GetTempPath()));
 
         var scanner = Find<TextBox>(register);
         var ticket = Find<DataGridView>(register);
@@ -48,7 +48,7 @@ public sealed class RegisterTests
     {
         var sale = new Sale();
         sale.Add(Product.TrainingCatalog[0], isCase: false);
-        using var checkout = new CheckoutForm(sale, sale.GetTotals(2.9m));
+        using var checkout = new CheckoutForm(sale, sale.GetTotals(2.9m), 8, _ => { });
 
         Find<TextBox>(checkout).Text = amount;
 

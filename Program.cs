@@ -9,23 +9,34 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
-        string directory = Environment.GetEnvironmentVariable("KPOS_DATA_DIRECTORY") ??
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kPOS");
-        RegisterData data;
+        string settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "kPOS", "installation-folder.txt");
+        RegisterData? data = null;
+        RegisterFolders? folders = null;
         try
         {
-            Directory.CreateDirectory(directory);
-            data = new RegisterData(Path.Combine(directory, "register.db"));
+            folders = RegisterFolders.Choose(settings, Environment.GetEnvironmentVariable("KPOS_DATA_DIRECTORY"), out bool install);
+            if (folders is null)
+                return;
+
+            folders.Create();
+            if (install)
+                folders.Install(settings);
+
+            data = new RegisterData(folders.Database);
+            if (install)
+                folders.Remember(settings);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or SqliteException)
         {
+            data?.Dispose();
             MessageBox.Show(
-                $"The register could not open its product database.\n\nFolder: {directory}\n{error.Message}",
+                $"The register could not open its data folder.\n\n{folders?.Root}\n{error.Message}",
                 "kPOS could not start", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
         using (data)
-            Application.Run(new RegisterForm(data));
+            Application.Run(new RegisterForm(data, folders));
     }
 }

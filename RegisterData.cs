@@ -2,18 +2,21 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class RegisterData : IDisposable
+internal sealed partial class RegisterData : IDisposable
 {
     public const decimal ColoradoStateTaxRate = 2.9m;
     private const string ProductColumns = "code, barcode, description, size, unit_cents, units_per_case, case_cents, taxable";
     private readonly SqliteConnection connection;
+    public string DatabasePath { get; }
 
     public RegisterData(string databasePath)
     {
+        DatabasePath = databasePath;
         connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
-            DefaultTimeout = 3,
+            DefaultTimeout = 5,
+            ForeignKeys = true,
             Pooling = false
         }.ToString());
 
@@ -94,6 +97,7 @@ internal sealed class RegisterData : IDisposable
             return $"That code or barcode is already used by {description}.";
 
         WriteProduct(product, transaction);
+        RecordPrice(product, original, transaction);
         transaction.Commit();
         return null;
     }
@@ -124,13 +128,16 @@ internal sealed class RegisterData : IDisposable
         schema.ExecuteNonQuery();
 
         using var version = Command("PRAGMA user_version", transaction);
-        if ((long)version.ExecuteScalar()! == 0)
+        long currentVersion = (long)version.ExecuteScalar()!;
+        if (currentVersion > 2)
+            throw new InvalidDataException("This register database requires a newer version of kPOS.");
+        if (currentVersion == 0)
         {
             foreach (Product product in Product.TrainingCatalog)
                 WriteProduct(product, transaction);
-            using var setVersion = Command("PRAGMA user_version = 1", transaction);
-            setVersion.ExecuteNonQuery();
         }
+        if (currentVersion < 2)
+            CreateLedger(transaction);
 
         transaction.Commit();
     }

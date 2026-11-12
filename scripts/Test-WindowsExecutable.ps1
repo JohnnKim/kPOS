@@ -53,8 +53,22 @@ public static class KposExecutableTest
                     "show tax and the amount due at checkout");
                 EnterText(FindTextBox(checkout), "30.00", submit: false);
                 WaitUntil(() => HasText(checkout, "Change due: $5.32"), "calculate change");
+                var changeTime = Stopwatch.StartNew();
                 Send(FindTextBox(checkout), 0x0100, 0x0d); // Enter
-                WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "finish the cash sale");
+                WaitUntil(() => HasText(checkout, "CHANGE DUE\n$5.32\n\nCash sale recorded"), "show the cash change screen");
+                WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "return after the change display");
+                if (changeTime.Elapsed < TimeSpan.FromSeconds(7))
+                    throw new InvalidOperationException("The change screen closed before its default display time.");
+
+                EnterText(scanner, "101");
+                WaitUntil(() => HasText(register, "Added: Pale Ale"), "start the next sale");
+                Send(scanner, 0x0100, 0x78); // F9
+                checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
+                WaitUntil(() => HasText(checkout, "12.34"), "preselect the card amount");
+                Send(FindTextBox(checkout), 0x0100, 0x0d); // Enter
+                WaitUntil(() => HasText(checkout, "CHANGE DUE\n$0.00\n\nCard sale recorded"), "record the card sale");
+                Send(checkout, 0x0010, 0); // WM_CLOSE
+                WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "return after recording the card sale");
 
                 EnterText(scanner, "000000099999");
                 IntPtr prompt = FindWindow(desktop, process.ProcessId, "Unrecognized Product Code");
@@ -226,13 +240,20 @@ $smokeData = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPa
 try {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $smokeData.FullName)
     [KposExecutableTest]::Run((Resolve-Path -LiteralPath $Executable).ProviderPath)
-    Write-Output 'Packaged kPOS passed barcode entry, quick quantity, tax and cash checkout, and unrecognized-code prompts.'
+    Write-Output 'Packaged kPOS passed barcode entry, quick quantity, cash and external card checkout, change display, and product prompts.'
 }
 finally {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $previousData)
     foreach ($name in 'register.db', 'register.db-journal', 'register.db-wal', 'register.db-shm') {
-        $path = Join-Path $smokeData.FullName $name
+        $path = Join-Path $smokeData.FullName "Database/$name"
         if (Test-Path -LiteralPath $path -PathType Leaf) {
+            Remove-Item -LiteralPath $path
+        }
+    }
+    foreach ($folder in 'Records/End of Day', 'Records/Backups', 'Records', 'Database') {
+        $path = Join-Path $smokeData.FullName $folder
+        if ((Test-Path -LiteralPath $path -PathType Container) -and
+            -not (Get-ChildItem -LiteralPath $path -Force)) {
             Remove-Item -LiteralPath $path
         }
     }

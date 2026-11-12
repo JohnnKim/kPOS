@@ -1,22 +1,30 @@
+using System.Globalization;
+using Microsoft.Data.Sqlite;
+
 namespace Kpos;
 
 internal sealed class CheckoutForm : Form
 {
     private static readonly Color Navy = Color.FromArgb(24, 53, 82);
-    private readonly TextBox cash = new() { Dock = DockStyle.Fill, MaxLength = 16, AccessibleName = "Cash received" };
+    private readonly TextBox amount = new() { Dock = DockStyle.Fill, MaxLength = 16, AccessibleName = "Amount received" };
+    private readonly RadioButton card = new() { Text = "Card on terminal", AutoSize = true, Checked = true };
+    private readonly RadioButton cash = new() { Text = "Cash", AutoSize = true };
+    private readonly System.Windows.Forms.Timer changeTimer = new();
+    private bool settingAmount;
+    private bool recorded;
     private readonly Label feedback = new() { AutoSize = true, Margin = new Padding(3, 6, 3, 10) };
     private readonly Button complete = new()
     {
-        Text = "Complete Cash Sale", AutoSize = true, Enabled = false, DialogResult = DialogResult.OK
+        Text = "Record Card Sale", AutoSize = true
     };
 
     public decimal ChangeDue { get; private set; }
 
-    public CheckoutForm(Sale sale, SaleTotals totals)
+    public CheckoutForm(Sale sale, SaleTotals totals, int changeSeconds, Action<Payment> recordPayment)
     {
         Text = "Checkout (Training)";
         ClientSize = new Size(1000, 600);
-        MinimumSize = new Size(860, 510);
+        MinimumSize = new Size(900, 565);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
         MinimizeBox = false;
@@ -34,39 +42,131 @@ internal sealed class CheckoutForm : Form
         layout.Controls.Add(CreatePaymentSummary(totals), 1, 0);
         Controls.Add(layout);
         AcceptButton = complete;
-        Shown += (_, _) => cash.Focus();
-        cash.TextChanged += (_, _) => UpdateCash();
-        UpdateCash();
-
-        void UpdateCash()
+        SetCardAmount();
+        Shown += (_, _) => SelectAmount();
+        amount.TextChanged += (_, _) =>
         {
-            complete.Enabled = false;
-            ChangeDue = 0;
-            feedback.ForeColor = Navy;
-            if (string.IsNullOrWhiteSpace(cash.Text))
-            {
-                feedback.Text = "Enter cash received";
+            if (settingAmount)
                 return;
-            }
 
-            if (!Sale.TryParseMoney(cash.Text, out decimal received))
+            cash.Checked = true;
+            UpdatePayment();
+        };
+        card.CheckedChanged += (_, _) =>
+        {
+            if (card.Checked)
             {
-                feedback.Text = "Enter a dollar amount, such as 20.00";
-                feedback.ForeColor = Color.DarkRed;
-                return;
+                SetCardAmount();
+                SelectAmount();
             }
+        };
+        cash.Click += (_, _) => SelectAmount();
+        cash.CheckedChanged += (_, _) => UpdatePayment();
+        complete.Click += (_, _) => CompletePayment();
+        changeTimer.Interval = Math.Clamp(changeSeconds, 1, RegisterData.MaximumChangeSeconds) * 1000;
+        changeTimer.Tick += (_, _) =>
+        {
+            changeTimer.Stop();
+            DialogResult = DialogResult.OK;
+        };
+        UpdatePayment();
 
-            if (received < totals.Total)
-            {
-                feedback.Text = $"Balance remaining: {Sale.Money(totals.Total - received)}";
-                feedback.ForeColor = Color.DarkRed;
-                return;
-            }
-
-            ChangeDue = received - totals.Total;
-            feedback.Text = $"Change due: {Sale.Money(ChangeDue)}";
-            complete.Enabled = true;
+        void SetCardAmount()
+        {
+            settingAmount = true;
+            amount.Text = totals.Total.ToString("F2", CultureInfo.InvariantCulture);
+            settingAmount = false;
+            UpdatePayment();
         }
+
+        void SelectAmount()
+        {
+            amount.Focus();
+            amount.SelectAll();
+        }
+
+        bool TryGetPayment(out Payment payment)
+        {
+            if (card.Checked)
+            {
+                payment = new Payment(PaymentMethod.Card, totals.Total);
+                return true;
+            }
+
+            bool valid = Sale.TryParseMoney(amount.Text, out decimal received);
+            payment = new Payment(PaymentMethod.Cash, received);
+            return valid && received >= totals.Total;
+        }
+
+        void UpdatePayment()
+        {
+            complete.Enabled = TryGetPayment(out Payment payment);
+            complete.Text = card.Checked ? "Record Card Sale" : "Complete Cash Sale";
+            ChangeDue = complete.Enabled ? payment.Received - totals.Total : 0;
+            feedback.ForeColor = complete.Enabled ? Navy : Color.DarkRed;
+            feedback.Text = card.Checked
+                ? "Press Enter after the card terminal approves."
+                : complete.Enabled
+                    ? $"Change due: {Sale.Money(ChangeDue)}"
+                    : Sale.TryParseMoney(amount.Text, out decimal received)
+                        ? $"Balance remaining: {Sale.Money(totals.Total - received)}"
+                        : "Enter cash received, for example 20.00.";
+        }
+
+        void CompletePayment()
+        {
+            if (recorded || !TryGetPayment(out Payment payment))
+                return;
+
+            try
+            {
+                recordPayment(payment);
+            }
+            catch (SqliteException error)
+            {
+                MessageBox.Show(this,
+                    $"The sale could not be saved. Retry the record step using the same payment.\n\n{error.Message}",
+                    "Sale not saved", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            recorded = true;
+            AcceptButton = null;
+            CancelButton = null;
+            Controls.Remove(layout);
+            layout.Dispose();
+            ShowChange(payment);
+            changeTimer.Start();
+        }
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (recorded)
+            DialogResult = DialogResult.OK;
+        base.OnFormClosing(e);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            changeTimer.Dispose();
+        base.Dispose(disposing);
+    }
+
+    private void ShowChange(Payment payment)
+    {
+        BackColor = Navy;
+        var change = new Label
+        {
+            Text = $"CHANGE DUE\n{Sale.Money(ChangeDue)}\n\n" +
+                (payment.Method == PaymentMethod.Card ? "Card sale recorded" : "Cash sale recorded"),
+            Font = new Font(Font.FontFamily, 30, FontStyle.Bold),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            ForeColor = Color.White
+        };
+        Controls.Add(change);
     }
 
     private Control CreateReceipt(Sale sale)
@@ -137,13 +237,19 @@ internal sealed class CheckoutForm : Form
         AddAmount("Subtotal", Sale.Money(totals.Subtotal), 1);
         AddAmount("Discounts", Sale.Money(-totals.Discount), 2);
         AddAmount($"Sales tax ({Sale.Rate(totals.TaxRate)})", Sale.Money(totals.Tax), 3);
+        var methods = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill, AutoSize = true, Margin = new Padding(0, 12, 0, 2)
+        };
+        methods.Controls.AddRange([card, cash]);
+        AddWide(methods, 4);
         AddWide(new Label
         {
-            Text = "Cash received ($)", AutoSize = true, Margin = new Padding(3, 18, 3, 3)
-        }, 4);
-        cash.Font = new Font(Font.FontFamily, 17);
-        AddWide(cash, 5);
-        AddWide(feedback, 6);
+            Text = "Amount received ($)", AutoSize = true, Margin = new Padding(3, 8, 3, 3)
+        }, 5);
+        amount.Font = new Font(Font.FontFamily, 17);
+        AddWide(amount, 6);
+        AddWide(feedback, 7);
 
         var back = new Button { Text = "Back to Sale", AutoSize = true, DialogResult = DialogResult.Cancel };
         CancelButton = back;
@@ -152,7 +258,7 @@ internal sealed class CheckoutForm : Form
             Dock = DockStyle.Fill, AutoSize = true, WrapContents = true, Margin = new Padding(0)
         };
         actions.Controls.AddRange([complete, back]);
-        AddWide(actions, 7);
+        AddWide(actions, 8);
         return summary;
 
         void AddWide(Control control, int row)

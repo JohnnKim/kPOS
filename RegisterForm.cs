@@ -6,6 +6,7 @@ namespace Kpos;
 internal sealed class RegisterForm : Form
 {
     private readonly RegisterData data;
+    private readonly RegisterFolders folders;
     private decimal taxRate;
     private readonly Sale sale = new();
     private readonly Dictionary<Keys, Action> shortcuts = [];
@@ -45,9 +46,10 @@ internal sealed class RegisterForm : Form
     private readonly Label changeDue = CreateAmountLabel();
     private bool nextItemIsCase;
 
-    public RegisterForm(RegisterData data)
+    public RegisterForm(RegisterData data, RegisterFolders folders)
     {
         this.data = data;
+        this.folders = folders;
         taxRate = data.TaxRate;
         Text = "kPOS - Sales Entry (Training)";
         StartPosition = FormStartPosition.CenterScreen;
@@ -155,7 +157,11 @@ internal sealed class RegisterForm : Form
         AddCommand(lists, "&Product List", Keys.Control | Keys.L, ViewProducts);
         var settings = new ToolStripMenuItem("&Settings");
         settings.DropDownItems.Add(new ToolStripMenuItem("Sales &Tax Rate…", null, (_, _) => RunRegisterAction(EditTaxRate)));
-        menu.Items.AddRange([saleMenu, lists, settings]);
+        settings.DropDownItems.Add(new ToolStripMenuItem("&Change Display Duration…", null, (_, _) => RunRegisterAction(EditChangeDuration)));
+        var reports = new ToolStripMenuItem("&Records");
+        reports.DropDownItems.Add(new ToolStripMenuItem("&Daily Reports…", null, (_, _) => RunRegisterAction(ViewRecords)));
+        reports.DropDownItems.Add(new ToolStripMenuItem("Export &Backup…", null, (_, _) => ExportBackup()));
+        menu.Items.AddRange([saleMenu, lists, reports, settings]);
         return menu;
     }
 
@@ -360,7 +366,7 @@ internal sealed class RegisterForm : Form
 
     private void ViewProducts()
     {
-        using var dialog = new ProductListForm(data.ListProducts(), selectItem: false, data: data);
+        using var dialog = new ProductListForm(data.ListProducts(), selectItem: false, data: data, folders: folders);
         dialog.ShowDialog(this);
     }
 
@@ -434,7 +440,10 @@ internal sealed class RegisterForm : Form
             return;
         }
 
-        using var dialog = new CheckoutForm(sale, sale.GetTotals(taxRate));
+        Guid saleId = Guid.NewGuid();
+        SaleTotals totals = sale.GetTotals(taxRate);
+        using var dialog = new CheckoutForm(sale, totals, data.ChangeSeconds,
+            payment => data.RecordSale(saleId, DateTimeOffset.Now, sale, totals, payment));
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
 
@@ -444,6 +453,70 @@ internal sealed class RegisterForm : Form
         scanCode.Clear();
         status.Text = "Training sale complete. Ready to scan.";
         RefreshTicket();
+    }
+
+    private void EditChangeDuration()
+    {
+        using var dialog = new NumberEntryForm("Change Display Duration", "Seconds to show change due",
+            data.ChangeSeconds, 1, RegisterData.MaximumChangeSeconds, 0, _ => "");
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+        {
+            data.ChangeSeconds = (int)dialog.Value;
+            status.Text = $"Change due will display for {data.ChangeSeconds} seconds.";
+        }
+    }
+
+    private void ViewRecords()
+    {
+        using var dialog = new RecordsForm(data, folders);
+        dialog.ShowDialog(this);
+    }
+
+    private async void ExportBackup()
+    {
+        using var picker = new SaveFileDialog
+        {
+            Title = "Export Register Backup",
+            Filter = "ZIP archives (*.zip)|*.zip",
+            InitialDirectory = folders.Backups,
+            FileName = $"kPOS-backup-{DateTime.Now:yyyy-MM-dd_HHmmss}.zip",
+            OverwritePrompt = false
+        };
+        if (picker.ShowDialog(this) != DialogResult.OK)
+        {
+            FocusScanner();
+            return;
+        }
+
+        string destination = picker.FileName;
+        string source = data.DatabasePath;
+        try
+        {
+            UseWaitCursor = true;
+            status.Text = "Creating database backup…";
+            await Task.Run(() => RegisterData.ExportBackup(source, destination));
+            if (!IsDisposed)
+            {
+                status.Text = $"Backup saved: {Path.GetFileName(destination)}";
+                MessageBox.Show(this, $"Backup saved to:\n{destination}", "Backup Complete");
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or SqliteException)
+        {
+            if (!IsDisposed)
+            {
+                status.Text = "The backup could not be saved.";
+                MessageBox.Show(this, error.Message, "Backup Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        finally
+        {
+            if (!IsDisposed)
+            {
+                UseWaitCursor = false;
+                FocusScanner();
+            }
+        }
     }
 
     private void EditTaxRate()
