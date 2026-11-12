@@ -9,7 +9,8 @@ internal sealed record Product(
     string Size,
     decimal UnitPrice,
     int UnitsPerCase,
-    decimal CasePrice)
+    decimal CasePrice,
+    bool IsTaxable = true)
 {
     public static IReadOnlyList<Product> TrainingCatalog { get; } =
     [
@@ -21,9 +22,10 @@ internal sealed record Product(
         new("302", "000000000302", "London Dry Gin", "750 mL", 25.99m, 12, 289.99m)
     ];
 
-    public bool HasCode(string code) =>
-        Code.Equals(code, StringComparison.OrdinalIgnoreCase) ||
-        Barcode.Equals(code, StringComparison.OrdinalIgnoreCase);
+    public bool HasCasePrice => UnitsPerCase > 1;
+
+    public static bool IsQuantityCommand(string code) => code.Equals("Q", StringComparison.OrdinalIgnoreCase);
+
 }
 
 internal sealed record SaleLine(Product Product, bool IsCase, int Quantity = 1, decimal DiscountRate = 0)
@@ -35,6 +37,11 @@ internal sealed record SaleLine(Product Product, bool IsCase, int Quantity = 1, 
     public decimal Extended => Gross - Discount;
 }
 
+internal readonly record struct SaleTotals(decimal Subtotal, decimal Discount, decimal TaxRate, decimal Tax)
+{
+    public decimal Total => Subtotal - Discount + Tax;
+}
+
 internal sealed class Sale
 {
     private readonly List<SaleLine> lines = [];
@@ -42,7 +49,13 @@ internal sealed class Sale
     public IReadOnlyList<SaleLine> Lines => lines;
     public decimal Subtotal => lines.Sum(line => line.Gross);
     public decimal Discount => lines.Sum(line => line.Discount);
-    public decimal Total => Subtotal - Discount;
+
+    public SaleTotals GetTotals(decimal taxRate)
+    {
+        decimal taxable = lines.Where(line => line.Product.IsTaxable).Sum(line => line.Extended);
+        decimal tax = decimal.Round(taxable * taxRate / 100, 2, MidpointRounding.AwayFromZero);
+        return new SaleTotals(Subtotal, Discount, taxRate, tax);
+    }
 
     public int Add(Product product, bool isCase)
     {
@@ -69,6 +82,12 @@ internal sealed class Sale
     public void Delete(int index) => lines.RemoveAt(index);
 
     public void Clear() => lines.Clear();
+
+    public static bool TryParseMoney(string text, out decimal amount) =>
+        decimal.TryParse(text.Trim(), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out amount) &&
+        decimal.Round(amount, 2) == amount;
+
+    public static string Rate(decimal rate) => rate.ToString("0.####", CultureInfo.InvariantCulture) + "%";
 
     public static string Money(decimal amount) =>
         amount.ToString("C2", CultureInfo.GetCultureInfo("en-US"));

@@ -1,10 +1,12 @@
 using System.Globalization;
+using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
 internal sealed class RegisterForm : Form
 {
-    private readonly IReadOnlyList<Product> products;
+    private readonly RegisterData data;
+    private decimal taxRate;
     private readonly Sale sale = new();
     private readonly Dictionary<Keys, Action> shortcuts = [];
     private readonly TextBox scanCode = new()
@@ -37,13 +39,16 @@ internal sealed class RegisterForm : Form
     private readonly Label scanPrompt = new() { Text = "Scan item or enter code", AutoSize = true };
     private readonly Label subtotal = CreateAmountLabel();
     private readonly Label discounts = CreateAmountLabel();
+    private readonly Label taxCaption = new() { Anchor = AnchorStyles.Left, AutoSize = true };
+    private readonly Label tax = CreateAmountLabel();
     private readonly Label totalDue = CreateAmountLabel();
     private readonly Label changeDue = CreateAmountLabel();
     private bool nextItemIsCase;
 
-    public RegisterForm(IReadOnlyList<Product> products)
+    public RegisterForm(RegisterData data)
     {
-        this.products = products;
+        this.data = data;
+        taxRate = data.TaxRate;
         Text = "kPOS - Sales Entry (Training)";
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(980, 630);
@@ -71,7 +76,7 @@ internal sealed class RegisterForm : Form
 
         var help = new Label
         {
-            Text = "F3  Items     F4  Void Sale     F5  Delete Line     F6  Quantity     F7  Discount     F9  Finish Sale     F10  Case Sale",
+            Text = "F3  Items     F4  Void Sale     F5  Delete Line     Q + Enter  Quantity     F7  Discount     F9  Finish Sale     F10  Case Sale",
             AutoSize = true,
             Margin = new Padding(3, 6, 3, 0),
             ForeColor = Color.FromArgb(48, 64, 80)
@@ -94,8 +99,7 @@ internal sealed class RegisterForm : Form
     {
         if (shortcuts.TryGetValue(keys, out Action? command))
         {
-            command();
-            FocusScanner();
+            RunRegisterAction(command);
             return true;
         }
 
@@ -103,7 +107,7 @@ internal sealed class RegisterForm : Form
         {
             if (keys == Keys.Enter || (keys == Keys.Tab && scanCode.TextLength > 0))
             {
-                SubmitScan();
+                RunRegisterAction(SubmitScan);
                 return true;
             }
 
@@ -140,7 +144,7 @@ internal sealed class RegisterForm : Form
         AddCommand(saleMenu, "&Finish Sale", Keys.F9, FinishSale);
         AddCommand(saleMenu, "&Case Sale", Keys.F10, ArmCaseSale);
         saleMenu.DropDownItems.Add(new ToolStripSeparator());
-        AddCommand(saleMenu, "Edit &Quantity", Keys.F6, EditQuantity);
+        AddCommand(saleMenu, "Edit &Quantity", Keys.F6, EditQuantity).ShortcutKeyDisplayString = "Q + Enter / F6";
         AddCommand(saleMenu, "Line &Discount", Keys.F7, DiscountLine);
         AddCommand(saleMenu, "De&lete Line", Keys.F5, DeleteLine);
         AddCommand(saleMenu, "&Void Sale", Keys.F4, VoidSale);
@@ -149,20 +153,19 @@ internal sealed class RegisterForm : Form
         var lists = new ToolStripMenuItem("&Lists");
         AddCommand(lists, "&Item Lookup", Keys.F3, LookupItem);
         AddCommand(lists, "&Product List", Keys.Control | Keys.L, ViewProducts);
-        menu.Items.AddRange([saleMenu, lists]);
+        var settings = new ToolStripMenuItem("&Settings");
+        settings.DropDownItems.Add(new ToolStripMenuItem("Sales &Tax Rate…", null, (_, _) => RunRegisterAction(EditTaxRate)));
+        menu.Items.AddRange([saleMenu, lists, settings]);
         return menu;
     }
 
-    private void AddCommand(ToolStripMenuItem menu, string name, Keys key, Action command)
+    private ToolStripMenuItem AddCommand(ToolStripMenuItem menu, string name, Keys key, Action command)
     {
         shortcuts.Add(key, command);
         var item = new ToolStripMenuItem(name) { ShortcutKeys = key };
-        item.Click += (_, _) =>
-        {
-            command();
-            FocusScanner();
-        };
+        item.Click += (_, _) => RunRegisterAction(command);
         menu.DropDownItems.Add(item);
+        return item;
     }
 
     private Control CreateScanArea()
@@ -192,7 +195,7 @@ internal sealed class RegisterForm : Form
             Dock = DockStyle.Fill,
             AutoSize = true,
             ColumnCount = 2,
-            RowCount = 4,
+            RowCount = 5,
             BackColor = SystemColors.Window,
             Margin = new Padding(3, 10, 3, 0),
             Padding = new Padding(10, 4, 10, 4)
@@ -201,14 +204,16 @@ internal sealed class RegisterForm : Form
         totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         AddTotal("Subtotal", subtotal, 0);
         AddTotal("Discounts", discounts, 1);
-        AddTotal("Total due", totalDue, 2);
-        AddTotal("Change due", changeDue, 3);
+        AddTotal("Sales tax", tax, 2, taxCaption);
+        AddTotal("Total due", totalDue, 3);
+        AddTotal("Change due", changeDue, 4);
         return totals;
 
-        void AddTotal(string label, Label amount, int row)
+        void AddTotal(string label, Label amount, int row, Label? caption = null)
         {
             totals.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            var caption = new Label { Text = label, Anchor = AnchorStyles.Left, AutoSize = true };
+            caption ??= new Label { Anchor = AnchorStyles.Left, AutoSize = true };
+            caption.Text = label;
             if (amount == totalDue)
             {
                 Color ink = Color.FromArgb(24, 53, 82);
@@ -260,6 +265,24 @@ internal sealed class RegisterForm : Form
             scanCode.Focus();
     }
 
+    private void RunRegisterAction(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (SqliteException error)
+        {
+            status.Text = "Product database unavailable. Try again.";
+            MessageBox.Show(this, $"The register could not access its database.\n\n{error.Message}",
+                "Database error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            FocusScanner();
+        }
+    }
+
     private void SubmitScan()
     {
         string code = scanCode.Text.Trim();
@@ -267,18 +290,44 @@ internal sealed class RegisterForm : Form
         if (code.Length == 0)
             return;
 
-        Product? product = products.FirstOrDefault(product => product.HasCode(code));
-        if (product is null)
+        if (Product.IsQuantityCommand(code))
         {
-            status.Text = $"Code not found: {code}. Scan again or press F3 for item lookup.";
+            EditQuantity();
             return;
         }
 
-        AddItem(product);
+        Product? product = data.FindProduct(code);
+        if (product is not null)
+        {
+            AddItem(product);
+            return;
+        }
+
+        var choice = MessageBox.Show(this,
+            $"No product matches code {code}.\n\nAdd it to the product database?",
+            "Unrecognized Product Code", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button2);
+        if (choice == DialogResult.Yes)
+        {
+            using var editor = new ProductEditorForm(code, product => data.SaveProduct(product));
+            if (editor.ShowDialog(this) == DialogResult.OK && editor.SavedProduct is Product added)
+            {
+                AddItem(added);
+                return;
+            }
+        }
+
+        status.Text = $"Code {code} was not added. Ready to scan.";
     }
 
     private void AddItem(Product product)
     {
+        if (nextItemIsCase && !product.HasCasePrice)
+        {
+            status.Text = $"{product.Description} has no case price. Press Esc to return to unit sales.";
+            return;
+        }
+
         int selected = sale.Add(product, nextItemIsCase);
         status.Text = nextItemIsCase ? $"Case added: {product.Description}" : $"Added: {product.Description}";
         SetCaseSale(false);
@@ -301,7 +350,7 @@ internal sealed class RegisterForm : Form
 
     private void LookupItem()
     {
-        using var dialog = new ProductListForm(products, selectItem: true, scanCode.Text);
+        using var dialog = new ProductListForm(data.ListProducts(), selectItem: true, scanCode.Text);
         if (dialog.ShowDialog(this) == DialogResult.OK && dialog.SelectedProduct is Product product)
         {
             scanCode.Clear();
@@ -311,7 +360,7 @@ internal sealed class RegisterForm : Form
 
     private void ViewProducts()
     {
-        using var dialog = new ProductListForm(products, selectItem: false);
+        using var dialog = new ProductListForm(data.ListProducts(), selectItem: false, data: data);
         dialog.ShowDialog(this);
     }
 
@@ -332,24 +381,29 @@ internal sealed class RegisterForm : Form
         if (ticket.CurrentRow is not DataGridViewRow row)
             return;
 
+        string name = sale.Lines[row.Index].Product.Description;
         sale.Delete(row.Index);
-        status.Text = "Line deleted";
+        status.Text = $"Removed from sale: {name}";
         RefreshTicket(row.Index);
     }
 
     private void EditQuantity()
     {
         if (ticket.CurrentRow is not DataGridViewRow row)
+        {
+            status.Text = "Scan an item before editing its quantity.";
             return;
+        }
 
         int index = row.Index;
+        SaleLine line = sale.Lines[index];
         using var dialog = new NumberEntryForm(
-            "Edit Quantity", "Quantity", sale.Lines[index].Quantity,
+            "Edit Quantity", $"Quantity for {line.Product.Description}", line.Quantity,
             1, SaleLine.MaximumQuantity, 0, _ => "");
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             sale.SetQuantity(index, (int)dialog.Value);
-            status.Text = "Quantity updated";
+            status.Text = $"Quantity for {line.Product.Description}: {dialog.Value}";
             RefreshTicket(index);
         }
     }
@@ -380,20 +434,30 @@ internal sealed class RegisterForm : Form
             return;
         }
 
-        decimal total = sale.Total;
-        using var dialog = new NumberEntryForm(
-            "Cash Tender (Training)", $"Cash received. Total due: {Sale.Money(total)}", total,
-            total, Math.Max(total, 9999999.99m), 2,
-            received => $"Change due: {Sale.Money(received - total)}");
+        using var dialog = new CheckoutForm(sale, sale.GetTotals(taxRate));
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
 
-        changeDue.Text = Sale.Money(dialog.Value - total);
+        changeDue.Text = Sale.Money(dialog.ChangeDue);
         sale.Clear();
         SetCaseSale(false);
         scanCode.Clear();
         status.Text = "Training sale complete. Ready to scan.";
         RefreshTicket();
+    }
+
+    private void EditTaxRate()
+    {
+        using var dialog = new NumberEntryForm(
+            "Sales Tax Rate", "Sales tax rate (%)", taxRate, 0, 100, 4,
+            rate => $"Rate used at checkout: {Sale.Rate(rate)}");
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+        {
+            data.TaxRate = dialog.Value;
+            taxRate = dialog.Value;
+            status.Text = $"Sales tax rate saved: {Sale.Rate(taxRate)}";
+            RefreshTicket(ticket.CurrentRow?.Index ?? 0);
+        }
     }
 
     private bool Confirm(string message, string title) =>
@@ -420,8 +484,11 @@ internal sealed class RegisterForm : Form
         if (ticket.RowCount > 0)
             ticket.CurrentCell = ticket.Rows[Math.Min(selected, ticket.RowCount - 1)].Cells[0];
 
-        subtotal.Text = Sale.Money(sale.Subtotal);
-        discounts.Text = Sale.Money(sale.Discount);
-        totalDue.Text = Sale.Money(sale.Total);
+        SaleTotals totals = sale.GetTotals(taxRate);
+        subtotal.Text = Sale.Money(totals.Subtotal);
+        discounts.Text = Sale.Money(totals.Discount);
+        taxCaption.Text = $"Sales tax ({Sale.Rate(taxRate)})";
+        tax.Text = Sale.Money(totals.Tax);
+        totalDue.Text = Sale.Money(totals.Total);
     }
 }

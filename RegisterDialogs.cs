@@ -4,7 +4,8 @@ namespace Kpos;
 
 internal sealed class ProductListForm : Form
 {
-    private readonly IReadOnlyList<Product> products;
+    private IReadOnlyList<Product> products;
+    private readonly RegisterData? data;
     private readonly bool selectItem;
     private readonly TextBox search = new() { Dock = DockStyle.Fill, AccessibleName = "Find product" };
     private readonly DataGridView grid = new()
@@ -22,10 +23,11 @@ internal sealed class ProductListForm : Form
 
     public Product? SelectedProduct { get; private set; }
 
-    public ProductListForm(IReadOnlyList<Product> products, bool selectItem, string initialSearch = "")
+    public ProductListForm(IReadOnlyList<Product> products, bool selectItem, string initialSearch = "", RegisterData? data = null)
     {
         this.products = products;
         this.selectItem = selectItem;
+        this.data = data;
         Text = selectItem ? "Item Point & Select" : "Product List";
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(760, 420);
@@ -39,7 +41,7 @@ internal sealed class ProductListForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(12),
             ColumnCount = 2,
-            RowCount = 2
+            RowCount = data is null ? 2 : 3
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -57,6 +59,13 @@ internal sealed class ProductListForm : Form
         layout.Controls.Add(search, 1, 0);
         layout.Controls.Add(grid, 0, 1);
         layout.SetColumnSpan(grid, 2);
+        if (data is not null)
+        {
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            var edit = new Button { Text = "Edit Product…", AutoSize = true, Anchor = AnchorStyles.Right };
+            edit.Click += (_, _) => OpenSelectedProduct();
+            layout.Controls.Add(edit, 1, 2);
+        }
         Controls.Add(layout);
 
         grid.Columns.Add("Code", "Code");
@@ -83,7 +92,7 @@ internal sealed class ProductListForm : Form
         grid.CellDoubleClick += (_, e) =>
         {
             if (e.RowIndex >= 0)
-                SelectProduct();
+                OpenSelectedProduct();
         };
         Shown += (_, _) =>
         {
@@ -101,9 +110,9 @@ internal sealed class ProductListForm : Form
             return true;
         }
 
-        if (keys == Keys.Enter && selectItem)
+        if (keys == Keys.Enter && (selectItem || data is not null))
         {
-            SelectProduct();
+            OpenSelectedProduct();
             return true;
         }
 
@@ -133,17 +142,30 @@ internal sealed class ProductListForm : Form
 
             int row = grid.Rows.Add(
                 product.Code, product.Barcode, product.Description, product.Size,
-                product.UnitPrice, product.CasePrice);
+                product.UnitPrice, product.HasCasePrice ? (object)product.CasePrice : string.Empty);
             grid.Rows[row].Tag = product;
         }
     }
 
-    private void SelectProduct()
+    private void OpenSelectedProduct()
     {
-        if (selectItem && grid.CurrentRow?.Tag is Product product)
+        if (grid.CurrentRow?.Tag is not Product product)
+            return;
+
+        if (selectItem)
         {
             SelectedProduct = product;
             DialogResult = DialogResult.OK;
+        }
+        else if (data is not null)
+        {
+            using var editor = new ProductEditorForm(product.Barcode, updated => data.SaveProduct(updated, product), product);
+            if (editor.ShowDialog(this) == DialogResult.OK && editor.SavedProduct is Product updated)
+            {
+                products = products.Select(item => item == product ? updated : item)
+                    .OrderBy(item => item.Description, StringComparer.OrdinalIgnoreCase).ToArray();
+                Filter();
+            }
         }
     }
 }
@@ -187,7 +209,7 @@ internal sealed class NumberEntryForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         input.AccessibleName = label;
-        layout.Controls.Add(new Label { Text = label, AutoSize = true }, 0, 0);
+        layout.Controls.Add(new Label { Text = label, AutoSize = true, MaximumSize = new Size(330, 0) }, 0, 0);
         layout.Controls.Add(input, 0, 1);
         layout.Controls.Add(status, 0, 2);
 
@@ -213,11 +235,11 @@ internal sealed class NumberEntryForm : Form
             accept.Enabled = valid;
             Value = valid ? value : 0;
             status.Text = valid ? describe(value) : "Enter a value from " + minimum.ToString(InputCulture) +
-                " to " + maximum.ToString(InputCulture) + (precision == 0 ? " using whole numbers." : " with up to two decimal places.");
+                " to " + maximum.ToString(InputCulture) + (precision == 0 ? " using whole numbers." : $" with up to {precision} decimal places.");
         }
 
         input.TextChanged += (_, _) => UpdateValue();
-        input.Text = initial.ToString(precision == 0 ? "0" : "0.00", InputCulture);
+        input.Text = initial.ToString($"F{precision}", InputCulture);
         Shown += (_, _) =>
         {
             input.Focus();

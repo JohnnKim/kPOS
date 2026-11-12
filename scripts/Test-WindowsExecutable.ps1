@@ -35,43 +35,37 @@ public static class KposExecutableTest
 
             try
             {
-                IntPtr register = IntPtr.Zero;
-                WaitUntil(() =>
-                {
-                    EnumDesktopWindows(desktop, (window, _) =>
-                    {
-                        uint processId;
-                        GetWindowThreadProcessId(window, out processId);
-                        var title = new StringBuilder(128);
-                        GetWindowText(window, title, title.Capacity);
-                        if (processId == process.ProcessId && title.ToString() == "kPOS - Sales Entry (Training)")
-                            register = window;
-                        return register == IntPtr.Zero;
-                    }, IntPtr.Zero);
-                    return register != IntPtr.Zero;
-                }, "open Sales Entry");
+                IntPtr register = FindWindow(desktop, process.ProcessId, "kPOS - Sales Entry (Training)");
+                IntPtr scanner = FindTextBox(register);
+                WaitUntil(() => HasText(register, "Ready to scan"), "initialize the scan field");
 
-                IntPtr scanner = IntPtr.Zero;
-                WaitUntil(() =>
-                {
-                    EnumChildWindows(register, (window, _) =>
-                    {
-                        var className = new StringBuilder(128);
-                        GetClassName(window, className, className.Capacity);
-                        if (className.ToString().StartsWith("WindowsForms10.Edit.", StringComparison.OrdinalIgnoreCase))
-                            scanner = window;
-                        return scanner == IntPtr.Zero;
-                    }, IntPtr.Zero);
-                    return scanner != IntPtr.Zero && HasText(register, "Ready to scan");
-                }, "initialize the scan field");
-
-                foreach (char character in "000000000101")
-                    Send(scanner, 0x0102, character); // WM_CHAR
-                Send(scanner, 0x0100, 0x0d); // Enter
+                EnterText(scanner, "000000000101");
                 WaitUntil(() => HasText(register, "Added: Pale Ale"), "accept a barcode through the scan field");
 
-                Send(scanner, 0x0100, 0x74); // F5
-                WaitUntil(() => HasText(register, "Line deleted"), "remove the smoke-test sale line");
+                EnterText(scanner, "Q");
+                IntPtr quantity = FindWindow(desktop, process.ProcessId, "Edit Quantity");
+                EnterText(FindTextBox(quantity), "2");
+                WaitUntil(() => HasText(register, "Quantity for Pale Ale: 2"), "update the quantity from the scan field");
+
+                Send(scanner, 0x0100, 0x78); // F9
+                IntPtr checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
+                WaitUntil(() => HasText(checkout, "Sales tax (2.9%)") && HasText(checkout, "TOTAL DUE\n$24.68"),
+                    "show tax and the amount due at checkout");
+                EnterText(FindTextBox(checkout), "30.00", submit: false);
+                WaitUntil(() => HasText(checkout, "Change due: $5.32"), "calculate change");
+                Send(FindTextBox(checkout), 0x0100, 0x0d); // Enter
+                WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "finish the cash sale");
+
+                EnterText(scanner, "000000099999");
+                IntPtr prompt = FindWindow(desktop, process.ProcessId, "Unrecognized Product Code");
+                if (!PostMessage(prompt, 0x0111, (IntPtr)6, IntPtr.Zero)) // WM_COMMAND, Yes
+                    throw new Win32Exception();
+                IntPtr editor = FindWindow(desktop, process.ProcessId, "Add Product");
+                WaitUntil(() => HasText(editor, "Product name") && HasText(editor, "Unit price ($)"),
+                    "show product details for the unrecognized code");
+                Send(FindTextBox(editor), 0x0100, 0x1b); // Escape
+                WaitUntil(() => HasText(register, "Code 000000099999 was not added. Ready to scan."),
+                    "return to the register after canceling product entry");
                 Send(register, 0x0010, 0); // WM_CLOSE
                 uint exit;
                 if (WaitForSingleObject(process.Process, 5000) != 0 ||
@@ -93,6 +87,52 @@ public static class KposExecutableTest
         {
             CloseDesktop(desktop);
         }
+    }
+
+    private static IntPtr FindWindow(IntPtr desktop, uint processId, string expected)
+    {
+        IntPtr result = IntPtr.Zero;
+        WaitUntil(() =>
+        {
+            EnumDesktopWindows(desktop, (window, _) =>
+            {
+                uint owner;
+                GetWindowThreadProcessId(window, out owner);
+                var title = new StringBuilder(128);
+                GetWindowText(window, title, title.Capacity);
+                if (owner == processId && title.ToString() == expected)
+                    result = window;
+                return result == IntPtr.Zero;
+            }, IntPtr.Zero);
+            return result != IntPtr.Zero;
+        }, "open " + expected);
+        return result;
+    }
+
+    private static IntPtr FindTextBox(IntPtr parent)
+    {
+        IntPtr result = IntPtr.Zero;
+        WaitUntil(() =>
+        {
+            EnumChildWindows(parent, (window, _) =>
+            {
+                var className = new StringBuilder(128);
+                GetClassName(window, className, className.Capacity);
+                if (className.ToString().StartsWith("WindowsForms10.Edit.", StringComparison.OrdinalIgnoreCase))
+                    result = window;
+                return result == IntPtr.Zero;
+            }, IntPtr.Zero);
+            return result != IntPtr.Zero;
+        }, "find the text field");
+        return result;
+    }
+
+    private static void EnterText(IntPtr input, string text, bool submit = true)
+    {
+        foreach (char character in text)
+            Send(input, 0x0102, character); // WM_CHAR
+        if (submit)
+            Send(input, 0x0100, 0x0d); // Enter
     }
 
     private static void WaitUntil(Func<bool> condition, string operation)
@@ -181,5 +221,22 @@ public static class KposExecutableTest
 '@
 }
 
-[KposExecutableTest]::Run((Resolve-Path -LiteralPath $Executable).ProviderPath)
-Write-Output 'Packaged kPOS opened Sales Entry, accepted a barcode, and exited cleanly.'
+$previousData = [Environment]::GetEnvironmentVariable('KPOS_DATA_DIRECTORY')
+$smokeData = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) "kpos-smoke-$([guid]::NewGuid().ToString('N'))")
+try {
+    [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $smokeData.FullName)
+    [KposExecutableTest]::Run((Resolve-Path -LiteralPath $Executable).ProviderPath)
+    Write-Output 'Packaged kPOS passed barcode entry, quick quantity, tax and cash checkout, and unrecognized-code prompts.'
+}
+finally {
+    [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $previousData)
+    foreach ($name in 'register.db', 'register.db-journal', 'register.db-wal', 'register.db-shm') {
+        $path = Join-Path $smokeData.FullName $name
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            Remove-Item -LiteralPath $path
+        }
+    }
+    if (-not (Get-ChildItem -LiteralPath $smokeData.FullName -Force)) {
+        Remove-Item -LiteralPath $smokeData.FullName
+    }
+}

@@ -8,7 +8,8 @@ public sealed class RegisterTests
     [TestMethod]
     public void RegisterStartsWithAnEmptyTicketAndEditableScanField()
     {
-        using var register = new RegisterForm(Product.TrainingCatalog);
+        using var data = new RegisterData(":memory:");
+        using var register = new RegisterForm(data);
 
         var scanner = Find<TextBox>(register);
         var ticket = Find<DataGridView>(register);
@@ -38,19 +39,52 @@ public sealed class RegisterTests
     }
 
     [TestMethod]
-    [DataRow("11.98", false)]
-    [DataRow("11.99", true)]
-    [DataRow("20.00", true)]
-    [DataRow("20.001", false)]
-    [DataRow("cash", false)]
-    public void CashTenderValidatesTheAmount(string amount, bool accepted)
+    [DataRow("11.99", false, "0")]
+    [DataRow("12.34", true, "0")]
+    [DataRow("20.00", true, "7.66")]
+    [DataRow("20.001", false, "0")]
+    [DataRow("cash", false, "0")]
+    public void CashTenderUsesTheTaxInclusiveTotal(string amount, bool accepted, string change)
     {
-        using var tender = new NumberEntryForm(
-            "Cash Tender", "Cash received", 11.99m, 11.99m, 9999999.99m, 2, _ => "");
+        var sale = new Sale();
+        sale.Add(Product.TrainingCatalog[0], isCase: false);
+        using var checkout = new CheckoutForm(sale, sale.GetTotals(2.9m));
 
-        Find<TextBox>(tender).Text = amount;
+        Find<TextBox>(checkout).Text = amount;
 
-        Assert.AreEqual(accepted, ((Button)tender.AcceptButton!).Enabled);
+        Assert.AreEqual(accepted, ((Button)checkout.AcceptButton!).Enabled);
+        Assert.AreEqual(decimal.Parse(change, System.Globalization.CultureInfo.InvariantCulture), checkout.ChangeDue);
+    }
+
+    [TestMethod]
+    public void ProductEditorRequiresANameAndPriceAndPreservesTheScannedBarcode()
+    {
+        Product? saved = null;
+        using var editor = new ProductEditorForm("0006789", product => { saved = product; return null; });
+        var fields = Descendants(editor).OfType<TextBox>().ToDictionary(control => control.AccessibleName!);
+        var save = (Button)editor.AcceptButton!;
+
+        // Use the button's click path without a visible window.
+        void ClickSave() => typeof(Control).GetMethod("OnClick",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(save, [EventArgs.Empty]);
+
+        ClickSave();
+        Assert.IsNull(saved);
+        fields["Product name"].Text = "New product";
+        fields["Unit price"].Text = "1.234";
+        ClickSave();
+        Assert.IsNull(saved);
+        fields["Unit price"].Text = "1.23";
+        fields["Item code"].Text = "NEW-1";
+        ClickSave();
+
+        Assert.IsNotNull(saved);
+        Assert.AreEqual("0006789", saved.Barcode);
+        Assert.AreEqual("NEW-1", saved.Code);
+        Assert.AreEqual(1.23m, saved.UnitPrice);
+        Assert.IsTrue(saved.IsTaxable);
+        Assert.AreEqual(DialogResult.OK, editor.DialogResult);
     }
 
     private static T Find<T>(Control root) where T : Control =>

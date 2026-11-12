@@ -10,5 +10,6 @@
   <ItemGroup>
     <Compile Remove="tests/**/*.cs" />
     <InternalsVisibleTo Include="kPOS.Tests" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.15" />
   </ItemGroup>
 </Project>

@@ -17,7 +17,8 @@ public sealed class SaleTests
     [DataRow("000000000999", false)]
     public void BarcodeAndItemCodeMustMatchExactly(string code, bool matches)
     {
-        Assert.AreEqual(matches, Beer.HasCode(code));
+        using var data = new RegisterData(":memory:");
+        Assert.AreEqual(matches, data.FindProduct(code)?.Code == Beer.Code);
     }
 
     [TestMethod]
@@ -31,7 +32,7 @@ public sealed class SaleTests
         Assert.AreEqual(first, second);
         Assert.HasCount(1, sale.Lines);
         Assert.AreEqual(2, sale.Lines[0].Quantity);
-        Assert.AreEqual(23.98m, sale.Total);
+        Assert.AreEqual(23.98m, sale.GetTotals(0).Total);
     }
 
     [TestMethod]
@@ -47,7 +48,7 @@ public sealed class SaleTests
         Assert.IsFalse(sale.Lines[0].IsCase);
         Assert.IsTrue(sale.Lines[1].IsCase);
         Assert.AreEqual(2, sale.Lines[1].Quantity);
-        Assert.AreEqual(417.97m, sale.Total);
+        Assert.AreEqual(417.97m, sale.GetTotals(0).Total);
     }
 
     [TestMethod]
@@ -62,7 +63,7 @@ public sealed class SaleTests
         Assert.AreNotEqual(discounted, regular);
         Assert.AreEqual(6.00m, sale.Discount);
         Assert.AreEqual(0m, sale.Lines[regular].DiscountRate);
-        Assert.AreEqual(17.98m, sale.Total);
+        Assert.AreEqual(17.98m, sale.GetTotals(0).Total);
     }
 
     [TestMethod]
@@ -80,6 +81,22 @@ public sealed class SaleTests
     }
 
     [TestMethod]
+    public void SalesTaxUsesDiscountedTaxableLinesAndRoundsToCents()
+    {
+        var sale = new Sale();
+        int beer = sale.Add(Beer, isCase: false);
+        sale.SetDiscount(beer, 50m);
+        sale.Add(Wine with { IsTaxable = false }, isCase: false);
+
+        SaleTotals totals = sale.GetTotals(2.9m);
+
+        Assert.AreEqual(29.98m, totals.Subtotal);
+        Assert.AreEqual(6.00m, totals.Discount);
+        Assert.AreEqual(0.17m, totals.Tax);
+        Assert.AreEqual(24.15m, totals.Total);
+    }
+
+    [TestMethod]
     public void DeletingAndClearingLinesRecalculateTheTicket()
     {
         var sale = new Sale();
@@ -93,11 +110,11 @@ public sealed class SaleTests
         Assert.HasCount(1, sale.Lines);
         Assert.AreEqual(53.97m, sale.Subtotal);
         Assert.AreEqual(0m, sale.Discount);
-        Assert.AreEqual(53.97m, sale.Total);
+        Assert.AreEqual(53.97m, sale.GetTotals(0).Total);
 
         sale.Clear();
 
         Assert.IsEmpty(sale.Lines);
-        Assert.AreEqual(0m, sale.Total);
+        Assert.AreEqual(0m, sale.GetTotals(0).Total);
     }
 }
