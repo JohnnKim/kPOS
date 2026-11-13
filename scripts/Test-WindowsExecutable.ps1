@@ -3,7 +3,11 @@ param(
     [Parameter(Mandatory)]
     [string] $Executable,
 
-    [string] $PreviousExecutable
+    [string] $PreviousExecutable,
+
+    [string] $UpdateArchive,
+
+    [string] $UpdateVersion
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,13 +17,15 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
 public static class KposExecutableTest
 {
-    public static void Run(string executable)
+    public static void Run(string executable, bool automaticUpdate = false)
     {
         string desktopName = "kPOS-test-" + Guid.NewGuid().ToString("N");
         IntPtr desktop = CreateDesktop(desktopName, null, IntPtr.Zero, 0, 0x1ff, IntPtr.Zero);
@@ -160,6 +166,11 @@ public static class KposExecutableTest
                 IntPtr backup = FindWindow(desktop, process.ProcessId, "Export Backup");
                 WaitUntil(() => HasText(backup, "Choose &Location…"), "open backup options from the register");
                 Send(backup, 0x0010, 0); // WM_CLOSE
+                if (automaticUpdate)
+                {
+                    UpdateThroughRegister(desktop, process, scanner);
+                    return;
+                }
                 Send(register, 0x0010, 0); // WM_CLOSE
                 uint exit;
                 if (WaitForSingleObject(process.Process, 5000) != 0 ||
@@ -183,6 +194,86 @@ public static class KposExecutableTest
         }
     }
 
+    private static void UpdateThroughRegister(IntPtr desktop, ProcessInfo process, IntPtr scanner)
+    {
+        Send(scanner, 0x0100, 0x7b); // F12 opens the updater in the test build.
+        IntPtr update = FindWindow(desktop, process.ProcessId, "kPOS Updates");
+        IntPtr install = IntPtr.Zero;
+        WaitUntil(() => (install = FindChildWithText(update, "&Install and Restart")) != IntPtr.Zero &&
+            IsWindowEnabled(install), "find the available update");
+        Send(install, 0x00F5, 0); // Confirm exactly once.
+        if (WaitForSingleObject(process.Process, 45000) != 0)
+            throw new InvalidOperationException("The original register did not exit for the update.");
+
+        IntPtr reopened = FindWindow(desktop, 0, "kPOS - Sales Entry (Training)");
+        WaitUntil(() => HasText(reopened, "$1.91"), "reopen with the saved register history");
+        uint id;
+        GetWindowThreadProcessId(reopened, out id);
+        using (var restarted = Process.GetProcessById((int)id))
+        {
+            string expected = Path.Combine(Environment.GetEnvironmentVariable("KPOS_DATA_DIRECTORY"), "kPOS.exe");
+            if (!string.Equals(restarted.MainModule.FileName, expected, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The update did not relaunch the installed copy.");
+            Send(reopened, 0x0010, 0); // WM_CLOSE
+            if (!restarted.WaitForExit(10000))
+                throw new InvalidOperationException("The updated register did not close cleanly.");
+        }
+    }
+
+    public static IDisposable ServeRelease(string archive, string version, string digest, out string address)
+    {
+        var server = new TcpListener(IPAddress.Loopback, 0);
+        server.Start();
+        string origin = "http://127.0.0.1:" + ((IPEndPoint)server.LocalEndpoint).Port;
+        address = origin;
+        string name = Path.GetFileName(archive);
+        long size = new FileInfo(archive).Length;
+        string tag = "v" + version;
+        string route = "/download/" + tag + "/" + name;
+        string json = "[{\"tag_name\":\"" + tag + "\",\"draft\":false,\"assets\":[{\"name\":\"" + name +
+            "\",\"state\":\"uploaded\",\"digest\":\"sha256:" + digest + "\",\"size\":" + size +
+            ",\"browser_download_url\":\"" + origin + route + "\"}]}]";
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                while (true)
+                {
+                    using (var client = server.AcceptTcpClient())
+                    using (var stream = client.GetStream())
+                    using (var input = new StreamReader(stream, Encoding.ASCII))
+                    {
+                        string request = input.ReadLine() ?? "";
+                        for (string header = input.ReadLine(); !string.IsNullOrEmpty(header); header = input.ReadLine()) { }
+                        if (request.StartsWith("GET /releases ", StringComparison.Ordinal))
+                        {
+                            byte[] bytes = Encoding.UTF8.GetBytes(json);
+                            WriteHeaders(stream, "application/json", bytes.Length);
+                            stream.Write(bytes, 0, bytes.Length);
+                        }
+                        else if (request.StartsWith("GET " + route + " ", StringComparison.Ordinal))
+                        {
+                            WriteHeaders(stream, "application/zip", size);
+                            using (var payload = File.OpenRead(archive))
+                                payload.CopyTo(stream);
+                        }
+                    }
+                }
+            }
+            catch (SocketException) { }
+            catch (IOException) { }
+        }) { IsBackground = true };
+        thread.Start();
+        return server;
+    }
+
+    private static void WriteHeaders(Stream stream, string contentType, long length)
+    {
+        byte[] headers = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: " +
+            contentType + "\r\nContent-Length: " + length + "\r\n\r\n");
+        stream.Write(headers, 0, headers.Length);
+    }
+
     private static IntPtr FindWindow(IntPtr desktop, uint processId, string expected)
     {
         IntPtr result = IntPtr.Zero;
@@ -194,7 +285,7 @@ public static class KposExecutableTest
                 GetWindowThreadProcessId(window, out owner);
                 var title = new StringBuilder(128);
                 GetWindowText(window, title, title.Capacity);
-                if (owner == processId && title.ToString() == expected)
+                if ((processId == 0 || owner == processId) && title.ToString() == expected)
                     result = window;
                 return result == IntPtr.Zero;
             }, IntPtr.Zero);
@@ -341,6 +432,8 @@ public static class KposExecutableTest
 }
 
 $previousData = [Environment]::GetEnvironmentVariable('KPOS_DATA_DIRECTORY')
+$previousOrigin = [Environment]::GetEnvironmentVariable('KPOS_TEST_UPDATE_ORIGIN')
+$server = $null
 $smokeData = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) "kpos-smoke-$([guid]::NewGuid().ToString('N'))")
 try {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $smokeData.FullName)
@@ -355,7 +448,16 @@ try {
         $previousHash = (Get-FileHash -LiteralPath $installed).Hash
     }
 
-    [KposExecutableTest]::Run($source)
+    if ($UpdateArchive) {
+        $zip = (Resolve-Path -LiteralPath $UpdateArchive).ProviderPath
+        $digest = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+        $address = ''
+        $server = [KposExecutableTest]::ServeRelease($zip, $UpdateVersion, $digest, [ref] $address)
+        [Environment]::SetEnvironmentVariable('KPOS_TEST_UPDATE_ORIGIN', $address)
+        [KposExecutableTest]::Run($installed, $true)
+    } else {
+        [KposExecutableTest]::Run($source, $false)
+    }
 
     if ((Get-FileHash -LiteralPath $installed).Hash -ne (Get-FileHash -LiteralPath $source).Hash -or
         (Get-Item -LiteralPath $installed).IsReadOnly) {
@@ -368,11 +470,13 @@ try {
         throw 'The installation left behind a temporary executable.'
     }
 
-    $scenario = if ($PreviousExecutable) { 'upgrade' } else { 'first installation' }
+    $scenario = if ($UpdateArchive) { 'one-click upgrade and restart' } elseif ($PreviousExecutable) { 'upgrade' } else { 'first installation' }
     Write-Output "Packaged kPOS passed $scenario, barcode entry, item lookup, quantity, age display, lottery and misc entries, count confirmation, payment, change display, product deletion prompts, sales records, closeout, and ordering."
 }
 finally {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $previousData)
+    [Environment]::SetEnvironmentVariable('KPOS_TEST_UPDATE_ORIGIN', $previousOrigin)
+    if ($server) { $server.Dispose() }
     foreach ($name in 'kPOS.exe', 'kPOS.exe.previous') {
         $path = Join-Path $smokeData.FullName $name
         if (Test-Path -LiteralPath $path -PathType Leaf) {

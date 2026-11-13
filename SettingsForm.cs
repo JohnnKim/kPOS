@@ -4,7 +4,10 @@ namespace Kpos;
 
 internal sealed class SettingsForm : Form
 {
-    public SettingsForm(RegisterData data, RegisterFolders folders)
+    public bool RestartForUpdate { get; private set; }
+    public bool HistoryReset { get; private set; }
+
+    public SettingsForm(RegisterData data, RegisterFolders folders, bool registerIdle = true)
     {
         Text = "Settings";
         StartPosition = FormStartPosition.CenterParent;
@@ -27,12 +30,35 @@ internal sealed class SettingsForm : Form
         var path = new TextBox { ReadOnly = true, Text = folders.Root, Width = 430 };
         AddTab("Data", "Installation and records folder", path);
         var updates = PosView.Button("Check for Updates…", size: 11);
+        updates.Enabled = registerIdle;
         updates.Click += (_, _) =>
         {
-            using var window = new UpdateDownloadForm();
-            window.ShowDialog(this);
+            if (rate.Value != data.TaxRate || duration.Value != data.ChangeSeconds ||
+                requireCount.Checked != data.RequireItemCount || maximize.Checked != data.StartMaximized)
+            {
+                MessageBox.Show(this, "Save your settings before installing an update.", "kPOS Updates");
+                return;
+            }
+            using var window = new UpdateDownloadForm(folders);
+            if (window.ShowDialog(this) == DialogResult.OK)
+            {
+                RestartForUpdate = true;
+                DialogResult = DialogResult.OK;
+            }
         };
-        AddTab("Updates", $"Installed version {ReleaseVersion.RunningVersion}", updates);
+        AddTab("Updates", $"Installed version {ReleaseVersion.RunningVersion}", updates,
+            new Label { AutoSize = true, Text = "Finish the current sale or export before updating.", Visible = !registerIdle });
+
+        var testing = PosView.Button("Reset Test Day…", size: 11);
+        testing.Enabled = registerIdle;
+        testing.Click += (_, _) =>
+        {
+            using var window = new TrainingResetForm(data, folders);
+            if (window.ShowDialog(this) == DialogResult.OK)
+                HistoryReset = true;
+        };
+        AddTab("Testing", "Training data only", testing,
+            new Label { AutoSize = true, Text = "Finish the current sale or export before resetting.", Visible = !registerIdle });
 
         var save = PosView.Button("&Save Settings", primary: true, size: 11);
         var cancel = PosView.Button("Cancel", size: 11);

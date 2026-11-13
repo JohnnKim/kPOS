@@ -61,8 +61,17 @@ internal static class ReleaseUpdates
         if (!ReleaseVersion.TryParse(ReleaseVersion.RunningVersion, out ReleaseVersion running))
             throw new InvalidDataException("The installed kPOS version could not be identified.");
 
-        var releases = await Client.GetFromJsonAsync<GitHubRelease[]>(
-            $"https://api.github.com/repos/{Repository}/releases?per_page=30", cancellationToken).ConfigureAwait(false);
+        string api = $"https://api.github.com/repos/{Repository}/releases?per_page=30";
+        string downloadRoot = $"https://github.com/{Repository}/releases/download";
+#if KPOS_UPDATE_FIXTURE
+        if (Uri.TryCreate(Environment.GetEnvironmentVariable("KPOS_TEST_UPDATE_ORIGIN"), UriKind.Absolute, out Uri? fixture) &&
+            fixture.IsLoopback && fixture.Scheme == Uri.UriSchemeHttp)
+        {
+            api = new Uri(fixture, "/releases").AbsoluteUri;
+            downloadRoot = new Uri(fixture, "/download").AbsoluteUri;
+        }
+#endif
+        var releases = await Client.GetFromJsonAsync<GitHubRelease[]>(api, cancellationToken).ConfigureAwait(false);
         ReleasePackage? newest = null;
         ReleaseVersion selected = running;
         foreach (var release in releases ?? [])
@@ -73,7 +82,7 @@ internal static class ReleaseUpdates
 
             string name = $"kPOS-{tag[1..]}-win-x64.zip";
             var asset = release.Assets?.FirstOrDefault(entry => entry.Name == name && entry.State == "uploaded");
-            string url = $"https://github.com/{Repository}/releases/download/{tag}/{name}";
+            string url = $"{downloadRoot}/{tag}/{name}";
             if (asset is null || asset.DownloadUrl != url || asset.Size is <= 0 or > 1_000_000_000 ||
                 asset.Digest is not string digest || !digest.StartsWith("sha256:", StringComparison.Ordinal) ||
                 digest.Length != 71 || !digest[7..].All(Uri.IsHexDigit))
@@ -90,16 +99,6 @@ internal static class ReleaseUpdates
         CancellationToken cancellationToken)
     {
         string destination = Path.Combine(directory, release.FileName);
-        if (File.Exists(destination))
-        {
-            using var existing = File.OpenRead(destination);
-            byte[] hash = await SHA256.HashDataAsync(existing, cancellationToken).ConfigureAwait(false);
-            if (existing.Length != release.Size || !Convert.ToHexString(hash).Equals(release.Digest, StringComparison.OrdinalIgnoreCase))
-                throw new IOException("A different file with the same name exists. Choose another download folder.");
-            progress.Report(100);
-            return destination;
-        }
-
         string temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {

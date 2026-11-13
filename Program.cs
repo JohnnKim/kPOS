@@ -5,9 +5,21 @@ namespace Kpos;
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
+
+        if (args.Length == 4 && int.TryParse(args[1], out int processId) && processId > 0 &&
+            long.TryParse(args[2], out long started) && started > 0)
+        {
+            if (args[0] == "--install-update")
+            {
+                UpdateInstaller.InstallAfterExit(new RegisterFolders(args[3]), processId, started);
+                return;
+            }
+            if (args[0] == "--after-update")
+                UpdateInstaller.CleanAfterExit(args[3], processId, started);
+        }
 
         string settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "kPOS", "installation-folder.txt");

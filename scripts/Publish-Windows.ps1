@@ -38,11 +38,13 @@ try {
     # Use a lower-version copy of the same build to exercise Windows executable replacement.
     if ([version]($Version.Split('-')[0]) -gt [version]'0.0.0') {
         $previous = Join-Path $staging.FullName 'previous'
-        dotnet publish $app --no-restore --configuration Release --runtime win-x64 --self-contained --output $previous -warnaserror -p:Version=0.0.0 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false
+        dotnet publish $app --no-restore --configuration Release --runtime win-x64 --self-contained --output $previous -warnaserror -p:Version=0.0.0 -p:KposUpdateFixture=true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false
         if ($LASTEXITCODE -ne 0) {
             throw "Building the upgrade test fixture failed with exit code $LASTEXITCODE."
         }
-        & (Join-Path $PSScriptRoot 'Test-WindowsExecutable.ps1') -Executable $executable -PreviousExecutable (Join-Path $previous 'kPOS.exe')
+        $previousExecutable = Join-Path $previous 'kPOS.exe'
+        & (Join-Path $PSScriptRoot 'Test-WindowsExecutable.ps1') -Executable $executable -PreviousExecutable $previousExecutable
+        & (Join-Path $PSScriptRoot 'Test-WindowsExecutable.ps1') -Executable $executable -PreviousExecutable $previousExecutable -UpdateArchive $archive -UpdateVersion $Version
     }
 
     $checksum = Join-Path $staging.FullName $checksumName

@@ -174,6 +174,10 @@ internal sealed class RegisterForm : Form
         AddCommand(reports, "&Daily Reports…", Keys.Control | Keys.R, ViewRecords);
         AddCommand(reports, "&Orders…", Keys.Control | Keys.O, ViewOrders);
         AddCommand(reports, "Export &Backup…", Keys.Control | Keys.B, ExportBackup);
+        AddCommand(reports, "Check for &Updates…", Keys.Control | Keys.U, CheckForUpdates);
+#if KPOS_UPDATE_FIXTURE
+        shortcuts.Add(Keys.F12, CheckForUpdates);
+#endif
         menu.Items.AddRange([saleMenu, lists, reports, settings]);
         return menu;
     }
@@ -676,11 +680,34 @@ internal sealed class RegisterForm : Form
         }
     }
 
+    private void CheckForUpdates()
+    {
+        if (sale.Lines.Count > 0 || exporting)
+        {
+            MessageBox.Show(this, "Finish the current sale or export before updating.", "kPOS Updates");
+            return;
+        }
+        using var window = new UpdateDownloadForm(folders);
+        if (window.ShowDialog(this) == DialogResult.OK)
+            Close();
+    }
+
     private void ViewSettings()
     {
-        using var dialog = new SettingsForm(data, folders);
-        if (dialog.ShowDialog(this) != DialogResult.OK)
+        using var dialog = new SettingsForm(data, folders, registerIdle: sale.Lines.Count == 0 && !exporting);
+        DialogResult result = dialog.ShowDialog(this);
+        if (dialog.HistoryReset)
+        {
+            ShowLastChange(data.LastChange());
+            status.Text = "Test day reset.";
+        }
+        if (result != DialogResult.OK)
             return;
+        if (dialog.RestartForUpdate)
+        {
+            Close();
+            return;
+        }
 
         taxRate = data.TaxRate;
         WindowState = data.StartMaximized ? FormWindowState.Maximized : FormWindowState.Normal;

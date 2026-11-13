@@ -10,6 +10,9 @@
   <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
     <DefineConstants>$(DefineConstants);KPOS_SINGLE_FILE</DefineConstants>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(KposUpdateFixture)' == 'true'">
+    <DefineConstants>$(DefineConstants);KPOS_UPDATE_FIXTURE</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <Compile Remove="tests/**/*.cs" />
     <InternalsVisibleTo Include="kPOS.Tests" />
