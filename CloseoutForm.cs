@@ -29,50 +29,68 @@ internal sealed class CloseoutForm : Form
         this.data = data;
         this.folders = folders;
         Text = "End of Day Closeout";
-        ClientSize = new Size(800, 575);
-        MinimumSize = new Size(600, 520);
+        ClientSize = new Size(940, 610);
+        MinimumSize = new Size(790, 575);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
         Font = PosView.Text(11);
         BackColor = PosView.Canvas;
-        foreach (Label label in new[] { salesSummary, reconciliation })
-        {
-            label.BackColor = Color.White;
-            label.BorderStyle = BorderStyle.FixedSingle;
-            label.ForeColor = PosView.Ink;
-            label.Font = PosView.Text(13, FontStyle.Bold);
-            label.Padding = new Padding(9);
-        }
+        date.Width = 127;
+        date.AccessibleName = "Business date";
         date.Value = data.FirstOpenDayWithSales(DateOnly.FromDateTime(DateTime.Today)).ToDateTime(TimeOnly.MinValue);
 
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, AutoScroll = true, ColumnCount = 2, RowCount = 11, Padding = new Padding(14)
+            Dock = DockStyle.Fill, AutoScroll = true, ColumnCount = 2, RowCount = 5, Padding = new Padding(14)
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (int row = 0; row < layout.RowCount; row++)
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 47));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 53));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 61));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 235));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 183));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        Field("Business date", date, 0);
-        Wide(salesSummary, 1);
-        Field("Opening drawer ($)", opening, 2);
-        var countControls = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
-        cash.Width = 130;
-        cash.Dock = DockStyle.None;
-        countControls.Controls.AddRange([cash, count]);
-        Field("Cash counted ($)", countControls, 3);
-        Field("Card terminal total ($)", card, 4);
-        Field("Next bank ($)", bank, 5);
-        Field("Notes", notes, 6);
-        Wide(reconciliation, 7);
-        Wide(feedback, 8);
+        var header = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = PosView.Navy, Padding = new Padding(10, 6, 10, 4) };
+        var title = PosView.Label("End of Day", 23, FontStyle.Bold, Color.White);
+        title.Margin = new Padding(3, 0, 30, 3);
+        var dateLabel = PosView.Label("&Business date", 11, FontStyle.Bold, Color.White);
+        dateLabel.Margin = new Padding(3, 12, 3, 3);
+        date.Margin = new Padding(3, 9, 3, 3);
+        header.Controls.AddRange([title, dateLabel, date]);
+        Wide(header, 0);
+
+        var salesPanel = Section("Sales Summary", 0, 1);
+        salesPanel.Controls.Add(salesSummary, 0, 1);
+        salesPanel.SetColumnSpan(salesSummary, 2);
+
+        var drawer = Section("Drawer and Terminal", 1, 1);
+        Field(drawer, "Opening drawer ($)", opening, 1);
+        Field(drawer, "Counted cash ($)", cash, 2);
+        Field(drawer, "Terminal total ($)", card, 3);
+        Field(drawer, "Next bank ($)", bank, 4);
+        count.Anchor = AnchorStyles.Right;
+        drawer.Controls.Add(count, 0, 5);
+        drawer.SetColumnSpan(count, 2);
+
+        var balance = Section("Reconciliation", 0, 2);
+        balance.Controls.Add(reconciliation, 0, 1);
+        balance.SetColumnSpan(reconciliation, 2);
+
+        var notesPanel = Section("Notes", 1, 2);
+        notes.Height = 108;
+        notes.AccessibleName = "Closeout notes";
+        notesPanel.Controls.Add(notes, 0, 1);
+        notesPanel.SetColumnSpan(notes, 2);
+
+        feedback.Margin = new Padding(5, 6, 3, 4);
+        feedback.ForeColor = PosView.Muted;
+        Wide(feedback, 3);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
-        actions.Controls.AddRange([closeDay, print, archive]);
-        Wide(actions, 9);
         var dismiss = PosView.Button("Close", size: 10);
         dismiss.DialogResult = DialogResult.Cancel;
-        actions.Controls.Add(dismiss);
+        actions.Controls.AddRange([closeDay, print, archive, dismiss]);
+        Wide(actions, 4);
         CancelButton = dismiss;
         Controls.Add(layout);
 
@@ -90,10 +108,25 @@ internal sealed class CloseoutForm : Form
         archive.Click += (_, _) => SaveArchive();
         LoadDay();
 
-        void Field(string title, Control input, int row)
+        TableLayoutPanel Section(string heading, int column, int row)
         {
-            layout.Controls.Add(new Label { Text = title, Anchor = AnchorStyles.Left, AutoSize = true }, 0, row);
-            layout.Controls.Add(input, 1, row);
+            var panel = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+            var title = PosView.Label(heading, 15, FontStyle.Bold);
+            title.Margin = new Padding(3, 0, 3, 8);
+            panel.Controls.Add(title, 0, 0);
+            panel.SetColumnSpan(title, 2);
+            layout.Controls.Add(PosView.Frame(panel, new Padding(10, 7, 10, 7)), column, row);
+            return panel;
+        }
+
+        static void Field(TableLayoutPanel panel, string title, Control input, int row)
+        {
+            var label = PosView.Label(title, 11, color: PosView.Muted);
+            label.Anchor = AnchorStyles.Left;
+            panel.Controls.Add(label, 0, row);
+            panel.Controls.Add(input, 1, row);
         }
 
         void Wide(Control control, int row)
@@ -121,8 +154,10 @@ internal sealed class CloseoutForm : Form
         print.Enabled = archive.Enabled = saved is not null;
         feedback.Text = saved is not null ? $"Closed {saved.ClosedAt.LocalDateTime:g}."
             : sales.Count == 0 ? "No completed sales for this date." : "";
-        salesSummary.Text = $"{sales.Count:N0} sales   •   Total {Sale.Money(sales.Total)}   •   Lottery {Sale.Money(sales.Lottery)}\n" +
-            $"Subtotal {Sale.Money(sales.Subtotal)}   •   Discounts {Sale.Money(sales.Discounts)}   •   Tax {Sale.Money(sales.Tax)}";
+        salesSummary.Text = $"Total sales    {Sale.Money(sales.Total)}\n" +
+            $"Completed sales    {sales.Count:N0}\nGross subtotal    {Sale.Money(sales.Subtotal)}\n" +
+            $"Discounts    {Sale.Money(sales.Discounts)}\nSales tax    {Sale.Money(sales.Tax)}\n" +
+            $"Lottery included    {Sale.Money(sales.Lottery)}";
         RefreshReconciliation();
     }
 
@@ -208,9 +243,9 @@ internal sealed class CloseoutForm : Form
             using var text = new Font(Font.FontFamily, 10);
             page.Graphics!.DrawString(
                 $"kPOS End of Day Closeout\nBusiness date: {report.Day:d}\nClosed: {report.ClosedAt.LocalDateTime:g}\n\n" +
-                $"{salesSummary.Text}\n\nOpening drawer: {Sale.Money(report.Opening)}\n" +
+                $"Sales: {report.Sales.Count:N0}\nGross subtotal: {Sale.Money(report.Sales.Subtotal)}\nDiscounts: {Sale.Money(report.Sales.Discounts)}\nSales tax: {Sale.Money(report.Sales.Tax)}\nLottery included: {Sale.Money(report.Sales.Lottery)}\nTotal sales: {Sale.Money(report.Sales.Total)}\n\nOpening drawer: {Sale.Money(report.Opening)}\n" +
                 $"Cash counted: {Sale.Money(report.CashCounted)}\nCard terminal total: {Sale.Money(report.CardCounted)}\n" +
-                $"Next bank: {Sale.Money(report.NextBank)}\n{reconciliation.Text}\n\nNotes\n{report.Notes}",
+                $"Next bank: {Sale.Money(report.NextBank)}\nExpected cash: {Sale.Money(report.ExpectedCash)}\nExpected card: {Sale.Money(report.Sales.Card)}\nCash over/short: {Sale.Money(report.CashDifference)}\nCard over/short: {Sale.Money(report.CardDifference)}\nCash to deposit: {Sale.Money(report.CashDeposit)}\n\nNotes\n{report.Notes}",
                 text, Brushes.Black, page.MarginBounds);
         };
         using var dialog = new PrintDialog { Document = document, UseEXDialog = true };
@@ -224,6 +259,8 @@ internal sealed class CloseoutForm : Form
             MessageBox.Show(this, error.Message, "Print Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
+
+    private static string MoneyOrDash(decimal? value) => value is decimal amount ? Sale.Money(amount) : "—";
 
     private static TextBox AmountBox(string name) => new() { AccessibleName = name, Dock = DockStyle.Fill, MaxLength = 13 };
     private static string AmountText(decimal amount) => amount.ToString("F2", CultureInfo.InvariantCulture);

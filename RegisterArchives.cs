@@ -202,7 +202,7 @@ internal sealed partial class RegisterData
         }
     }
 
-    private static string CsvText(string text)
+    internal static string CsvText(string text)
     {
         if (text.Length > 0 && ("=+-@\t\r\n".Contains(text.TrimStart(' ').FirstOrDefault()) ||
             (text.Length > 1 && text[0] == '0' && text.All(char.IsAsciiDigit))))

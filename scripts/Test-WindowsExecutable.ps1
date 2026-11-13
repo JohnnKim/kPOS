@@ -73,6 +73,7 @@ public static class KposExecutableTest
                     HasText(checkout, "$30.00"), "show the full cash change summary");
                 WaitUntil(() => HasText(checkout, "Next sale in 7s\nEnter to continue"), "count down from the default display time");
                 WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "return after the change display");
+                WaitUntil(() => HasText(register, "Last change") && HasText(register, "$5.32"), "keep the previous change on the register");
                 if (changeTime.Elapsed < TimeSpan.FromSeconds(7))
                     throw new InvalidOperationException("The change screen closed before its default display time.");
 
@@ -81,6 +82,9 @@ public static class KposExecutableTest
                 WaitUntil(() => HasText(lookup, "1 matching product"), "find the item by a typed name");
                 Send(FindTextBox(lookup), 0x0100, 0x0d); // Enter
                 WaitUntil(() => HasText(register, "Added: Pale Ale"), "add the lookup result without a mouse");
+                Send(scanner, 0x0100, 0x74); // F5
+                IntPtr voidProduct = FindWindow(desktop, process.ProcessId, "Void Product");
+                Send(voidProduct, 0x0111, 7); // No
                 Send(scanner, 0x0100, 0x78); // F9
                 checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
                 countInput = FindCountField(checkout, "12.34", out cashInput);
@@ -133,8 +137,25 @@ public static class KposExecutableTest
                     "return to the register after canceling product entry");
                 Send(FindChildWithText(register, "End of &Day"), 0x00F5, 0); // BM_CLICK
                 IntPtr closeout = FindWindow(desktop, process.ProcessId, "End of Day Closeout");
-                WaitUntil(() => HasText(closeout, "&Close Day"), "open closeout from its register button");
+                WaitUntil(() => HasText(closeout, "&Close Day") && HasText(closeout, "Sales Summary") &&
+                    HasText(closeout, "Drawer and Terminal") && HasText(closeout, "Reconciliation"),
+                    "show the organized closeout sections");
                 Send(closeout, 0x0010, 0); // WM_CLOSE
+                Send(FindChildWithText(register, "&Reports"), 0x00F5, 0); // BM_CLICK
+                IntPtr records = FindWindow(desktop, process.ProcessId, "Sales Records");
+                WaitUntil(() => HasText(records, "&Archive Day"), "open Sales Records");
+                Send(records, 0x0010, 0); // WM_CLOSE
+                Send(FindChildWithText(register, "Or&ders"), 0x00F5, 0); // BM_CLICK
+                IntPtr orders = FindWindow(desktop, process.ProcessId, "Orders");
+                WaitUntil(() => HasText(orders, "&Export Order…") && HasText(orders, "&Stock…"), "open the order worksheet");
+                Send(orders, 0x0010, 0); // WM_CLOSE
+                Send(FindChildWithText(register, "Catalo&g"), 0x00F5, 0); // BM_CLICK
+                IntPtr catalog = FindWindow(desktop, process.ProcessId, "Product List");
+                WaitUntil(() => HasText(catalog, "&Delete Product") && HasText(catalog, "&Import Image"), "open the catalog actions");
+                Send(FindChildWithText(catalog, "&Delete Product"), 0x00F5, 0); // BM_CLICK
+                IntPtr deleteProduct = FindWindow(desktop, process.ProcessId, "Delete Product");
+                Send(deleteProduct, 0x0111, 7); // No
+                Send(catalog, 0x0010, 0); // WM_CLOSE
                 Send(FindChildWithText(register, "Export &Backup"), 0x00F5, 0); // BM_CLICK
                 IntPtr backup = FindWindow(desktop, process.ProcessId, "Export Backup");
                 WaitUntil(() => HasText(backup, "Choose &Location…"), "open backup options from the register");
@@ -348,7 +369,7 @@ try {
     }
 
     $scenario = if ($PreviousExecutable) { 'upgrade' } else { 'first installation' }
-    Write-Output "Packaged kPOS passed $scenario, barcode entry, item lookup, quantity, age display, lottery and misc entries, count confirmation, payment, countdown, and Enter dismissal."
+    Write-Output "Packaged kPOS passed $scenario, barcode entry, item lookup, quantity, age display, lottery and misc entries, count confirmation, payment, change display, product deletion prompts, sales records, closeout, and ordering."
 }
 finally {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $previousData)

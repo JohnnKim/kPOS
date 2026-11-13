@@ -46,6 +46,7 @@ internal sealed class RegisterForm : Form
     private readonly Label taxCaption = new() { Anchor = AnchorStyles.Left, AutoSize = true };
     private readonly Label tax = CreateAmountLabel();
     private readonly Label totalDue = CreateAmountLabel();
+    private readonly Label lastChange = CreateAmountLabel();
     private bool nextItemIsCase;
     private bool exporting;
 
@@ -87,7 +88,7 @@ internal sealed class RegisterForm : Form
         layout.Controls.Add(CreateScanArea(), 0, 3);
 
         var side = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(4, 0, 0, 0) };
-        side.RowStyles.Add(new RowStyle(SizeType.Absolute, 246));
+        side.RowStyles.Add(new RowStyle(SizeType.Absolute, 276));
         side.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         side.Controls.Add(CreateTotals(), 0, 0);
         side.Controls.Add(CreateHotkeys(), 0, 1);
@@ -106,6 +107,7 @@ internal sealed class RegisterForm : Form
         menu.MenuDeactivate += (_, _) => FocusScanner();
         ticket.MouseUp += (_, _) => FocusScanner();
         RefreshTicket();
+        ShowLastChange(data.LastChange());
     }
 
     protected override bool ProcessCmdKey(ref Message message, Keys keys)
@@ -170,6 +172,7 @@ internal sealed class RegisterForm : Form
         var reports = new ToolStripMenuItem("&Records");
         AddCommand(reports, "&End of Day…", Keys.Control | Keys.E, ViewCloseout);
         AddCommand(reports, "&Daily Reports…", Keys.Control | Keys.R, ViewRecords);
+        AddCommand(reports, "&Orders…", Keys.Control | Keys.O, ViewOrders);
         AddCommand(reports, "Export &Backup…", Keys.Control | Keys.B, ExportBackup);
         menu.Items.AddRange([saleMenu, lists, reports, settings]);
         return menu;
@@ -211,6 +214,7 @@ internal sealed class RegisterForm : Form
         Add("Catalo&g", ViewProducts);
         Add("End of &Day", ViewCloseout);
         Add("&Reports", ViewRecords);
+        Add("Or&ders", ViewOrders);
         Add("Export &Backup", ExportBackup);
         Add("Se&ttings", ViewSettings);
         return actions;
@@ -246,7 +250,7 @@ internal sealed class RegisterForm : Form
 
     private Control CreateTotals()
     {
-        var totals = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 5 };
+        var totals = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 6 };
         totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 53));
         totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 47));
         AddTotal("Merchandise", subtotal, 0);
@@ -268,6 +272,7 @@ internal sealed class RegisterForm : Form
         total.Controls.Add(totalDue, 0, 1);
         totals.Controls.Add(total, 0, 4);
         totals.SetColumnSpan(total, 2);
+        AddTotal("Last change", lastChange, 5);
         return PosView.Frame(totals, new Padding(11));
 
         void AddTotal(string label, Label amount, int row, Label? caption = null)
@@ -290,11 +295,11 @@ internal sealed class RegisterForm : Form
         section.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         section.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         section.Controls.Add(PosView.Label("REGISTER KEYS", 11, FontStyle.Bold, PosView.Muted), 0, 0);
-        var tiles = new TableLayoutPanel { Dock = DockStyle.Top, Height = 155, ColumnCount = 2, RowCount = 5 };
+        var tiles = new TableLayoutPanel { Dock = DockStyle.Top, Height = 140, ColumnCount = 2, RowCount = 5 };
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         for (int i = 0; i < 5; i++)
-            tiles.RowStyles.Add(new RowStyle(SizeType.Absolute, 31));
+            tiles.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         (string Key, string Action)[] keys =
         [
             ("Q", "Quantity"), ("F3", "Lookup"),
@@ -326,7 +331,7 @@ internal sealed class RegisterForm : Form
         section.Controls.Add(tiles, 0, 1);
         var frame = PosView.Frame(section, new Padding(9, 7, 9, 5));
         frame.Dock = DockStyle.Top;
-        frame.Height = 200;
+        frame.Height = 182;
         return frame;
     }
 
@@ -487,7 +492,11 @@ internal sealed class RegisterForm : Form
         if (ticket.CurrentRow is not DataGridViewRow row)
             return;
 
-        string name = sale.Lines[row.Index].Product.Description;
+        SaleLine line = sale.Lines[row.Index];
+        string name = line.Product.Description;
+        if (!Confirm($"Remove {line.Quantity:N0} × {name} ({Sale.Money(line.Extended)}) from this sale?", "Void Product"))
+            return;
+
         sale.Delete(row.Index);
         status.Text = $"Removed from sale: {name}";
         RefreshTicket(row.Index);
@@ -554,6 +563,7 @@ internal sealed class RegisterForm : Form
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
 
+        ShowLastChange(dialog.ChangeDue);
         sale.Clear();
         SetCaseSale(false);
         scanCode.Clear();
@@ -592,6 +602,14 @@ internal sealed class RegisterForm : Form
         }
 
         using var dialog = new CloseoutForm(data, folders);
+        dialog.ShowDialog(this);
+    }
+
+    private void ShowLastChange(decimal? change) => lastChange.Text = change is decimal amount ? Sale.Money(amount) : "—";
+
+    private void ViewOrders()
+    {
+        using var dialog = new OrderForm(data);
         dialog.ShowDialog(this);
     }
 

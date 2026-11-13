@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
@@ -6,6 +7,8 @@ internal sealed class ProductListForm : Form
 {
     private IReadOnlyList<Product> products;
     private Product[] matches = [];
+    private readonly CheckBox deleted = new() { Text = "Show &Deleted", AutoSize = true };
+    private readonly Button delete = PosView.Button("&Delete Product", size: 10);
     private readonly RegisterData? data;
     private readonly RegisterFolders? folders;
     private readonly bool selectItem;
@@ -77,12 +80,32 @@ internal sealed class ProductListForm : Form
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
         if (data is not null)
         {
-            var edit = PosView.Button("&Edit Product", size: 11);
+            var edit = PosView.Button("&Edit Product", size: 10);
             edit.Click += (_, _) => OpenSelectedProduct();
             actions.Controls.Add(edit);
-            var history = PosView.Button("Item &History", size: 11);
+            var history = PosView.Button("Item &History", size: 10);
             history.Click += (_, _) => ShowItemHistory();
             actions.Controls.Add(history);
+            var image = PosView.Button("&Import Image", size: 10);
+            image.Click += (_, _) =>
+            {
+                using var import = new CatalogImportForm(data);
+                if (import.ShowDialog(this) == DialogResult.OK)
+                    ReloadProducts();
+            };
+            actions.Controls.Add(image);
+            delete.Click += (_, _) => SetDeleted();
+            actions.Controls.Add(delete);
+            deleted.Anchor = AnchorStyles.Left;
+            deleted.Margin = new Padding(6, 12, 3, 3);
+            actions.Controls.Add(deleted);
+            deleted.CheckedChanged += (_, _) =>
+            {
+                delete.Text = deleted.Checked ? "&Restore Product" : "&Delete Product";
+                edit.Enabled = !deleted.Checked;
+                image.Enabled = !deleted.Checked;
+                ReloadProducts();
+            };
         }
         if (allowAddCode)
         {
@@ -208,7 +231,7 @@ internal sealed class ProductListForm : Form
             1 => "1 matching product",
             _ => $"{matches.Length:N0} matching products"
         };
-        select.Enabled = matches.Length > 0;
+        select.Enabled = delete.Enabled = matches.Length > 0;
         add.Enabled = allowAddCode && query.Length > 0 && matches.Length == 0 &&
             !products.Any(product => string.Equals(product.Code, query, StringComparison.OrdinalIgnoreCase) ||
                                      string.Equals(product.Barcode, query, StringComparison.OrdinalIgnoreCase));
@@ -217,6 +240,33 @@ internal sealed class ProductListForm : Form
     }
 
     private Product? CurrentProduct => grid.CurrentRow is DataGridViewRow row ? matches[row.Index] : null;
+
+    private void ReloadProducts()
+    {
+        if (data is not null)
+            products = data.ListProducts(archived: deleted.Checked);
+        Filter();
+    }
+
+    private void SetDeleted()
+    {
+        if (data is null || CurrentProduct is not Product product)
+            return;
+        bool removing = !deleted.Checked;
+        if (removing && MessageBox.Show(this,
+                $"Delete {product.Description} ({product.Code}) from the catalog? Past sales will remain available.",
+                "Delete Product", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+            return;
+        try
+        {
+            data.SetProductArchived(product.Barcode, removing);
+            ReloadProducts();
+        }
+        catch (SqliteException error)
+        {
+            MessageBox.Show(this, error.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
 
     private void ShowItemHistory()
     {
@@ -238,7 +288,7 @@ internal sealed class ProductListForm : Form
             SelectedProduct = product;
             DialogResult = DialogResult.OK;
         }
-        else if (data is not null)
+        else if (data is not null && !deleted.Checked)
         {
             using var editor = new ProductEditorForm(product.Barcode, updated => data.SaveProduct(updated, product), product);
             if (editor.ShowDialog(this) == DialogResult.OK && editor.SavedProduct is Product updated)

@@ -96,6 +96,10 @@ public sealed class CloseoutTests
                 command.CommandText = """
                     ALTER TABLE register_settings DROP COLUMN require_item_count;
                     ALTER TABLE register_settings DROP COLUMN start_maximized;
+                    DROP TABLE order_draft;
+                    DROP TABLE inventory_receipts;
+                    DROP TABLE inventory_counts;
+                    ALTER TABLE products DROP COLUMN archived;
                     DROP TABLE day_closeouts;
                     ALTER TABLE sale_lines DROP COLUMN kind;
                     ALTER TABLE sales DROP COLUMN lottery_cents;

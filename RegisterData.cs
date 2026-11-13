@@ -76,15 +76,16 @@ internal sealed partial class RegisterData : IDisposable
 
     public Product? FindProduct(string code)
     {
-        using var command = Command($"SELECT {ProductColumns} FROM products WHERE code = $code OR barcode = $code");
+        using var command = Command($"SELECT {ProductColumns} FROM products WHERE archived = 0 AND (code = $code OR barcode = $code)");
         command.Parameters.AddWithValue("$code", code);
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadProduct(reader) : null;
     }
 
-    public IReadOnlyList<Product> ListProducts()
+    public IReadOnlyList<Product> ListProducts(bool archived = false)
     {
-        using var command = Command($"SELECT {ProductColumns} FROM products ORDER BY description COLLATE NOCASE, barcode");
+        using var command = Command($"SELECT {ProductColumns} FROM products WHERE archived = $archived ORDER BY description COLLATE NOCASE, barcode");
+        command.Parameters.AddWithValue("$archived", archived);
         using var reader = command.ExecuteReader();
         var result = new List<Product>();
         while (reader.Read())
@@ -94,16 +95,24 @@ internal sealed partial class RegisterData : IDisposable
 
     public string? SaveProduct(Product product, Product? original = null)
     {
+        using var transaction = connection.BeginTransaction(deferred: false);
+        string? problem = SaveProductInTransaction(product, original, transaction);
+        if (problem is null)
+            transaction.Commit();
+        return problem;
+    }
+
+    private string? SaveProductInTransaction(Product product, Product? original, SqliteTransaction transaction)
+    {
         if (original is not null && product.Barcode != original.Barcode)
             return "The scanned barcode stays fixed when editing a product.";
 
         if (Product.IsRegisterCommand(product.Code) || Product.IsRegisterCommand(product.Barcode))
             return "Q, L, and M are register shortcuts. Enter a different code.";
 
-        using var transaction = connection.BeginTransaction(deferred: false);
         if (original is not null)
         {
-            using var current = Command($"SELECT {ProductColumns} FROM products WHERE barcode = $barcode", transaction);
+            using var current = Command($"SELECT {ProductColumns} FROM products WHERE barcode = $barcode AND archived = 0", transaction);
             current.Parameters.AddWithValue("$barcode", original.Barcode);
             using var reader = current.ExecuteReader();
             if (!reader.Read() || ReadProduct(reader) != original)
@@ -124,8 +133,25 @@ internal sealed partial class RegisterData : IDisposable
 
         WriteProduct(product, transaction);
         RecordPrice(product, original, transaction);
-        transaction.Commit();
         return null;
+    }
+
+    public bool SetProductArchived(string barcode, bool archived)
+    {
+        using var transaction = connection.BeginTransaction(deferred: false);
+        using var update = Command("UPDATE products SET archived = $archived WHERE barcode = $barcode AND archived <> $archived", transaction);
+        update.Parameters.AddWithValue("$barcode", barcode);
+        update.Parameters.AddWithValue("$archived", archived);
+        if (update.ExecuteNonQuery() != 1)
+            return false;
+        if (archived)
+        {
+            using var removeDraft = Command("DELETE FROM order_draft WHERE barcode = $barcode", transaction);
+            removeDraft.Parameters.AddWithValue("$barcode", barcode);
+            removeDraft.ExecuteNonQuery();
+        }
+        transaction.Commit();
+        return true;
     }
 
     public void Dispose() => connection.Dispose();
@@ -175,6 +201,9 @@ internal sealed partial class RegisterData : IDisposable
                 """, transaction);
             preferences.ExecuteNonQuery();
         }
+
+        if (currentVersion < 5)
+            CreateOrdering(transaction);
 
         transaction.Commit();
     }

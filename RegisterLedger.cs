@@ -12,7 +12,7 @@ internal enum RecordReport { Totals, Sales, SaleLines, ItemTotals, PriceHistory,
 
 internal sealed partial class RegisterData
 {
-    public const int SchemaVersion = 4;
+    public const int SchemaVersion = 5;
     public const int DefaultChangeSeconds = 8;
     public const int MaximumChangeSeconds = 120;
 
@@ -181,7 +181,7 @@ internal sealed partial class RegisterData
                 SELECT barcode AS Barcode, code AS Code, description AS Product, size AS Size,
                        unit_cents / 100.0 AS "Unit price", units_per_case AS "Units per case",
                        CASE WHEN units_per_case > 1 THEN case_cents / 100.0 END AS "Case price", taxable AS Taxable
-                FROM products ORDER BY barcode
+                FROM products WHERE archived = 0 ORDER BY barcode
                 """,
             _ => throw new ArgumentOutOfRangeException(nameof(report))
         };

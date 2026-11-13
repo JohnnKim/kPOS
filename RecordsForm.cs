@@ -80,7 +80,6 @@ internal sealed class RecordsForm : Form
     {
         var page = new TabPage(name) { Tag = report };
         var grid = CreateGrid();
-        PosView.Grid(grid, 11, 34);
         if (report == RecordReport.Sales)
         {
             grid.CellDoubleClick += (_, args) => { if (args.RowIndex >= 0) OpenSelectedSale(); };
@@ -135,7 +134,7 @@ internal sealed class RecordsForm : Form
             if (next.Enabled)
                 results.Rows.RemoveAt(PageSize);
             previous.Enabled = offset > 0;
-            Bind(grid, results);
+            Bind(grid, results, report);
             status.Text = report switch
             {
                 RecordReport.Totals => "",
@@ -162,7 +161,7 @@ internal sealed class RecordsForm : Form
         var grid = CreateGrid();
         try
         {
-            Bind(grid, data.ReadReport(RecordReport.SaleLines, start, end, saleId: saleId));
+            Bind(grid, data.ReadReport(RecordReport.SaleLines, start, end, saleId: saleId), RecordReport.SaleLines, individualSale: true);
             details.Controls.Add(grid);
             details.ShowDialog(this);
         }
@@ -220,25 +219,69 @@ internal sealed class RecordsForm : Form
     private (DateOnly Start, DateOnly End) Dates() =>
         (DateOnly.FromDateTime(from.Value), DateOnly.FromDateTime(through.Value));
 
-    private static DataGridView CreateGrid() => new()
+    private static DataGridView CreateGrid()
     {
-        Dock = DockStyle.Fill, BackgroundColor = SystemColors.Window, ReadOnly = true,
-        RowHeadersVisible = false, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
-        SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false,
-        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells
-    };
+        var grid = new DataGridView
+        {
+            Dock = DockStyle.Fill, ReadOnly = true, RowHeadersVisible = false,
+            AllowUserToAddRows = false, AllowUserToDeleteRows = false,
+            AllowUserToResizeRows = false, AllowUserToResizeColumns = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false,
+            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+        };
+        PosView.Grid(grid, 10, 43);
+        grid.ColumnHeadersDefaultCellStyle.Font = PosView.Text(10, FontStyle.Bold);
+        grid.ColumnHeadersHeight = 47;
+        grid.CellFormatting += (_, e) =>
+        {
+            if (e.ColumnIndex >= 0 && grid.Columns[e.ColumnIndex].DataPropertyName is "Sold at" or "Recorded at" &&
+                e.Value is string value && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
+            {
+                e.Value = time.ToString("MM/dd/yyyy'\n'HH:mm", CultureInfo.InvariantCulture);
+                e.FormattingApplied = true;
+            }
+        };
+        return grid;
+    }
 
-    private static void Bind(DataGridView grid, DataTable table)
+    private static void Bind(DataGridView grid, DataTable table, RecordReport report, bool individualSale = false)
     {
         grid.DataSource = table;
         foreach (DataGridViewColumn column in grid.Columns)
         {
-            if (column.DataPropertyName is "From date" or "Through date")
-                column.Visible = false;
-
-            if (column.DataPropertyName is "Subtotal" or "Discounts" or "Tax" or "Total" or "Cash" or "Card" or
-                "Received" or "Change" or "Unit price" or "Case price" or "Discount" or "Net sales" or "Lottery" or "Opening drawer" or "Expected cash" or "Counted cash"
-                or "Cash over/short" or "Expected card" or "Counted card" or "Card over/short" or "Next bank" or "Cash deposit")
+            string field = column.DataPropertyName;
+            column.Visible = report switch
+            {
+                RecordReport.Totals => field is "Sales" or "Subtotal" or "Discounts" or "Tax" or "Lottery" or "Total",
+                RecordReport.Sales => field is "Sold at" or "Subtotal" or "Discounts" or "Lottery" or "Tax" or "Total" or "Received" or "Change",
+                RecordReport.SaleLines or RecordReport.LotterySales =>
+                    field is "Sold at" or "Product" or "Pack" or "Quantity" or "Unit price" or "Discount" or "Net sales" ||
+                    (individualSale && field == "Type"),
+                RecordReport.ItemTotals => field != "Type",
+                RecordReport.PriceHistory => field != "Code",
+                RecordReport.Closeout => field is "Business date" or "Sales" or "Total" or "Cash over/short" or "Card over/short" or "Cash deposit" or "Notes",
+                _ => true
+            };
+            column.Resizable = DataGridViewTriState.False;
+            column.MinimumWidth = 40;
+            column.FillWeight = field switch
+            {
+                "Sold at" or "Recorded at" => 142,
+                "Product" or "Notes" => 192,
+                "Sales" or "Quantity" or "Units per case" or "Pack" or "Type" => 63,
+                _ => 100
+            };
+            if (field is "Sold at" or "Recorded at")
+                column.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+            column.HeaderText = field switch
+            {
+                "Business date" => "Date",
+                "Quantity" => "Qty",
+                "Units per case" => "Case Qty",
+                _ => field
+            };
+            if (field is "Subtotal" or "Discounts" or "Tax" or "Total" or "Received" or "Change" or "Unit price" or
+                "Case price" or "Discount" or "Net sales" or "Lottery" or "Cash over/short" or "Card over/short" or "Cash deposit")
             {
                 column.DefaultCellStyle.Format = "C2";
                 column.DefaultCellStyle.FormatProvider = CultureInfo.GetCultureInfo("en-US");
