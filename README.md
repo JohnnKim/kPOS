@@ -53,12 +53,17 @@ Prepare for live testing/use case, complete cashier and manger controls, paid-sa
 Pilot and eventual take over, run side-by-side tests, train staff, schedule switch, provide direct support through the first actual live deployment.
 Improve purchasing and evaluation, add persistent purchase orders, receiving against orders, stronger inventory controls, reports based on store purchases. Evaluation period may include multiple registers and integrations, and broader deployment depending on pilot results.
 
-Important Variables
+Important Variables:
 > Sales accuracy
+
 > Migration coverage
+
 > Staff training
+
 > Recovery
+
 > Release quality
+
 > Ease of use
 
 ## Relevant References
