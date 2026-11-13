@@ -5,6 +5,7 @@ namespace Kpos;
 
 internal sealed class ProductEditorForm : Form
 {
+    private readonly TextBox barcodeInput = new() { MaxLength = 80, Dock = DockStyle.Fill, AccessibleName = "Barcode" };
     private readonly TextBox code = new() { MaxLength = 80, Dock = DockStyle.Fill, AccessibleName = "Item code" };
     private readonly TextBox description = new() { MaxLength = 120, Dock = DockStyle.Fill, AccessibleName = "Product name" };
     private readonly TextBox size = new() { MaxLength = 40, Dock = DockStyle.Fill, AccessibleName = "Size or pack" };
@@ -41,10 +42,9 @@ internal sealed class ProductEditorForm : Form
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 144));
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        AddField("Scanned barcode", new TextBox
-        {
-            Text = barcode, ReadOnly = true, Dock = DockStyle.Fill, AccessibleName = "Scanned barcode"
-        }, 0);
+        barcodeInput.Text = barcode;
+        barcodeInput.ReadOnly = barcode.Length > 0;
+        AddField(barcodeInput.ReadOnly ? "Scanned barcode" : "Barcode", barcodeInput, 0);
         AddField("Item code", code, 1);
         AddField("Product name", description, 2);
         AddField("Size / pack", size, 3);
@@ -81,7 +81,12 @@ internal sealed class ProductEditorForm : Form
         sellCase.CheckedChanged += (_, _) => SetCaseFields();
         SetCaseFields();
 
-        Shown += (_, _) => { description.Focus(); description.SelectAll(); };
+        Shown += (_, _) =>
+        {
+            TextBox first = barcodeInput.ReadOnly ? description : barcodeInput;
+            first.Focus();
+            first.SelectAll();
+        };
         saveButton.Click += (_, _) => SaveProduct();
 
         void AddField(string label, Control input, int row)
@@ -98,7 +103,9 @@ internal sealed class ProductEditorForm : Form
 
         void SaveProduct()
         {
-            if (string.IsNullOrWhiteSpace(code.Text))
+            if (string.IsNullOrWhiteSpace(barcodeInput.Text))
+                ShowProblem("Enter a barcode.", barcodeInput);
+            else if (string.IsNullOrWhiteSpace(code.Text))
                 ShowProblem("Enter an item code.", code);
             else if (string.IsNullOrWhiteSpace(description.Text))
                 ShowProblem("Enter a product name.", description);
@@ -124,7 +131,7 @@ internal sealed class ProductEditorForm : Form
                 }
 
                 var product = new Product(
-                    code.Text.Trim(), barcode, description.Text.Trim(), size.Text.Trim(),
+                    code.Text.Trim(), barcodeInput.Text.Trim(), description.Text.Trim(), size.Text.Trim(),
                     unit, units, price, taxable.Checked);
                 string? problem;
                 try

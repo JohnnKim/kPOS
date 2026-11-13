@@ -94,6 +94,14 @@ public sealed class CloseoutTests
                 oldSchema.CreateCollation("ITEM_CODE", StringComparer.OrdinalIgnoreCase.Compare);
                 using var command = oldSchema.CreateCommand();
                 command.CommandText = """
+                    DROP TABLE distributor_items;
+                    DROP TABLE purchase_distributors;
+                    DROP TABLE purchase_business;
+                    ALTER TABLE register_settings DROP COLUMN quantity_key;
+                    ALTER TABLE register_settings DROP COLUMN lottery_key;
+                    ALTER TABLE register_settings DROP COLUMN misc_key;
+                    ALTER TABLE register_settings DROP COLUMN stock_key;
+                    ALTER TABLE register_settings DROP COLUMN auto_scan;
                     ALTER TABLE register_settings DROP COLUMN require_item_count;
                     ALTER TABLE register_settings DROP COLUMN start_maximized;
                     DROP TABLE order_draft;

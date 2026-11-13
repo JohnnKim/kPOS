@@ -26,6 +26,14 @@ internal sealed class SettingsForm : Form
         var maximize = new CheckBox { Text = "Start maximized", AutoSize = true, Checked = data.StartMaximized };
         AddTab("Checkout", "Change display duration (seconds)", duration, requireCount);
         AddTab("Display", "", maximize);
+        RegisterKeys keys = data.ReadRegisterKeys();
+        var quantityKey = Shortcut("Quantity", keys.Quantity);
+        var lotteryKey = Shortcut("Lottery", keys.Lottery);
+        var miscKey = Shortcut("Misc", keys.Misc);
+        var stockKey = Shortcut("Stock in Orders (Alt + letter)", keys.Stock);
+        var autoScan = new CheckBox { Text = "Submit fast barcode scans without Enter", AutoSize = true, Checked = keys.AutoScan };
+        AddTab("Shortcuts", "Type sale shortcuts in the scanner field and press Enter.",
+            quantityKey.Row, lotteryKey.Row, miscKey.Row, stockKey.Row, autoScan);
         AddTab("Tax", "Sales tax rate (%)", rate);
         var path = new TextBox { ReadOnly = true, Text = folders.Root, Width = 430 };
         AddTab("Data", "Installation and records folder", path);
@@ -34,7 +42,7 @@ internal sealed class SettingsForm : Form
         updates.Click += (_, _) =>
         {
             if (rate.Value != data.TaxRate || duration.Value != data.ChangeSeconds ||
-                requireCount.Checked != data.RequireItemCount || maximize.Checked != data.StartMaximized)
+                requireCount.Checked != data.RequireItemCount || maximize.Checked != data.StartMaximized || CurrentKeys() != keys)
             {
                 MessageBox.Show(this, "Save your settings before installing an update.", "kPOS Updates");
                 return;
@@ -76,14 +84,25 @@ internal sealed class SettingsForm : Form
         {
             try
             {
-                data.SaveSettings(rate.Value, (int)duration.Value, requireCount.Checked, maximize.Checked);
+                data.SaveSettings(rate.Value, (int)duration.Value, requireCount.Checked, maximize.Checked, CurrentKeys());
                 DialogResult = DialogResult.OK;
             }
-            catch (SqliteException error)
+            catch (Exception error) when (error is SqliteException or ArgumentException)
             {
                 MessageBox.Show(this, error.Message, "Settings Could Not Be Saved", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         };
+
+        RegisterKeys CurrentKeys() => new(quantityKey.Input.Text, lotteryKey.Input.Text, miscKey.Input.Text, stockKey.Input.Text, autoScan.Checked);
+
+        static (FlowLayoutPanel Row, TextBox Input) Shortcut(string name, string value)
+        {
+            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 1, 0, 0) };
+            var label = new Label { Text = name, Width = 240, Margin = new Padding(3, 5, 3, 0) };
+            var input = new TextBox { Text = value, Width = 35, MaxLength = 1, CharacterCasing = CharacterCasing.Upper, AccessibleName = name };
+            row.Controls.AddRange([label, input]);
+            return (row, input);
+        }
 
         void AddTab(string name, string label, params Control[] inputs)
         {

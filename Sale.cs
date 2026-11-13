@@ -24,8 +24,6 @@ internal sealed record Product(
 
     public bool HasCasePrice => UnitsPerCase > 1;
 
-    public static bool IsRegisterCommand(string code) => code.ToUpperInvariant() is "Q" or "L" or "M";
-
 }
 
 internal enum SaleLineKind { Product, Lottery, Misc }

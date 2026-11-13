@@ -42,6 +42,20 @@ public sealed class RegisterDataTests
     }
 
     [TestMethod]
+    public void ShortcutsAreSavedAndCannotShadowAnExistingProduct()
+    {
+        using var data = new RegisterData(":memory:");
+        Assert.AreEqual("Q", data.ReadRegisterKeys().Quantity);
+        var shortcuts = new RegisterKeys("Z", "L", "M", "T", false);
+        data.SaveSettings(2.9m, 8, keys: shortcuts);
+        Assert.AreEqual(shortcuts, data.ReadRegisterKeys());
+        Assert.IsNull(data.SaveProduct(new("Q", "000000999901", "Former shortcut", "", 1, 0, 0)));
+        Assert.ThrowsExactly<ArgumentException>(() => data.SaveSettings(2.9m, 8, keys: shortcuts with { Quantity = "Q" }));
+        Assert.AreEqual(shortcuts, data.ReadRegisterKeys());
+        Assert.IsNotNull(data.SaveProduct(new("Z", "000000999902", "Reserved shortcut", "", 1, 0, 0)));
+    }
+
+    [TestMethod]
     public void CodesCannotCollideWithBarcodesOrTheQuantityCommand()
     {
         using var data = new RegisterData(":memory:");

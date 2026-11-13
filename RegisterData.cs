@@ -61,17 +61,29 @@ internal sealed partial class RegisterData : IDisposable
         return (long)command.ExecuteScalar()! != 0;
     }
 
-    public void SaveSettings(decimal taxRate, int changeSeconds, bool requireItemCount = true, bool startMaximized = true)
+    public void SaveSettings(decimal taxRate, int changeSeconds, bool requireItemCount = true, bool startMaximized = true, RegisterKeys? keys = null)
     {
+        using var transaction = connection.BeginTransaction(deferred: false);
+        keys ??= ReadRegisterKeys(transaction);
+        if ((keys.Validate() ?? CheckShortcutConflict(keys, transaction)) is string problem)
+            throw new ArgumentException(problem, nameof(keys));
+
         using var command = Command("""
             UPDATE register_settings SET tax_rate = $rate, change_seconds = $seconds,
-                require_item_count = $count, start_maximized = $maximized WHERE id = 1
-            """);
+                require_item_count = $count, start_maximized = $maximized, quantity_key = $quantity,
+                lottery_key = $lottery, misc_key = $misc, stock_key = $stock, auto_scan = $auto WHERE id = 1
+            """, transaction);
         command.Parameters.AddWithValue("$rate", decimal.ToInt64(taxRate * 10000));
         command.Parameters.AddWithValue("$seconds", changeSeconds);
         command.Parameters.AddWithValue("$count", requireItemCount);
         command.Parameters.AddWithValue("$maximized", startMaximized);
+        command.Parameters.AddWithValue("$quantity", keys.Quantity);
+        command.Parameters.AddWithValue("$lottery", keys.Lottery);
+        command.Parameters.AddWithValue("$misc", keys.Misc);
+        command.Parameters.AddWithValue("$stock", keys.Stock);
+        command.Parameters.AddWithValue("$auto", keys.AutoScan);
         command.ExecuteNonQuery();
+        transaction.Commit();
     }
 
     public Product? FindProduct(string code)
@@ -107,8 +119,12 @@ internal sealed partial class RegisterData : IDisposable
         if (original is not null && product.Barcode != original.Barcode)
             return "The scanned barcode stays fixed when editing a product.";
 
-        if (Product.IsRegisterCommand(product.Code) || Product.IsRegisterCommand(product.Barcode))
-            return "Q, L, and M are register shortcuts. Enter a different code.";
+        if (product.Code.Length == 1 || product.Barcode.Length == 1)
+        {
+            RegisterKeys keys = ReadRegisterKeys(transaction);
+            if (keys.IsSaleShortcut(product.Code) || keys.IsSaleShortcut(product.Barcode))
+                return "This code is assigned to a register shortcut. Enter a different code.";
+        }
 
         if (original is not null)
         {
@@ -139,6 +155,21 @@ internal sealed partial class RegisterData : IDisposable
     public bool SetProductArchived(string barcode, bool archived)
     {
         using var transaction = connection.BeginTransaction(deferred: false);
+        if (!archived)
+        {
+            using var existing = Command("SELECT code, barcode FROM products WHERE barcode = $barcode AND archived = 1", transaction);
+            existing.Parameters.AddWithValue("$barcode", barcode);
+            using var reader = existing.ExecuteReader();
+            if (reader.Read() && (reader.GetString(0).Length == 1 || reader.GetString(1).Length == 1))
+            {
+                string code = reader.GetString(0);
+                string itemBarcode = reader.GetString(1);
+                reader.Close();
+                RegisterKeys keys = ReadRegisterKeys(transaction);
+                if (keys.IsSaleShortcut(code) || keys.IsSaleShortcut(itemBarcode))
+                    throw new InvalidOperationException("This item uses a register shortcut. Change the shortcut in Settings before restoring the item.");
+            }
+        }
         using var update = Command("UPDATE products SET archived = $archived WHERE barcode = $barcode AND archived <> $archived", transaction);
         update.Parameters.AddWithValue("$barcode", barcode);
         update.Parameters.AddWithValue("$archived", archived);
@@ -204,6 +235,8 @@ internal sealed partial class RegisterData : IDisposable
 
         if (currentVersion < 5)
             CreateOrdering(transaction);
+        if (currentVersion < 6)
+            CreatePurchaseOrderProfiles(transaction);
 
         transaction.Commit();
     }

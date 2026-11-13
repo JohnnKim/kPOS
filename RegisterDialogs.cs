@@ -7,6 +7,7 @@ internal sealed class ProductListForm : Form
 {
     private IReadOnlyList<Product> products;
     private Product[] matches = [];
+    private IReadOnlyDictionary<string, long?> stock = new Dictionary<string, long?>();
     private readonly CheckBox deleted = new() { Text = "Show &Deleted", AutoSize = true };
     private readonly Button delete = PosView.Button("&Delete Product", size: 10);
     private readonly RegisterData? data;
@@ -36,6 +37,7 @@ internal sealed class ProductListForm : Form
         this.data = data;
         this.folders = folders;
         this.allowAddCode = allowAddCode;
+        LoadStock();
         Text = selectItem ? "Item Lookup" : "Product List";
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(980, 580);
@@ -80,6 +82,20 @@ internal sealed class ProductListForm : Form
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
         if (data is not null)
         {
+            var create = PosView.Button("&Add Item", primary: true, size: 10);
+            create.Click += (_, _) =>
+            {
+                using var editor = new ProductEditorForm("", product => data.SaveProduct(product));
+                if (editor.ShowDialog(this) == DialogResult.OK && editor.SavedProduct is Product added)
+                {
+                    search.Clear();
+                    ReloadProducts();
+                    int index = Array.IndexOf(matches, added);
+                    if (index >= 0)
+                        grid.CurrentCell = grid.Rows[index].Cells[0];
+                }
+            };
+            actions.Controls.Add(create);
             var edit = PosView.Button("&Edit Product", size: 10);
             edit.Click += (_, _) => OpenSelectedProduct();
             actions.Controls.Add(edit);
@@ -102,7 +118,7 @@ internal sealed class ProductListForm : Form
             deleted.CheckedChanged += (_, _) =>
             {
                 delete.Text = deleted.Checked ? "&Restore Product" : "&Delete Product";
-                edit.Enabled = !deleted.Checked;
+                create.Enabled = edit.Enabled = !deleted.Checked;
                 image.Enabled = !deleted.Checked;
                 ReloadProducts();
             };
@@ -138,6 +154,24 @@ internal sealed class ProductListForm : Form
         grid.Columns.Add("Size", "Size / Pack");
         grid.Columns.Add("Price", "Unit Price");
         grid.Columns.Add("CasePrice", "Case Price");
+        if (data is not null && !selectItem)
+        {
+            grid.Columns.Add("OnHand", "On Hand");
+            grid.Columns["OnHand"]!.Width = 94;
+            PosView.AmountColumn(grid, "OnHand", 12);
+            grid.CellFormatting += (_, e) =>
+            {
+                if (e.ColumnIndex != 6 || e.Value is not long units)
+                    return;
+                e.Value = units.ToString("N0");
+                e.FormattingApplied = true;
+                if (units < 0)
+                {
+                    e.CellStyle!.ForeColor = PosView.Error;
+                    e.CellStyle.SelectionForeColor = PosView.Error;
+                }
+            };
+        }
         grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
         grid.Columns["Code"]!.Width = 112;
         grid.Columns["Barcode"]!.Width = 136;
@@ -163,7 +197,9 @@ internal sealed class ProductListForm : Form
             e.Value = e.ColumnIndex switch
             {
                 0 => item.Code, 1 => item.Barcode, 2 => item.Description, 3 => item.Size,
-                4 => item.UnitPrice, 5 when item.HasCasePrice => item.CasePrice, _ => null
+                4 => item.UnitPrice, 5 when item.HasCasePrice => item.CasePrice,
+                6 => stock.GetValueOrDefault(item.Barcode) is long units ? units : "—",
+                _ => null
             };
         };
         search.Text = initialSearch;
@@ -212,7 +248,8 @@ internal sealed class ProductListForm : Form
     private void Filter()
     {
         string query = search.Text.Trim();
-        matches = products.Where(product => field.SelectedIndex switch
+        bool tooShort = query.Length == 1;
+        matches = tooShort ? [] : products.Where(product => field.SelectedIndex switch
         {
             1 => Contains(product.Description),
             2 => Contains(product.Code),
@@ -225,14 +262,11 @@ internal sealed class ProductListForm : Form
         if (matches.Length > 0)
             grid.CurrentCell = grid.Rows[0].Cells[0];
         grid.Invalidate();
-        matchCount.Text = matches.Length switch
-        {
-            0 => "No matching products",
-            1 => "1 matching product",
-            _ => $"{matches.Length:N0} matching products"
-        };
+        matchCount.Text = tooShort ? $"{products.Count:N0} items · Type 2 characters"
+            : query.Length == 0 ? $"{products.Count:N0} items"
+            : $"{matches.Length:N0} of {products.Count:N0} items";
         select.Enabled = delete.Enabled = matches.Length > 0;
-        add.Enabled = allowAddCode && query.Length > 0 && matches.Length == 0 &&
+        add.Enabled = allowAddCode && query.Length >= 2 && matches.Length == 0 &&
             !products.Any(product => string.Equals(product.Code, query, StringComparison.OrdinalIgnoreCase) ||
                                      string.Equals(product.Barcode, query, StringComparison.OrdinalIgnoreCase));
 
@@ -241,10 +275,20 @@ internal sealed class ProductListForm : Form
 
     private Product? CurrentProduct => grid.CurrentRow is DataGridViewRow row ? matches[row.Index] : null;
 
+    private void LoadStock()
+    {
+        if (data is null || selectItem)
+            return;
+        DateOnly today = data.CurrentBusinessDate();
+        stock = data.ReadOrderItems(today, today, today).ToDictionary(item => item.Product.Barcode, item => item.OnHand,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
     private void ReloadProducts()
     {
         if (data is not null)
             products = data.ListProducts(archived: deleted.Checked);
+        LoadStock();
         Filter();
     }
 
@@ -262,7 +306,7 @@ internal sealed class ProductListForm : Form
             data.SetProductArchived(product.Barcode, removing);
             ReloadProducts();
         }
-        catch (SqliteException error)
+        catch (Exception error) when (error is SqliteException or InvalidOperationException)
         {
             MessageBox.Show(this, error.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }

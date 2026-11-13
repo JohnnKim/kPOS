@@ -49,8 +49,8 @@ public static class KposExecutableTest
                 string cutoff = DateTime.Today.AddYears(-21).ToString("MMM d, yyyy");
                 WaitUntil(() => HasText(register, "Legal Age 21+  •  DOB on or before " + cutoff), "show the legal age cutoff");
 
-                EnterText(scanner, "000000000101");
-                WaitUntil(() => HasText(register, "Added: Pale Ale"), "accept a barcode through the scan field");
+                EnterText(scanner, "000000000101", submit: false);
+                WaitUntil(() => HasText(register, "Added: Pale Ale"), "add a scanner burst without Enter");
 
                 EnterText(scanner, "Q");
                 IntPtr quantity = FindWindow(desktop, process.ProcessId, "Edit Quantity");
@@ -85,7 +85,7 @@ public static class KposExecutableTest
 
                 EnterText(scanner, "ale");
                 IntPtr lookup = FindWindow(desktop, process.ProcessId, "Item Lookup");
-                WaitUntil(() => HasText(lookup, "1 matching product"), "find the item by a typed name");
+                WaitUntil(() => HasText(lookup, "1 of 6 items"), "find the item by a typed name");
                 Send(FindTextBox(lookup), 0x0100, 0x0d); // Enter
                 WaitUntil(() => HasText(register, "Added: Pale Ale"), "add the lookup result without a mouse");
                 Send(scanner, 0x0100, 0x74); // F5
@@ -131,6 +131,13 @@ public static class KposExecutableTest
                 Send(FindChildWithText(checkout, "&Next Sale"), 0x0100, 0x0d); // Enter
                 WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "return after recording lottery");
 
+                EnterText(scanner, "v");
+                EnterText(scanner, "V0");
+                IntPtr partial = FindWindow(desktop, process.ProcessId, "Item Lookup");
+                WaitUntil(() => HasText(partial, "0 of 6 items"), "search a two-character alphanumeric input");
+                Send(partial, 0x0010, 0); // WM_CLOSE
+                WaitUntil(() => !IsWindow(partial) && IsWindowEnabled(register), "return to the scanner from lookup");
+
                 EnterText(scanner, "000000099999");
                 IntPtr prompt = FindWindow(desktop, process.ProcessId, "Unrecognized Product Code");
                 if (!PostMessage(prompt, 0x0111, (IntPtr)6, IntPtr.Zero)) // WM_COMMAND, Yes
@@ -153,11 +160,29 @@ public static class KposExecutableTest
                 Send(records, 0x0010, 0); // WM_CLOSE
                 Send(FindChildWithText(register, "Or&ders"), 0x00F5, 0); // BM_CLICK
                 IntPtr orders = FindWindow(desktop, process.ProcessId, "Orders");
-                WaitUntil(() => HasText(orders, "&Export Order…") && HasText(orders, "&Stock…"), "open the order worksheet");
+                WaitUntil(() => HasText(orders, "&Purchase Order…") && HasText(orders, "&Stock… (Alt+S)"), "open the order worksheet");
+                Send(FindChildWithText(orders, "&Item Details…"), 0x00F5, 0);
+                IntPtr itemDetails = FindWindow(desktop, process.ProcessId, "Order Item Details");
+                Send(itemDetails, 0x0010, 0);
+                WaitUntil(() => !IsWindow(itemDetails), "close order item details");
+                Send(FindChildWithText(orders, "&Stock… (Alt+S)"), 0x00F5, 0);
+                IntPtr stock = FindWindow(desktop, process.ProcessId, "Inventory Stock");
+                Send(stock, 0x0010, 0);
+                WaitUntil(() => !IsWindow(stock), "close stock entry");
+                Send(FindChildWithText(orders, "&Purchase Order…"), 0x00F5, 0);
+                IntPtr purchase = FindWindow(desktop, process.ProcessId, "Purchase Order");
+                WaitUntil(() => HasText(purchase, "Printable HTML") && HasText(purchase, "Spreadsheet CSV"), "show order output formats");
+                Send(purchase, 0x0010, 0);
+                WaitUntil(() => !IsWindow(purchase), "close purchase order");
                 Send(orders, 0x0010, 0); // WM_CLOSE
                 Send(FindChildWithText(register, "Catalo&g"), 0x00F5, 0); // BM_CLICK
                 IntPtr catalog = FindWindow(desktop, process.ProcessId, "Product List");
-                WaitUntil(() => HasText(catalog, "&Delete Product") && HasText(catalog, "&Import Image"), "open the catalog actions");
+                WaitUntil(() => HasText(catalog, "6 items") && HasText(catalog, "&Add Item") && HasText(catalog, "&Delete Product"), "show the catalog count and actions");
+                Send(FindChildWithText(catalog, "&Add Item"), 0x00F5, 0);
+                IntPtr addItem = FindWindow(desktop, process.ProcessId, "Add Product");
+                WaitUntil(() => HasText(addItem, "Barcode"), "open the catalog add editor");
+                Send(addItem, 0x0010, 0);
+                WaitUntil(() => !IsWindow(addItem), "close catalog add editor");
                 Send(FindChildWithText(catalog, "&Delete Product"), 0x00F5, 0); // BM_CLICK
                 IntPtr deleteProduct = FindWindow(desktop, process.ProcessId, "Delete Product");
                 Send(deleteProduct, 0x0111, 7); // No
@@ -374,6 +399,8 @@ public static class KposExecutableTest
 
     [DllImport("user32.dll")]
     private static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll")]
+    private static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
 

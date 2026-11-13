@@ -42,8 +42,12 @@ public sealed class OrderingTests
         string export = Path.Combine(Path.GetTempPath(), $"kpos-order-{Guid.NewGuid():N}.csv");
         try
         {
-            OrderExport.Write(export, [FindItem()]);
+            var order = new PurchaseOrder("PO-1", now, null, new("Buyer & Co."), new("Supplier"), "", "", [FindItem()]);
+            PurchaseOrderOutput.Write(export, order, OrderFileType.Csv);
             StringAssert.Contains(File.ReadAllText(export), "\"101\",\"'000000000101\",\"Pale Ale\",\"6 × 12 oz\",9,4");
+            PurchaseOrderOutput.Write(export, order, OrderFileType.Printable);
+            StringAssert.Contains(File.ReadAllText(export), "Buyer &amp; Co.");
+            StringAssert.Contains(File.ReadAllText(export), "<td class=\"num\">9</td>");
         }
         finally
         {
@@ -70,6 +74,40 @@ public sealed class OrderingTests
             var time = new DateTimeOffset(date.ToDateTime(new TimeOnly(12, 0)), TimeSpan.Zero);
             data.RecordSale(Guid.NewGuid(), time, sale, total, new Payment(PaymentMethod.Card, total.Total));
         }
+    }
+
+    [TestMethod]
+    public void RecentStockCountsAndDistributorAssignmentsAppearWithoutCloseout()
+    {
+        using var data = new RegisterData(":memory:");
+        Product product = data.FindProduct("101")!;
+        var start = new DateOnly(2026, 5, 4);
+        var count = start.AddDays(4);
+        var end = start.AddDays(6);
+        var sale = new Sale();
+        sale.Add(product, false);
+        SaleTotals totals = sale.GetTotals(data.TaxRate);
+        foreach (DateOnly day in new[] { start, end })
+            data.RecordSale(Guid.NewGuid(), new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
+                sale, totals, new Payment(PaymentMethod.Card, totals.Total));
+
+        data.SaveInventoryEntry(product.Barcode, count, InventoryEntry.OpeningCount, 5);
+        var store = new OrderContact("Buyer", "John", "555-0100", "buyer@example.test", "Main Street");
+        data.SaveOrderBusiness(store);
+        long id = data.SaveDistributor(null, new("Distributor", Account: "ACC-22"));
+        data.AssignDistributor(product.Barcode, id);
+
+        OrderItem item = data.ReadOrderItems(start, end, end).Single(row => row.Product.Barcode == product.Barcode);
+        Assert.AreEqual(5L, item.Available);
+        Assert.AreEqual(4L, item.OnHand);
+        Assert.AreEqual(2L, item.Sold);
+        Assert.AreEqual(count, item.AvailableFrom);
+        Assert.AreEqual(20m, item.SellThrough);
+        Assert.AreEqual(id, item.DistributorId);
+        Assert.AreEqual("Distributor", item.DistributorName);
+        Assert.AreEqual(store, data.ReadOrderBusiness());
+        Assert.AreEqual("ACC-22", data.ReadDistributors().Single().Details.Account);
+        Assert.AreEqual(2, data.DailyItemSales(product.Barcode, start, end).Count);
     }
 
     [TestMethod]

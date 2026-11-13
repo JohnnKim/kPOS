@@ -6,7 +6,8 @@ namespace Kpos;
 internal sealed class StockEntryForm : Form
 {
     private readonly DateTimePicker date = new() { Format = DateTimePickerFormat.Short, Width = 130 };
-    private readonly ComboBox kind = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 210 };
+    private readonly RadioButton opening = new() { Text = "Opening count", Checked = true, AutoSize = true };
+    private readonly RadioButton received = new() { Text = "Units received", AutoSize = true };
     private readonly TextBox units = new() { MaxLength = 9, Width = 130, AccessibleName = "Units" };
     private readonly Label help = PosView.Label("", 11);
     private readonly Button save = PosView.Button("&Save", primary: true, size: 11);
@@ -24,8 +25,8 @@ internal sealed class StockEntryForm : Form
 
         date.MaxDate = businessDay.ToDateTime(TimeOnly.MinValue);
         date.Value = date.MaxDate;
-        kind.Items.AddRange(["Opening count", "Units received"]);
-        kind.SelectedIndex = 0;
+        var options = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+        options.Controls.AddRange([opening, received]);
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(15), ColumnCount = 2, RowCount = 6 };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -33,7 +34,7 @@ internal sealed class StockEntryForm : Form
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         AddWide(PosView.Label(product.Description, 18, FontStyle.Bold), 0);
         Add("&Business date", date, 1);
-        Add("Entry &type", kind, 2);
+        Add("Entry &type", options, 2);
         Add("&Units", units, 3);
         help.MaximumSize = new Size(520, 0);
         help.Margin = new Padding(3, 10, 3, 10);
@@ -48,7 +49,8 @@ internal sealed class StockEntryForm : Form
         Controls.Add(layout);
         LoadEntry();
         date.ValueChanged += (_, _) => LoadEntry();
-        kind.SelectedIndexChanged += (_, _) => LoadEntry();
+        received.CheckedChanged += (_, _) => LoadEntry();
+        Shown += (_, _) => { units.Focus(); units.SelectAll(); };
         units.TextChanged += (_, _) => save.Enabled = ParseUnits() is not null;
         save.Click += (_, _) => Store(ParseUnits(), deleting: false);
         remove.Click += (_, _) =>
@@ -59,7 +61,7 @@ internal sealed class StockEntryForm : Form
         };
 
         DateOnly Day() => DateOnly.FromDateTime(date.Value);
-        InventoryEntry Type() => (InventoryEntry)kind.SelectedIndex;
+        InventoryEntry Type() => received.Checked ? InventoryEntry.Received : InventoryEntry.OpeningCount;
         long? ParseUnits() => long.TryParse(units.Text, NumberStyles.None, CultureInfo.InvariantCulture, out long value) ? value : null;
 
         void LoadEntry()

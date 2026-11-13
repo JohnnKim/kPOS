@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using Microsoft.Data.Sqlite;
 
 namespace Kpos;
@@ -8,7 +7,9 @@ internal sealed class OrderForm : Form
 {
     private readonly RegisterData data;
     private readonly DateOnly businessDay;
-    private readonly ComboBox period = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 128, AccessibleName = "Sales period" };
+    private readonly RadioButton week = new() { Text = "7 days", Checked = true, AutoSize = true };
+    private readonly RadioButton month = new() { Text = "30 days", AutoSize = true };
+    private readonly Keys stockShortcut;
     private readonly DateTimePicker through = new() { Width = 132, Format = DateTimePickerFormat.Short, AccessibleName = "Sales through" };
     private readonly NumericUpDown coverage = new() { Minimum = 1, Maximum = 365, Value = 7, Width = 64, AccessibleName = "Days to cover" };
     private readonly TextBox search = new() { Width = 218, AccessibleName = "Find item", PlaceholderText = "Name, code, or barcode" };
@@ -16,10 +17,11 @@ internal sealed class OrderForm : Form
     private readonly CheckBox draftOnly = new() { Text = "&Draft only", AutoSize = true };
     private readonly Label status = PosView.Label("", 11, color: PosView.Muted);
     private readonly Button inventory = PosView.Button("&Stock…", size: 10);
+    private readonly Button details = PosView.Button("&Item Details…", size: 10);
     private readonly Button apply = PosView.Button("Use &Suggestion", size: 10);
     private readonly Button fill = PosView.Button("&Fill Visible", size: 10);
     private readonly Button clear = PosView.Button("C&lear Draft", size: 10);
-    private readonly Button export = PosView.Button("&Export Order…", primary: true, size: 10);
+    private readonly Button export = PosView.Button("&Purchase Order…", primary: true, size: 10);
     private readonly DataGridView grid = new()
     {
         Dock = DockStyle.Fill, VirtualMode = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
@@ -29,7 +31,8 @@ internal sealed class OrderForm : Form
     private IReadOnlyList<OrderItem> items = [];
     private OrderItem[] visible = [];
 
-    private int SalesDays => period.SelectedIndex == 1 ? 30 : 7;
+    private int SalesDays => month.Checked ? 30 : 7;
+    private DateOnly Start => End.AddDays(1 - SalesDays);
     private DateOnly End => DateOnly.FromDateTime(through.Value);
     private int Coverage => (int)coverage.Value;
 
@@ -37,6 +40,9 @@ internal sealed class OrderForm : Form
     {
         this.data = data;
         businessDay = data.CurrentBusinessDate();
+        string stockKey = data.ReadRegisterKeys().Stock;
+        stockShortcut = Keys.A + (stockKey[0] - 'A');
+        inventory.Text = $"&Stock… (Alt+{stockKey})";
         Text = "Orders";
         ClientSize = new Size(1190, 680);
         MinimumSize = new Size(915, 490);
@@ -46,8 +52,8 @@ internal sealed class OrderForm : Form
         BackColor = PosView.Canvas;
         sort.Items.AddRange(["Name", "Most sold", "Sell-through", "Suggested order"]);
         sort.SelectedIndex = 1;
-        period.Items.AddRange(["7 days", "30 days"]);
-        period.SelectedIndex = 0;
+        var period = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 3, 0, 0) };
+        period.Controls.AddRange([week, month]);
         through.MaxDate = businessDay.ToDateTime(TimeOnly.MinValue);
         through.MinDate = new DateTime(1900, 2, 1);
         through.Value = through.MaxDate;
@@ -71,23 +77,24 @@ internal sealed class OrderForm : Form
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         var close = PosView.Button("Close", size: 10);
         close.DialogResult = DialogResult.Cancel;
-        actions.Controls.AddRange([inventory, apply, fill, clear, export, close]);
+        actions.Controls.AddRange([inventory, details, apply, fill, clear, export, close]);
         layout.Controls.Add(actions, 0, 4);
         CancelButton = close;
         Controls.Add(layout);
         ConfigureGrid();
 
-        period.SelectedIndexChanged += (_, _) => Reload();
+        month.CheckedChanged += (_, _) => Reload();
         through.ValueChanged += (_, _) => Reload();
         coverage.ValueChanged += (_, _) => Filter();
         sort.SelectedIndexChanged += (_, _) => Filter();
         search.TextChanged += (_, _) => Filter();
         draftOnly.CheckedChanged += (_, _) => Filter();
         inventory.Click += (_, _) => EditStock();
+        details.Click += (_, _) => ViewItem();
         apply.Click += (_, _) => ApplySuggestion();
         fill.Click += (_, _) => FillDraft();
         clear.Click += (_, _) => ClearDraft();
-        export.Click += (_, _) => ExportDraft();
+        export.Click += (_, _) => OpenPurchaseOrder();
         Shown += (_, _) => search.Focus();
         Reload();
     }
@@ -157,7 +164,27 @@ internal sealed class OrderForm : Form
         grid.CellDoubleClick += (_, e) =>
         {
             if (e.RowIndex >= 0 && e.ColumnIndex != 7)
-                EditStock();
+                ViewItem();
+        };
+        grid.CellFormatting += (_, e) =>
+        {
+            if ((uint)e.RowIndex >= (uint)visible.Length)
+                return;
+            OrderItem item = visible[e.RowIndex];
+            if ((e.ColumnIndex == 3 && item.Available < 0) || (e.ColumnIndex == 5 && item.OnHand < 0))
+            {
+                e.CellStyle!.ForeColor = PosView.Error;
+                e.CellStyle.SelectionForeColor = PosView.Error;
+            }
+        };
+        grid.CellToolTipTextNeeded += (_, e) =>
+        {
+            if ((uint)e.RowIndex >= (uint)visible.Length || e.ColumnIndex is not (3 or 4))
+                return;
+            OrderItem item = visible[e.RowIndex];
+            e.ToolTipText = item.AvailableFrom is not DateOnly countDate ? "No opening count exists for these dates. Add one under Stock."
+                : countDate > Start ? $"Based on the count from {countDate:MMM d}. Sell-through only counts sales from that date onward."
+                : $"Based on the opening count from {countDate:MMM d}, sales, and receipts.";
         };
 
         void Add(string name, int width, string tooltip, bool editable = false)
@@ -179,7 +206,7 @@ internal sealed class OrderForm : Form
     private void Reload(string? preserveBarcode = null) => Run(() =>
     {
         string? id = preserveBarcode ?? Selected?.Product.Barcode;
-        items = data.ReadOrderItems(End.AddDays(1 - SalesDays), End, businessDay);
+        items = data.ReadOrderItems(Start, End, businessDay);
         Filter(id);
     });
 
@@ -206,16 +233,43 @@ internal sealed class OrderForm : Form
             grid.CurrentCell = grid.Rows[Math.Max(0, index)].Cells[column];
         }
         grid.Invalidate();
-        status.Text = $"{visible.Length:N0} items   ·   {items.Count(item => item.Draft > 0):N0} draft lines   ·   Enter a stock count to calculate inventory and suggestions.";
+        status.Text = $"{visible.Length:N0} items · {items.Count(item => item.Draft > 0):N0} draft lines · Available is opening stock plus receipts. Double-click for details.";
         UpdateActions();
     }
 
     private void UpdateActions()
     {
-        inventory.Enabled = Selected is not null;
+        details.Enabled = inventory.Enabled = Selected is not null;
         apply.Enabled = Selected is OrderItem item && item.Suggested(SalesDays, Coverage) is long quantity && quantity != item.Draft;
         fill.Enabled = visible.Any(item => item.Draft == 0 && item.Suggested(SalesDays, Coverage) is > 0);
-        export.Enabled = clear.Enabled = items.Any(item => item.Draft > 0);
+        clear.Enabled = items.Any(item => item.Draft > 0);
+    }
+
+    protected override bool ProcessCmdKey(ref Message message, Keys keys)
+    {
+        if (keys == (Keys.Alt | stockShortcut))
+        {
+            EditStock();
+            return true;
+        }
+        if (keys == Keys.Enter && grid.ContainsFocus && grid.CurrentCell?.ColumnIndex != 7 && !grid.IsCurrentCellInEditMode)
+        {
+            ViewItem();
+            return true;
+        }
+        return base.ProcessCmdKey(ref message, keys);
+    }
+
+    private void ViewItem()
+    {
+        if (!grid.EndEdit() || Selected is not OrderItem item)
+            return;
+        Run(() =>
+        {
+            using var dialog = new OrderItemDetailsForm(data, item, Start, End, Coverage);
+            if (dialog.ShowDialog(this) == DialogResult.OK)
+                Reload(item.Product.Barcode);
+        });
     }
 
     private void EditStock()
@@ -266,24 +320,16 @@ internal sealed class OrderForm : Form
         });
     }
 
-    private void ExportDraft()
+    private void OpenPurchaseOrder()
     {
         if (!grid.EndEdit())
             return;
         Run(() =>
         {
-            var lines = data.ReadOrderItems(End.AddDays(1 - SalesDays), End, businessDay).Where(item => item.Draft > 0).ToArray();
-            if (lines.Length == 0)
-                return;
-            using var picker = new SaveFileDialog
-            {
-                Title = "Export Order Sheet", Filter = "Order sheet (*.csv)|*.csv",
-                FileName = $"kPOS-order-{businessDay:yyyy-MM-dd}.csv"
-            };
-            if (picker.ShowDialog(this) != DialogResult.OK)
-                return;
-            OrderExport.Write(picker.FileName, lines);
-            status.Text = $"Exported {lines.Length:N0} lines to {Path.GetFileName(picker.FileName)}.";
+            var lines = data.ReadOrderItems(Start, End, businessDay).Where(item => item.Draft > 0).ToArray();
+            using var dialog = new PurchaseOrderForm(data, lines, businessDay);
+            dialog.ShowDialog(this);
+            Reload();
         });
     }
 
@@ -305,33 +351,4 @@ internal sealed class OrderForm : Form
     };
 
     private static string Format(long? number) => number?.ToString("N0") ?? "—";
-}
-
-internal static class OrderExport
-{
-    public static void Write(string destination, IEnumerable<OrderItem> lines)
-    {
-        string stage = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            using (var stream = new FileStream(stage, FileMode.CreateNew))
-            using (var csv = new StreamWriter(stream, new UTF8Encoding(true)))
-            {
-                csv.WriteLine("Item Code,Barcode,Product,Size,Order Units,Units per Case");
-                foreach (OrderItem line in lines)
-                {
-                    Product item = line.Product;
-                    csv.WriteLine(string.Join(',', RegisterData.CsvText(item.Code), RegisterData.CsvText(item.Barcode),
-                        RegisterData.CsvText(item.Description), RegisterData.CsvText(item.Size),
-                        line.Draft.ToString(CultureInfo.InvariantCulture),
-                        (item.HasCasePrice ? item.UnitsPerCase : 1).ToString(CultureInfo.InvariantCulture)));
-                }
-            }
-            File.Move(stage, destination, overwrite: true);
-        }
-        finally
-        {
-            File.Delete(stage);
-        }
-    }
 }

@@ -2,9 +2,9 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed record OrderItem(Product Product, long Sold, long? Available, long? OnHand, long Draft)
+internal sealed record OrderItem(Product Product, long Sold, long? Available, long? OnHand, long Draft, DateOnly? AvailableFrom = null, long? SoldSinceCount = null, long? DistributorId = null, string DistributorName = "")
 {
-    public decimal? SellThrough => Available > 0 ? 100m * Sold / Available : null;
+    public decimal? SellThrough => Available > 0 ? 100m * (SoldSinceCount ?? Sold) / Available : null;
 
     public long? Suggested(int salesDays, int coverageDays) => OnHand is >= 0 and long stock
         ? Math.Max(0, (long)Math.Ceiling((decimal)Sold * coverageDays / salesDays) - stock)
@@ -56,7 +56,8 @@ internal sealed partial class RegisterData
         using var query = Command("""
             WITH dates AS (
                 SELECT barcode,
-                    max(CASE WHEN business_date <= $start THEN business_date END) AS opening_date,
+                    coalesce(max(CASE WHEN business_date <= $start THEN business_date END),
+                        min(CASE WHEN business_date BETWEEN $start AND $end THEN business_date END)) AS opening_date,
                     max(business_date) AS latest_date
                 FROM inventory_counts
                 WHERE business_date <= $now
@@ -65,6 +66,7 @@ internal sealed partial class RegisterData
             sold AS (
                 SELECT l.barcode,
                     sum(CASE WHEN s.business_date BETWEEN $start AND $end THEN l.quantity * l.units_per_pack ELSE 0 END) AS period,
+                    sum(CASE WHEN s.business_date BETWEEN max(d.opening_date, $start) AND $end THEN l.quantity * l.units_per_pack ELSE 0 END) AS covered,
                     sum(CASE WHEN s.business_date >= d.opening_date AND s.business_date < $start THEN l.quantity * l.units_per_pack ELSE 0 END) AS before_period,
                     sum(CASE WHEN s.business_date >= d.latest_date THEN l.quantity * l.units_per_pack ELSE 0 END) AS since_count
                 FROM sales s JOIN sale_lines l ON l.sale_id = s.id
@@ -85,7 +87,7 @@ internal sealed partial class RegisterData
                 coalesce(s.period, 0),
                 opening.units + coalesce(r.through_period, 0) - coalesce(s.before_period, 0),
                 latest.units + coalesce(r.since_count, 0) - coalesce(s.since_count, 0),
-                coalesce(draft.units, 0)
+                coalesce(draft.units, 0), d.opening_date, coalesce(s.covered, 0), vendor.id, coalesce(vendor.name, '')
             FROM products p
             LEFT JOIN dates d ON d.barcode = p.barcode
             LEFT JOIN inventory_counts opening ON opening.barcode = p.barcode AND opening.business_date = d.opening_date
@@ -93,6 +95,8 @@ internal sealed partial class RegisterData
             LEFT JOIN sold s ON s.barcode = p.barcode
             LEFT JOIN received r ON r.barcode = p.barcode
             LEFT JOIN order_draft draft ON draft.barcode = p.barcode
+            LEFT JOIN distributor_items mapping ON mapping.barcode = p.barcode
+            LEFT JOIN purchase_distributors vendor ON vendor.id = mapping.distributor_id
             WHERE p.archived = 0
             ORDER BY p.description COLLATE NOCASE, p.barcode
             """);
@@ -104,8 +108,28 @@ internal sealed partial class RegisterData
         while (reader.Read())
             items.Add(new OrderItem(ReadProduct(reader), reader.GetInt64(8),
                 reader.IsDBNull(9) ? null : reader.GetInt64(9),
-                reader.IsDBNull(10) ? null : reader.GetInt64(10), reader.GetInt64(11)));
+                reader.IsDBNull(10) ? null : reader.GetInt64(10), reader.GetInt64(11),
+                reader.IsDBNull(12) ? null : DateOnly.FromDayNumber(Math.Max(start.DayNumber, ParseDay(reader.GetString(12)).DayNumber)), reader.GetInt64(13),
+                reader.IsDBNull(14) ? null : reader.GetInt64(14), reader.GetString(15)));
         return items;
+    }
+
+    public IReadOnlyDictionary<DateOnly, long> DailyItemSales(string barcode, DateOnly start, DateOnly end)
+    {
+        using var query = Command("""
+            SELECT s.business_date, sum(l.quantity * l.units_per_pack)
+            FROM sales s JOIN sale_lines l ON l.sale_id = s.id
+            WHERE l.barcode = $barcode AND l.kind = 'Product' AND s.business_date BETWEEN $start AND $end
+            GROUP BY s.business_date ORDER BY s.business_date
+            """);
+        query.Parameters.AddWithValue("$barcode", barcode);
+        query.Parameters.AddWithValue("$start", Day(start));
+        query.Parameters.AddWithValue("$end", Day(end));
+        using var rows = query.ExecuteReader();
+        var daily = new Dictionary<DateOnly, long>();
+        while (rows.Read())
+            daily.Add(ParseDay(rows.GetString(0)), rows.GetInt64(1));
+        return daily;
     }
 
     public long? ReadInventoryEntry(string barcode, DateOnly day, InventoryEntry kind)

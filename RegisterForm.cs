@@ -10,7 +10,9 @@ internal sealed class RegisterForm : Form
     private decimal taxRate;
     private readonly Sale sale = new();
     private readonly Dictionary<Keys, Action> shortcuts = [];
-    private readonly TextBox scanCode = new()
+    private RegisterKeys keys;
+    private Control? hotkeys;
+    private readonly ScannerField scanCode = new()
     {
         AccessibleName = "Scan item or enter code",
         Dock = DockStyle.Fill,
@@ -55,6 +57,15 @@ internal sealed class RegisterForm : Form
         this.data = data;
         this.folders = folders;
         taxRate = data.TaxRate;
+        keys = data.ReadRegisterKeys();
+        scanCode.DetectKeyboardScanner = keys.AutoScan;
+        scanCode.ScanReady += (_, _) => RunRegisterAction(SubmitScan);
+        scanCode.BurstReady += (_, _) => RunRegisterAction(() =>
+        {
+            string code = scanCode.Text;
+            if ((code.Length >= 8 && code.All(char.IsAsciiDigit)) || data.FindProduct(code) is not null)
+                SubmitScan();
+        });
         Text = "kPOS - Sales Entry (Training)";
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(1280, 780);
@@ -91,7 +102,8 @@ internal sealed class RegisterForm : Form
         side.RowStyles.Add(new RowStyle(SizeType.Absolute, 276));
         side.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         side.Controls.Add(CreateTotals(), 0, 0);
-        side.Controls.Add(CreateHotkeys(), 0, 1);
+        hotkeys = CreateHotkeys();
+        side.Controls.Add(hotkeys, 0, 1);
         layout.Controls.Add(side, 1, 2);
         layout.SetRowSpan(side, 2);
 
@@ -159,7 +171,7 @@ internal sealed class RegisterForm : Form
         AddCommand(saleMenu, "&Finish Sale", Keys.F9, FinishSale);
         AddCommand(saleMenu, "&Case Sale", Keys.F10, ArmCaseSale);
         saleMenu.DropDownItems.Add(new ToolStripSeparator());
-        AddCommand(saleMenu, "Edit &Quantity", Keys.F6, EditQuantity).ShortcutKeyDisplayString = "Q / F6";
+        AddCommand(saleMenu, "Edit &Quantity", Keys.F6, EditQuantity);
         AddCommand(saleMenu, "Line &Discount", Keys.F7, DiscountLine);
         AddCommand(saleMenu, "De&lete Line", Keys.F5, DeleteLine);
         AddCommand(saleMenu, "&Void Sale", Keys.F4, VoidSale);
@@ -293,7 +305,7 @@ internal sealed class RegisterForm : Form
         }
     }
 
-    private static Control CreateHotkeys()
+    private Control CreateHotkeys()
     {
         var section = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
         section.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
@@ -304,15 +316,15 @@ internal sealed class RegisterForm : Form
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         for (int i = 0; i < 5; i++)
             tiles.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        (string Key, string Action)[] keys =
+        (string Key, string Action)[] tilesToShow =
         [
-            ("Q", "Quantity"), ("F3", "Lookup"),
-            ("L", "Lottery"), ("F4", "Void"),
-            ("M", "Misc"), ("F5", "Delete"),
+            (keys.Quantity, "Quantity"), ("F3", "Lookup"),
+            (keys.Lottery, "Lottery"), ("F4", "Void"),
+            (keys.Misc, "Misc"), ("F5", "Delete"),
             ("F7", "Discount"), ("F10", "Case"),
             ("Ctrl+E", "Closeout"), ("Ctrl+R", "Reports")
         ];
-        for (int i = 0; i < keys.Length; i++)
+        for (int i = 0; i < tilesToShow.Length; i++)
         {
             var tile = new TableLayoutPanel
             {
@@ -321,12 +333,12 @@ internal sealed class RegisterForm : Form
             };
             tile.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 59));
             tile.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            var key = PosView.Label(keys[i].Key, 10, FontStyle.Bold, Color.White);
+            var key = PosView.Label(tilesToShow[i].Key, 10, FontStyle.Bold, Color.White);
             key.Dock = DockStyle.Fill;
             key.TextAlign = ContentAlignment.MiddleCenter;
             key.BackColor = PosView.Navy;
             key.Margin = new Padding(0);
-            var action = PosView.Label(keys[i].Action, 10);
+            var action = PosView.Label(tilesToShow[i].Action, 10);
             action.Anchor = AnchorStyles.Left;
             tile.Controls.Add(key, 0, 0);
             tile.Controls.Add(action, 1, 0);
@@ -392,11 +404,15 @@ internal sealed class RegisterForm : Form
         if (code.Length == 0)
             return;
 
-        switch (code.ToUpperInvariant())
+        if (code.Length == 1 && char.IsLetter(code[0]))
         {
-            case "Q": EditQuantity(); return;
-            case "L": AddLottery(); return;
-            case "M": AddMisc(); return;
+            if (code.Equals(keys.Quantity, StringComparison.OrdinalIgnoreCase))
+                EditQuantity();
+            else if (code.Equals(keys.Lottery, StringComparison.OrdinalIgnoreCase))
+                AddLottery();
+            else if (code.Equals(keys.Misc, StringComparison.OrdinalIgnoreCase))
+                AddMisc();
+            return;
         }
 
         Product? product = data.FindProduct(code);
@@ -406,6 +422,8 @@ internal sealed class RegisterForm : Form
             return;
         }
 
+        if (code.Length < 2)
+            return;
         if (code.Any(char.IsLetter))
             LookupItem(code, allowAddCode: true);
         else
@@ -710,6 +728,14 @@ internal sealed class RegisterForm : Form
         }
 
         taxRate = data.TaxRate;
+        keys = data.ReadRegisterKeys();
+        scanCode.DetectKeyboardScanner = keys.AutoScan;
+        if (hotkeys?.Parent is TableLayoutPanel side)
+        {
+            hotkeys.Dispose();
+            hotkeys = CreateHotkeys();
+            side.Controls.Add(hotkeys, 0, 1);
+        }
         WindowState = data.StartMaximized ? FormWindowState.Maximized : FormWindowState.Normal;
         status.Text = "Settings saved.";
         RefreshTicket(ticket.CurrentRow?.Index ?? 0);
