@@ -25,14 +25,27 @@ internal static class Program
             if (install)
                 folders.Install(settings);
 
-            if (string.IsNullOrWhiteSpace(overridePath))
-            {
-                folders.BackUpBeforeSchemaUpgrade();
+            folders.BackUpBeforeSchemaUpgrade();
 #if KPOS_SINGLE_FILE
-                if (Environment.ProcessPath is string executable)
+            if (Environment.ProcessPath is string executable)
+            {
+                try
+                {
                     previousExecutable = folders.InstallExecutable(executable);
-#endif
+                }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+                {
+                    int windowsCode = error.HResult & 0xffff;
+                    string help = windowsCode is 32 or 33
+                        ? "Close any other kPOS windows and try again."
+                        : "Extract the ZIP to a normal folder and make sure you can write to the installation folder.";
+                    MessageBox.Show(
+                        $"The kPOS application file could not be installed or updated. {help}\n\n{folders.Root}\n{error.Message}",
+                        "kPOS installation failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
             }
+#endif
 
             data = new RegisterData(folders.Database);
             if (install)

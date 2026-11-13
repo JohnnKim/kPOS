@@ -99,6 +99,36 @@ public sealed class RegisterLedgerTests
     }
 
     [TestMethod]
+    public void InstallingFromAReadOnlySourceLeavesTheInstalledExecutableWritable()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), $"kpos-install-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        string source = Path.Combine(directory, "download.exe");
+        string destination = Path.Combine(directory, "kPOS.exe");
+        var folders = new RegisterFolders(directory);
+        try
+        {
+            File.WriteAllText(source, "executable contents");
+            File.SetAttributes(source, FileAttributes.ReadOnly);
+
+            Assert.IsNull(folders.InstallExecutable(source));
+
+            Assert.AreEqual("executable contents", File.ReadAllText(destination));
+            Assert.IsFalse(new FileInfo(destination).IsReadOnly);
+            Assert.IsTrue(new FileInfo(source).IsReadOnly);
+        }
+        finally
+        {
+            foreach (string file in Directory.EnumerateFiles(directory))
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+                File.Delete(file);
+            }
+            Directory.Delete(directory);
+        }
+    }
+
+    [TestMethod]
     public void FirstInstallCopiesThePreviousCatalogAndUpgradesItInPlace()
     {
         string directory = Path.Combine(Path.GetTempPath(), $"kpos-upgrade-{Guid.NewGuid():N}");

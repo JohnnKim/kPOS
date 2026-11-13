@@ -32,7 +32,18 @@ try {
     Compress-Archive -LiteralPath (Join-Path $publish 'kPOS.exe') -DestinationPath $archive
     $extracted = Join-Path $staging.FullName 'extracted'
     Expand-Archive -LiteralPath $archive -DestinationPath $extracted
-    & (Join-Path $PSScriptRoot 'Test-WindowsExecutable.ps1') -Executable (Join-Path $extracted 'kPOS.exe')
+    $executable = Join-Path $extracted 'kPOS.exe'
+    (Get-Item -LiteralPath $executable).IsReadOnly = $true
+    & (Join-Path $PSScriptRoot 'Test-WindowsExecutable.ps1') -Executable $executable
+    # Use a lower-version copy of the same build to exercise Windows executable replacement.
+    if ([version]($Version.Split('-')[0]) -gt [version]'0.0.0') {
+        $previous = Join-Path $staging.FullName 'previous'
+        dotnet publish $app --no-restore --configuration Release --runtime win-x64 --self-contained --output $previous -warnaserror -p:Version=0.0.0 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false
+        if ($LASTEXITCODE -ne 0) {
+            throw "Building the upgrade test fixture failed with exit code $LASTEXITCODE."
+        }
+        & (Join-Path $PSScriptRoot 'Test-WindowsExecutable.ps1') -Executable $executable -PreviousExecutable (Join-Path $previous 'kPOS.exe')
+    }
 
     $checksum = Join-Path $staging.FullName $checksumName
     $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()

@@ -77,29 +77,48 @@ internal sealed class RegisterFolders(string root)
             return null;
 
         string temporary = installedApp + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        bool created = false;
         try
         {
             File.Copy(runningApp, temporary);
-            if (replacing)
+            created = true;
+            // ZIP viewers can mark the source read-only. Clear that flag on our copy only.
+            MakeWritableIfPresent(temporary);
+            if (!replacing)
             {
-                string previous = installedApp + ".previous";
+                File.Move(temporary, installedApp);
+                return null;
+            }
+
+            string previous = installedApp + ".previous";
+            MakeWritableIfPresent(installedApp);
+            MakeWritableIfPresent(previous);
+            File.Replace(temporary, installedApp, previous);
+            return previous;
+        }
+        catch
+        {
+            if (created)
+            {
                 try
                 {
-                    File.Replace(temporary, installedApp, previous);
+                    MakeWritableIfPresent(temporary);
+                    File.Delete(temporary);
                 }
-                catch (IOException error)
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException)
                 {
-                    throw new IOException("Close the installed kPOS before running this update.", error);
+                    // Keep the original installation error if cleanup also fails.
                 }
-                return previous;
             }
-            File.Move(temporary, installedApp);
+            throw;
         }
-        finally
+
+        static void MakeWritableIfPresent(string path)
         {
-            File.Delete(temporary);
+            var file = new FileInfo(path);
+            if (file.Exists && file.IsReadOnly)
+                file.IsReadOnly = false;
         }
-        return null;
     }
 
     public void RestoreExecutable(string previous) =>

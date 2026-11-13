@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [string] $Executable
+    [string] $Executable,
+
+    [string] $PreviousExecutable
 )
 
 $ErrorActionPreference = 'Stop'
@@ -321,11 +323,41 @@ $previousData = [Environment]::GetEnvironmentVariable('KPOS_DATA_DIRECTORY')
 $smokeData = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) "kpos-smoke-$([guid]::NewGuid().ToString('N'))")
 try {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $smokeData.FullName)
-    [KposExecutableTest]::Run((Resolve-Path -LiteralPath $Executable).ProviderPath)
-    Write-Output 'Packaged kPOS passed barcode entry, item lookup, quantity, age display, lottery and misc entries, count confirmation, payment, countdown, and Enter dismissal.'
+    $source = (Resolve-Path -LiteralPath $Executable).ProviderPath
+    $installed = Join-Path $smokeData.FullName 'kPOS.exe'
+    $previous = "$installed.previous"
+    if ($PreviousExecutable) {
+        Copy-Item -LiteralPath $PreviousExecutable -Destination $installed
+        (Get-Item -LiteralPath $installed).IsReadOnly = $true
+        Copy-Item -LiteralPath $PreviousExecutable -Destination $previous
+        (Get-Item -LiteralPath $previous).IsReadOnly = $true
+        $previousHash = (Get-FileHash -LiteralPath $installed).Hash
+    }
+
+    [KposExecutableTest]::Run($source)
+
+    if ((Get-FileHash -LiteralPath $installed).Hash -ne (Get-FileHash -LiteralPath $source).Hash -or
+        (Get-Item -LiteralPath $installed).IsReadOnly) {
+        throw 'The installed executable must match the package and be writable.'
+    }
+    if ($PreviousExecutable -and (Get-FileHash -LiteralPath $previous).Hash -ne $previousHash) {
+        throw 'The previously installed executable was not preserved during the update.'
+    }
+    if (Get-ChildItem -LiteralPath $smokeData.FullName -Filter 'kPOS.exe.*.tmp') {
+        throw 'The installation left behind a temporary executable.'
+    }
+
+    $scenario = if ($PreviousExecutable) { 'upgrade' } else { 'first installation' }
+    Write-Output "Packaged kPOS passed $scenario, barcode entry, item lookup, quantity, age display, lottery and misc entries, count confirmation, payment, countdown, and Enter dismissal."
 }
 finally {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $previousData)
+    foreach ($name in 'kPOS.exe', 'kPOS.exe.previous') {
+        $path = Join-Path $smokeData.FullName $name
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            Remove-Item -LiteralPath $path -Force
+        }
+    }
     foreach ($name in 'register.db', 'register.db-journal', 'register.db-wal', 'register.db-shm') {
         $path = Join-Path $smokeData.FullName "Database/$name"
         if (Test-Path -LiteralPath $path -PathType Leaf) {
