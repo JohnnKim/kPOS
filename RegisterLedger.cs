@@ -15,6 +15,12 @@ internal sealed partial class RegisterData
     public const int SchemaVersion = 7;
     public const int DefaultChangeSeconds = 8;
     public const int MaximumChangeSeconds = 120;
+    private const string HasSoldItems = """
+        refund_of IS NULL AND EXISTS (SELECT 1 FROM sale_lines WHERE sale_id = sales.id AND quantity > 0)
+        """;
+    private const string HasReturnedItems = """
+        refund_of IS NOT NULL OR EXISTS (SELECT 1 FROM sale_lines WHERE sale_id = sales.id AND quantity < 0)
+        """;
 
     public int ChangeSeconds
     {
@@ -34,7 +40,7 @@ internal sealed partial class RegisterData
     public void RecordSale(Guid saleId, DateTimeOffset soldAt, Sale sale, SaleTotals totals, Payment payment)
     {
         if (sale.Lines.Count == 0 || payment.Received < totals.Total ||
-            (payment.Method == PaymentMethod.Card && payment.Received != totals.Total))
+            ((payment.Method == PaymentMethod.Card || totals.Total < 0) && payment.Received != totals.Total))
             throw new InvalidOperationException("The ticket or payment amount is incomplete.");
 
         using var transaction = connection.BeginTransaction(deferred: false);
@@ -119,9 +125,10 @@ internal sealed partial class RegisterData
     {
         string sql = report switch
         {
-            RecordReport.Totals => """
+            RecordReport.Totals => $$"""
                 SELECT $start AS "From date", $end AS "Through date",
-                       count(*) - count(refund_of) AS Sales, count(refund_of) AS Refunds,
+                       count(CASE WHEN {{HasSoldItems}} THEN 1 END) AS Sales,
+                       count(CASE WHEN {{HasReturnedItems}} THEN 1 END) AS Refunds,
                        coalesce(sum(subtotal_cents), 0) / 100.0 AS Subtotal,
                        coalesce(sum(lottery_cents), 0) / 100.0 AS Lottery,
                        coalesce(sum(discount_cents), 0) / 100.0 AS Discounts,
@@ -131,13 +138,14 @@ internal sealed partial class RegisterData
                        coalesce(sum(CASE WHEN tender = 'Card' THEN total_cents END), 0) / 100.0 AS Card
                 FROM sales WHERE business_date BETWEEN $start AND $end
                 """,
-            RecordReport.Sales => """
+            RecordReport.Sales => $$"""
                 SELECT id AS "Sale ID", sold_at AS "Sold at", tender AS Payment,
                        subtotal_cents / 100.0 AS Subtotal, lottery_cents / 100.0 AS Lottery,
                        discount_cents / 100.0 AS Discounts,
                        tax_rate / 10000.0 AS "Tax rate (%)", tax_cents / 100.0 AS Tax,
                        total_cents / 100.0 AS Total, received_cents / 100.0 AS Received, change_cents / 100.0 AS "Change",
-                       CASE WHEN refund_of IS NOT NULL THEN 'Refund'
+                       CASE WHEN ({{HasReturnedItems}}) AND ({{HasSoldItems}}) THEN 'Sale with return'
+                            WHEN {{HasReturnedItems}} THEN 'Refund'
                             WHEN EXISTS (SELECT 1 FROM sales AS refund WHERE refund.refund_of = sales.id) THEN 'Refunded sale'
                             ELSE 'Sale' END AS Entry,
                        refund_of AS "Original Sale ID"

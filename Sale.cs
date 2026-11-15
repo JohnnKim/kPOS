@@ -49,7 +49,8 @@ internal sealed class Sale
     private readonly List<SaleLine> lines = [];
 
     public IReadOnlyList<SaleLine> Lines => lines;
-    public long ItemCount => lines.Sum(line => (long)line.Quantity);
+    public long ItemCount => lines.Sum(line => Math.Abs((long)line.Quantity));
+    public bool HasReturns => lines.Any(line => line.Quantity < 0);
     public decimal Subtotal => lines.Sum(line => line.Gross);
     public decimal Discount => lines.Sum(line => line.Discount);
 
@@ -65,7 +66,7 @@ internal sealed class Sale
     {
         int existing = lines.FindLastIndex(line =>
             line.Product == product && line.IsCase == isCase &&
-            line.DiscountRate == 0 && line.Quantity < SaleLine.MaximumQuantity);
+            line.DiscountRate == 0 && line.Quantity is > 0 and < SaleLine.MaximumQuantity);
         if (existing >= 0)
         {
             SaleLine line = lines[existing];
@@ -93,6 +94,8 @@ internal sealed class Sale
 
     public void SetQuantity(int index, int quantity) =>
         lines[index] = lines[index] with { Quantity = quantity };
+
+    public void RefundLine(int index) => SetQuantity(index, -1);
 
     public void SetDiscount(int index, decimal rate)
     {

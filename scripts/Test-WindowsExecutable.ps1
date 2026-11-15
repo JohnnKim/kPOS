@@ -193,22 +193,25 @@ public static class KposExecutableTest
                 Send(backup, 0x0010, 0); // WM_CLOSE
                 WaitUntil(() => !IsWindow(backup) && IsWindowEnabled(register), "return to the scanner from backup options");
                 EnterText(scanner, "RF");
-                IntPtr refundPicker = FindWindow(desktop, process.ProcessId, "Refund a Completed Sale");
-                IntPtr review = IntPtr.Zero;
-                WaitUntil(() => (review = FindChildWithText(refundPicker, "&Review Sale")) != IntPtr.Zero &&
-                    IsWindowEnabled(review), "select the latest completed sale");
-                Send(review, 0x00F5, 0); // BM_CLICK
-                IntPtr refund = FindWindow(desktop, process.ProcessId, "Review Full-Sale Refund");
-                IntPtr cashRefund = IntPtr.Zero;
-                IntPtr recordRefund = IntPtr.Zero;
-                WaitUntil(() => (cashRefund = FindChildWithText(refund, "Paid from &cash drawer")) != IntPtr.Zero &&
-                    (recordRefund = FindChildWithText(refund, "&Record Refund")) != IntPtr.Zero, "show refund payout options");
+                WaitUntil(() => HasText(register, "Select a line on the current sale to refund it."), "require a current sale line for RF");
+                EnterText(scanner, "101");
+                EnterText(scanner, "101");
+                WaitUntil(() => HasText(register, "$24.68"), "ring two units on one line");
+                EnterText(scanner, "RF");
+                WaitUntil(() => HasText(register, "Return: Pale Ale (Qty -1)") &&
+                    HasText(register, "REFUND DUE") && HasText(register, "$12.34"), "return one unit from the selected line");
+                Send(scanner, 0x0100, 0x78); // F9
+                checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
+                WaitUntil(() => HasText(checkout, "REFUND DUE\n$12.34"), "show the payout for the returned item");
+                IntPtr cashRefund = FindChildWithText(checkout, "Record &Cash Refund");
+                if (cashRefund == IntPtr.Zero || IsWindowEnabled(cashRefund))
+                    throw new InvalidOperationException("Refund payout must be locked before confirming the item count.");
+                EnterText(FindTextBox(checkout), "1");
+                WaitUntil(() => IsWindowEnabled(cashRefund), "confirm one returned item");
                 Send(cashRefund, 0x00F5, 0); // BM_CLICK
-                Send(recordRefund, 0x00F5, 0); // BM_CLICK
-                IntPtr confirmation = FindWindow(desktop, process.ProcessId, "Confirm Refund");
-                WaitUntil(() => HasText(confirmation, "Record the full refund of $8.09?"), "confirm the original sale amount");
-                Send(confirmation, 0x0111, 6); // Yes
-                WaitUntil(() => HasText(register, "Refund recorded for $8.09. Ready to scan.") &&
+                WaitUntil(() => HasText(checkout, "REFUND RECORDED\n$12.34"), "record the cash refund");
+                Send(FindChildWithText(checkout, "&Next Sale"), 0x0100, 0x0d); // Enter
+                WaitUntil(() => HasText(register, "Training refund complete. Ready to scan.") &&
                     HasText(register, "$1.91"), "record the refund and retain the last change due");
                 if (automaticUpdate)
                 {

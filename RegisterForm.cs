@@ -48,6 +48,7 @@ internal sealed class RegisterForm : Form
     private readonly Label taxCaption = new() { Anchor = AnchorStyles.Left, AutoSize = true };
     private readonly Label tax = CreateAmountLabel();
     private readonly Label totalDue = CreateAmountLabel();
+    private readonly Label totalCaption = PosView.Label("TOTAL DUE", 12, FontStyle.Bold, Color.White);
     private readonly Label lastChange = CreateAmountLabel();
     private bool nextItemIsCase;
     private bool exporting;
@@ -175,7 +176,7 @@ internal sealed class RegisterForm : Form
         AddCommand(saleMenu, "Line &Discount", Keys.F7, DiscountLine);
         AddCommand(saleMenu, "De&lete Line", Keys.F5, DeleteLine);
         AddCommand(saleMenu, "&Void Sale", Keys.F4, VoidSale);
-        AddCommand(saleMenu, "&Refund Sale…", Keys.Control | Keys.Shift | Keys.R, RefundSale);
+        AddCommand(saleMenu, "&Refund Line", Keys.Control | Keys.Shift | Keys.R, RefundLine);
         saleMenu.DropDownItems.Add(new ToolStripSeparator());
         AddCommand(saleMenu, "E&xit", Keys.F2, Close);
         var lists = new ToolStripMenuItem("&Lists");
@@ -283,7 +284,7 @@ internal sealed class RegisterForm : Form
         };
         total.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
         total.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        total.Controls.Add(PosView.Label("TOTAL DUE", 12, FontStyle.Bold, Color.White), 0, 0);
+        total.Controls.Add(totalCaption, 0, 0);
         totalDue.Font = PosView.Text(35, FontStyle.Bold);
         totalDue.ForeColor = Color.White;
         total.Controls.Add(totalDue, 0, 1);
@@ -407,7 +408,7 @@ internal sealed class RegisterForm : Form
 
         if (allowRefundShortcut && code.Equals(keys.Refund, StringComparison.OrdinalIgnoreCase))
         {
-            RefundSale();
+            RefundLine();
             return;
         }
 
@@ -541,13 +542,15 @@ internal sealed class RegisterForm : Form
 
         int index = row.Index;
         SaleLine line = sale.Lines[index];
+        bool isReturn = line.Quantity < 0;
         using var dialog = new NumberEntryForm(
-            "Edit Quantity", $"Quantity for {line.Product.Description}", line.Quantity,
+            "Edit Quantity", $"Quantity for {line.Product.Description}", Math.Abs(line.Quantity),
             1, SaleLine.MaximumQuantity, 0, _ => "");
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
-            sale.SetQuantity(index, (int)dialog.Value);
-            status.Text = $"Quantity for {line.Product.Description}: {dialog.Value}";
+            int quantity = (int)dialog.Value * (isReturn ? -1 : 1);
+            sale.SetQuantity(index, quantity);
+            status.Text = $"Quantity for {line.Product.Description}: {quantity}";
             RefreshTicket(index);
         }
     }
@@ -592,11 +595,12 @@ internal sealed class RegisterForm : Form
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
 
-        ShowLastChange(dialog.ChangeDue);
+        if (totals.Total >= 0)
+            ShowLastChange(dialog.ChangeDue);
         sale.Clear();
         SetCaseSale(false);
         scanCode.Clear();
-        status.Text = "Training sale complete. Ready to scan.";
+        status.Text = totals.Total < 0 ? "Training refund complete. Ready to scan." : "Training sale complete. Ready to scan.";
         RefreshTicket();
     }
 
@@ -648,11 +652,17 @@ internal sealed class RegisterForm : Form
         dialog.ShowDialog(this);
     }
 
-    private void RefundSale()
+    private void RefundLine()
     {
-        using var dialog = new RecordsForm(data, folders, refundMode: true);
-        if (dialog.ShowDialog(this) == DialogResult.OK)
-            status.Text = $"Refund recorded for {Sale.Money(dialog.RefundAmount)}. Ready to scan.";
+        if (ticket.CurrentRow is not DataGridViewRow row)
+        {
+            status.Text = "Select a line on the current sale to refund it.";
+            return;
+        }
+
+        sale.RefundLine(row.Index);
+        status.Text = $"Return: {sale.Lines[row.Index].Product.Description} (Qty -1)";
+        RefreshTicket(row.Index);
     }
 
     private async void ExportBackup()
@@ -780,9 +790,11 @@ internal sealed class RegisterForm : Form
             if (line.IsCase)
                 description += $"  ·  Case of {line.Product.UnitsPerCase}";
 
-            ticket.Rows.Add(description, line.Quantity, Sale.Money(line.Price),
+            int index = ticket.Rows.Add(description, line.Quantity, Sale.Money(line.Price),
                 line.DiscountRate == 0 ? "" : line.DiscountRate.ToString("0.##", CultureInfo.InvariantCulture),
                 Sale.Money(line.Extended));
+            if (line.Quantity < 0)
+                ticket.Rows[index].DefaultCellStyle.ForeColor = PosView.Error;
         }
 
         if (ticket.RowCount > 0)
@@ -794,6 +806,7 @@ internal sealed class RegisterForm : Form
         discounts.Text = Sale.Money(totals.Discount);
         taxCaption.Text = $"Sales tax ({Sale.Rate(taxRate)})";
         tax.Text = Sale.Money(totals.Tax);
-        totalDue.Text = Sale.Money(totals.Total);
+        totalCaption.Text = totals.Total < 0 ? "REFUND DUE" : "TOTAL DUE";
+        totalDue.Text = Sale.Money(Math.Abs(totals.Total));
     }
 }

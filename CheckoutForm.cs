@@ -12,6 +12,8 @@ internal sealed class CheckoutForm : Form
     private readonly Label feedback = PosView.Label("", 11);
     private readonly Button verifyCount = PosView.Button("&Confirm Count", size: 11);
     private readonly Button complete = PosView.Button("&Complete Sale", primary: true);
+    private readonly Button cashRefund = PosView.Button("Record &Cash Refund", primary: true, size: 11);
+    private readonly Button cardRefund = PosView.Button("Record Card &Refund", size: 11);
     private readonly System.Windows.Forms.Timer changeTimer = new() { Interval = 150 };
     private bool unlocked;
     private bool amountEdited;
@@ -32,6 +34,7 @@ internal sealed class CheckoutForm : Form
         Font = PosView.Text(13);
         BackColor = PosView.Canvas;
         unlocked = !requireItemCount;
+        bool isRefund = totals.Total < 0;
 
         var layout = new TableLayoutPanel
         {
@@ -48,16 +51,16 @@ internal sealed class CheckoutForm : Form
         var receipt = PosView.Frame(CreateReceipt(sale), Padding.Empty);
         receipt.Margin = new Padding(0, 0, 12, 0);
         layout.Controls.Add(receipt, 0, 1);
-        layout.Controls.Add(PosView.Frame(CreatePaymentSummary(totals, requireItemCount), new Padding(13)), 1, 1);
+        layout.Controls.Add(PosView.Frame(CreatePaymentSummary(totals, requireItemCount, sale.HasReturns), new Padding(13)), 1, 1);
         Controls.Add(layout);
 
         amount.Text = totals.Total.ToString("F2", CultureInfo.InvariantCulture);
         amount.Enabled = unlocked;
-        AcceptButton = unlocked ? complete : verifyCount;
+        AcceptButton = requireItemCount ? verifyCount : isRefund ? null : complete;
         Shown += (_, _) =>
         {
             if (unlocked)
-                FocusAmount();
+                FocusPayment();
             else
                 itemCount.Focus();
         };
@@ -68,7 +71,13 @@ internal sealed class CheckoutForm : Form
             amountEdited = true;
             RefreshPayment();
         };
-        complete.Click += (_, _) => CompletePayment();
+        complete.Click += (_, _) =>
+        {
+            if (TryGetPayment(out Payment payment))
+                CompletePayment(payment);
+        };
+        cashRefund.Click += (_, _) => CompletePayment(new Payment(PaymentMethod.Cash, totals.Total));
+        cardRefund.Click += (_, _) => CompletePayment(new Payment(PaymentMethod.Card, totals.Total));
         RefreshPayment();
 
         void ConfirmCount()
@@ -93,13 +102,19 @@ internal sealed class CheckoutForm : Form
             countFeedback.ForeColor = PosView.Muted;
             countFeedback.Text = $"{sale.ItemCount:N0} items confirmed";
             amount.Enabled = true;
-            AcceptButton = complete;
+            AcceptButton = isRefund ? null : complete;
             RefreshPayment();
-            FocusAmount();
+            FocusPayment();
         }
 
-        void FocusAmount()
+        void FocusPayment()
         {
+            if (isRefund)
+            {
+                cashRefund.Focus();
+                return;
+            }
+
             amount.Focus();
             amount.SelectAll();
         }
@@ -119,12 +134,22 @@ internal sealed class CheckoutForm : Form
 
         void RefreshPayment()
         {
+            if (isRefund)
+            {
+                cashRefund.Enabled = cardRefund.Enabled = unlocked;
+                feedback.Text = unlocked ? "After issuing the refund, select how it was paid."
+                    : "Confirm the item count to unlock the refund.";
+                return;
+            }
+
             bool valid = TryGetPayment(out Payment payment);
             complete.Enabled = unlocked && valid;
             ChangeDue = complete.Enabled ? payment.Received - totals.Total : 0;
             feedback.ForeColor = !unlocked || valid ? PosView.Muted : PosView.Error;
             if (!unlocked)
                 feedback.Text = "Confirm the item count to unlock payment.";
+            else if (totals.Total == 0)
+                feedback.Text = "No payment due. Press Enter to finish.";
             else if (!amountEdited)
                 feedback.Text = totals.Lottery > 0 ? "Press Enter after debit approval." : "Press Enter after terminal approval.";
             else if (valid)
@@ -135,9 +160,9 @@ internal sealed class CheckoutForm : Form
                 feedback.Text = "Enter the amount received.";
         }
 
-        void CompletePayment()
+        void CompletePayment(Payment payment)
         {
-            if (!unlocked || recorded || !TryGetPayment(out Payment payment))
+            if (!unlocked || recorded)
                 return;
 
             try
@@ -225,8 +250,13 @@ internal sealed class CheckoutForm : Form
         AddAmountRow(summary, 0, "Subtotal", totals.Subtotal - totals.Discount, 18);
         AddAmountRow(summary, 1, "Sales tax", totals.Tax, 18);
         AddAmountRow(summary, 2, "Total", totals.Total, 22);
-        AddAmountRow(summary, 3, payment.Method == PaymentMethod.Cash ? "Cash received" : "Amount received", payment.Received, 18);
-        var result = CreateAmountBanner("CHANGE DUE", ChangeDue);
+        bool isRefund = totals.Total < 0;
+        string paymentLabel = isRefund
+            ? payment.Method == PaymentMethod.Cash ? "Cash refund" : "Card refund"
+            : payment.Method == PaymentMethod.Cash ? "Cash received" : "Amount received";
+        AddAmountRow(summary, 3, paymentLabel, Math.Abs(payment.Received), 18);
+        var result = isRefund ? CreateAmountBanner("REFUND RECORDED", -payment.Received)
+            : CreateAmountBanner("CHANGE DUE", ChangeDue);
         result.Margin = new Padding(0, 14, 0, 8);
         AddWide(summary, 4, result);
         var countdown = PosView.Label("", 13, FontStyle.Bold, PosView.Muted);
@@ -298,7 +328,7 @@ internal sealed class CheckoutForm : Form
         return grid;
     }
 
-    private Control CreatePaymentSummary(SaleTotals totals, bool requireCount)
+    private Control CreatePaymentSummary(SaleTotals totals, bool requireCount, bool saleHasReturns)
     {
         var summary = new TableLayoutPanel
         {
@@ -306,7 +336,8 @@ internal sealed class CheckoutForm : Form
         };
         summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
         summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
-        AddWide(summary, 0, CreateAmountBanner("TOTAL DUE", totals.Total));
+        bool isRefund = totals.Total < 0;
+        AddWide(summary, 0, CreateAmountBanner(isRefund ? "REFUND DUE" : "TOTAL DUE", Math.Abs(totals.Total)));
         AddAmountRow(summary, 1, "Merchandise", totals.Merchandise);
         AddAmountRow(summary, 2, "Lottery", totals.Lottery);
         AddAmountRow(summary, 3, "Discounts", -totals.Discount);
@@ -314,7 +345,9 @@ internal sealed class CheckoutForm : Form
         int row = 5;
         if (requireCount)
         {
-            var label = PosView.Label("Count the items and enter the quantity", 12, FontStyle.Bold);
+            string prompt = saleHasReturns ? "Count purchase and return items, then enter the quantity"
+                : "Count the items and enter the quantity";
+            var label = PosView.Label(prompt, 12, FontStyle.Bold);
             label.Margin = new Padding(3, 10, 3, 3);
             AddWide(summary, row++, label);
             itemCount.Font = PosView.Text(17);
@@ -324,18 +357,24 @@ internal sealed class CheckoutForm : Form
             AddWide(summary, row++, countFeedback);
         }
 
-        var received = PosView.Label("Amount received", 12, FontStyle.Bold);
-        received.Margin = new Padding(3, 10, 3, 3);
-        AddWide(summary, row++, received);
-        amount.Font = PosView.Text(24, FontStyle.Bold);
-        AddWide(summary, row++, amount);
+        if (!isRefund)
+        {
+            var received = PosView.Label("Amount received", 12, FontStyle.Bold);
+            received.Margin = new Padding(3, 10, 3, 3);
+            AddWide(summary, row++, received);
+            amount.Font = PosView.Text(24, FontStyle.Bold);
+            AddWide(summary, row++, amount);
+        }
         AddWide(summary, row++, feedback);
 
         var back = PosView.Button("&Back to Sale");
         back.DialogResult = DialogResult.Cancel;
         CancelButton = back;
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
-        actions.Controls.AddRange([complete, back]);
+        if (isRefund)
+            actions.Controls.AddRange([cashRefund, cardRefund, back]);
+        else
+            actions.Controls.AddRange([complete, back]);
         AddWide(summary, row, actions);
         return summary;
     }

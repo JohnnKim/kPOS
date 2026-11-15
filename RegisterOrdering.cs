@@ -42,7 +42,7 @@ internal sealed partial class RegisterData
 
     public decimal? LastChange()
     {
-        using var query = Command("SELECT change_cents FROM sales WHERE refund_of IS NULL ORDER BY rowid DESC LIMIT 1");
+        using var query = Command("SELECT change_cents FROM sales WHERE refund_of IS NULL AND total_cents >= 0 ORDER BY rowid DESC LIMIT 1");
         return query.ExecuteScalar() is long cents ? cents / 100m : null;
     }
 

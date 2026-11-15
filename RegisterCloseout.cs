@@ -50,11 +50,12 @@ internal sealed partial class RegisterData
 
     public DaySales GetDaySales(DateOnly day, SqliteTransaction? transaction = null)
     {
-        using var query = Command("""
-            SELECT count(*) - count(refund_of), coalesce(sum(subtotal_cents), 0), coalesce(sum(discount_cents), 0),
+        using var query = Command($$"""
+            SELECT count(CASE WHEN {{HasSoldItems}} THEN 1 END), coalesce(sum(subtotal_cents), 0), coalesce(sum(discount_cents), 0),
                    coalesce(sum(tax_cents), 0), coalesce(sum(lottery_cents), 0),
                    coalesce(sum(CASE WHEN tender = 'Cash' THEN total_cents END), 0),
-                   coalesce(sum(CASE WHEN tender = 'Card' THEN total_cents END), 0), count(refund_of)
+                   coalesce(sum(CASE WHEN tender = 'Card' THEN total_cents END), 0),
+                   count(CASE WHEN {{HasReturnedItems}} THEN 1 END)
             FROM sales WHERE business_date = $day
             """, transaction);
         query.Parameters.AddWithValue("$day", Day(day));
