@@ -12,7 +12,7 @@ internal enum RecordReport { Totals, Sales, SaleLines, ItemTotals, PriceHistory,
 
 internal sealed partial class RegisterData
 {
-    public const int SchemaVersion = 6;
+    public const int SchemaVersion = 7;
     public const int DefaultChangeSeconds = 8;
     public const int MaximumChangeSeconds = 120;
 
@@ -120,7 +120,8 @@ internal sealed partial class RegisterData
         string sql = report switch
         {
             RecordReport.Totals => """
-                SELECT $start AS "From date", $end AS "Through date", count(*) AS Sales,
+                SELECT $start AS "From date", $end AS "Through date",
+                       count(*) - count(refund_of) AS Sales, count(refund_of) AS Refunds,
                        coalesce(sum(subtotal_cents), 0) / 100.0 AS Subtotal,
                        coalesce(sum(lottery_cents), 0) / 100.0 AS Lottery,
                        coalesce(sum(discount_cents), 0) / 100.0 AS Discounts,
@@ -135,7 +136,11 @@ internal sealed partial class RegisterData
                        subtotal_cents / 100.0 AS Subtotal, lottery_cents / 100.0 AS Lottery,
                        discount_cents / 100.0 AS Discounts,
                        tax_rate / 10000.0 AS "Tax rate (%)", tax_cents / 100.0 AS Tax,
-                       total_cents / 100.0 AS Total, received_cents / 100.0 AS Received, change_cents / 100.0 AS "Change"
+                       total_cents / 100.0 AS Total, received_cents / 100.0 AS Received, change_cents / 100.0 AS "Change",
+                       CASE WHEN refund_of IS NOT NULL THEN 'Refund'
+                            WHEN EXISTS (SELECT 1 FROM sales AS refund WHERE refund.refund_of = sales.id) THEN 'Refunded sale'
+                            ELSE 'Sale' END AS Entry,
+                       refund_of AS "Original Sale ID"
                 FROM sales WHERE business_date BETWEEN $start AND $end
                 ORDER BY business_date DESC, sold_at DESC, id DESC
                 """,

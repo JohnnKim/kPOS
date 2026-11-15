@@ -71,7 +71,8 @@ internal sealed partial class RegisterData : IDisposable
         using var command = Command("""
             UPDATE register_settings SET tax_rate = $rate, change_seconds = $seconds,
                 require_item_count = $count, start_maximized = $maximized, quantity_key = $quantity,
-                lottery_key = $lottery, misc_key = $misc, stock_key = $stock, auto_scan = $auto WHERE id = 1
+                lottery_key = $lottery, misc_key = $misc, stock_key = $stock, auto_scan = $auto,
+                refund_key = $refund WHERE id = 1
             """, transaction);
         command.Parameters.AddWithValue("$rate", decimal.ToInt64(taxRate * 10000));
         command.Parameters.AddWithValue("$seconds", changeSeconds);
@@ -81,6 +82,7 @@ internal sealed partial class RegisterData : IDisposable
         command.Parameters.AddWithValue("$lottery", keys.Lottery);
         command.Parameters.AddWithValue("$misc", keys.Misc);
         command.Parameters.AddWithValue("$stock", keys.Stock);
+        command.Parameters.AddWithValue("$refund", keys.Refund);
         command.Parameters.AddWithValue("$auto", keys.AutoScan);
         command.ExecuteNonQuery();
         transaction.Commit();
@@ -119,7 +121,7 @@ internal sealed partial class RegisterData : IDisposable
         if (original is not null && product.Barcode != original.Barcode)
             return "The scanned barcode stays fixed when editing a product.";
 
-        if (product.Code.Length == 1 || product.Barcode.Length == 1)
+        if (product.Code.Length <= 2 || product.Barcode.Length <= 2)
         {
             RegisterKeys keys = ReadRegisterKeys(transaction);
             if (keys.IsSaleShortcut(product.Code) || keys.IsSaleShortcut(product.Barcode))
@@ -160,7 +162,7 @@ internal sealed partial class RegisterData : IDisposable
             using var existing = Command("SELECT code, barcode FROM products WHERE barcode = $barcode AND archived = 1", transaction);
             existing.Parameters.AddWithValue("$barcode", barcode);
             using var reader = existing.ExecuteReader();
-            if (reader.Read() && (reader.GetString(0).Length == 1 || reader.GetString(1).Length == 1))
+            if (reader.Read() && (reader.GetString(0).Length <= 2 || reader.GetString(1).Length <= 2))
             {
                 string code = reader.GetString(0);
                 string itemBarcode = reader.GetString(1);
@@ -237,6 +239,8 @@ internal sealed partial class RegisterData : IDisposable
             CreateOrdering(transaction);
         if (currentVersion < 6)
             CreatePurchaseOrderProfiles(transaction);
+        if (currentVersion < 7)
+            AddRefunds(transaction);
 
         transaction.Commit();
     }

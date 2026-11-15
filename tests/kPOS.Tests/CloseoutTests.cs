@@ -102,6 +102,7 @@ public sealed class CloseoutTests
                     ALTER TABLE register_settings DROP COLUMN misc_key;
                     ALTER TABLE register_settings DROP COLUMN stock_key;
                     ALTER TABLE register_settings DROP COLUMN auto_scan;
+                    ALTER TABLE register_settings DROP COLUMN refund_key;
                     ALTER TABLE register_settings DROP COLUMN require_item_count;
                     ALTER TABLE register_settings DROP COLUMN start_maximized;
                     DROP TABLE order_draft;
@@ -110,6 +111,8 @@ public sealed class CloseoutTests
                     ALTER TABLE products DROP COLUMN archived;
                     DROP TABLE day_closeouts;
                     ALTER TABLE sale_lines DROP COLUMN kind;
+                    DROP INDEX sales_refund_of;
+                    ALTER TABLE sales DROP COLUMN refund_of;
                     ALTER TABLE sales DROP COLUMN lottery_cents;
                     PRAGMA user_version = 2;
                     """;

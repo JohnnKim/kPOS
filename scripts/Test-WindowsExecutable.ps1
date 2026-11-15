@@ -191,6 +191,25 @@ public static class KposExecutableTest
                 IntPtr backup = FindWindow(desktop, process.ProcessId, "Export Backup");
                 WaitUntil(() => HasText(backup, "Choose &Location…"), "open backup options from the register");
                 Send(backup, 0x0010, 0); // WM_CLOSE
+                WaitUntil(() => !IsWindow(backup) && IsWindowEnabled(register), "return to the scanner from backup options");
+                EnterText(scanner, "RF");
+                IntPtr refundPicker = FindWindow(desktop, process.ProcessId, "Refund a Completed Sale");
+                IntPtr review = IntPtr.Zero;
+                WaitUntil(() => (review = FindChildWithText(refundPicker, "&Review Sale")) != IntPtr.Zero &&
+                    IsWindowEnabled(review), "select the latest completed sale");
+                Send(review, 0x00F5, 0); // BM_CLICK
+                IntPtr refund = FindWindow(desktop, process.ProcessId, "Review Full-Sale Refund");
+                IntPtr cashRefund = IntPtr.Zero;
+                IntPtr recordRefund = IntPtr.Zero;
+                WaitUntil(() => (cashRefund = FindChildWithText(refund, "Paid from &cash drawer")) != IntPtr.Zero &&
+                    (recordRefund = FindChildWithText(refund, "&Record Refund")) != IntPtr.Zero, "show refund payout options");
+                Send(cashRefund, 0x00F5, 0); // BM_CLICK
+                Send(recordRefund, 0x00F5, 0); // BM_CLICK
+                IntPtr confirmation = FindWindow(desktop, process.ProcessId, "Confirm Refund");
+                WaitUntil(() => HasText(confirmation, "Record the full refund of $8.09?"), "confirm the original sale amount");
+                Send(confirmation, 0x0111, 6); // Yes
+                WaitUntil(() => HasText(register, "Refund recorded for $8.09. Ready to scan.") &&
+                    HasText(register, "$1.91"), "record the refund and retain the last change due");
                 if (automaticUpdate)
                 {
                     UpdateThroughRegister(desktop, process, scanner);
@@ -498,7 +517,7 @@ try {
     }
 
     $scenario = if ($UpdateArchive) { 'one-click upgrade and restart' } elseif ($PreviousExecutable) { 'upgrade' } else { 'first installation' }
-    Write-Output "Packaged kPOS passed $scenario, barcode entry, item lookup, quantity, age display, lottery and misc entries, count confirmation, payment, change display, product deletion prompts, sales records, closeout, and ordering."
+    Write-Output "Packaged kPOS passed $scenario, barcode entry, item lookup, quantity, age display, lottery and misc entries, count confirmation, payment, change display, product deletion prompts, sales records, refunds, closeout, and ordering."
 }
 finally {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $previousData)

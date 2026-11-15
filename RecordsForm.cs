@@ -10,6 +10,7 @@ internal sealed class RecordsForm : Form
     private readonly RegisterData data;
     private readonly RegisterFolders folders;
     private readonly string? barcode;
+    private readonly bool refundMode;
     private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 105 };
     private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 105 };
     private readonly TabControl tabs = new() { Dock = DockStyle.Fill };
@@ -21,12 +22,16 @@ internal sealed class RecordsForm : Form
     private long offset;
     private bool saving;
 
-    public RecordsForm(RegisterData data, RegisterFolders folders, Product? product = null)
+    public decimal RefundAmount { get; private set; }
+
+    public RecordsForm(RegisterData data, RegisterFolders folders, Product? product = null, bool refundMode = false)
     {
         this.data = data;
         this.folders = folders;
+        this.refundMode = refundMode;
         barcode = product?.Barcode;
-        Text = product is null ? "Sales Records" : $"Item History - {product.Description}";
+        Text = refundMode ? "Refund a Completed Sale"
+            : product is null ? "Sales Records" : $"Item History - {product.Description}";
         ClientSize = new Size(1060, 640);
         MinimumSize = new Size(760, 430);
         StartPosition = FormStartPosition.CenterParent;
@@ -41,21 +46,31 @@ internal sealed class RecordsForm : Form
 
         var filters = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
         from.Value = product is null ? DateTime.Today : DateTime.Today.AddDays(-30);
+        if (refundMode)
+        {
+            through.Value = data.CurrentBusinessDate().ToDateTime(TimeOnly.MinValue);
+            details.Text = "&Review Sale";
+        }
         filters.Controls.AddRange([
             new Label { Text = "From", AutoSize = true, Margin = new Padding(3, 8, 3, 3) }, from,
             new Label { Text = "Through", AutoSize = true, Margin = new Padding(8, 8, 3, 3) }, through]);
         layout.Controls.Add(filters, 0, 0);
         layout.Controls.Add(tabs, 0, 1);
-        if (product is null)
-        {
-            AddTab("Totals", RecordReport.Totals);
+        if (refundMode)
             AddTab("Sales History", RecordReport.Sales);
-            AddTab("Item Sales Totals", RecordReport.ItemTotals);
-            AddTab("Lottery Sales", RecordReport.LotterySales);
-            AddTab("Closeouts", RecordReport.Closeout);
+        else
+        {
+            if (product is null)
+            {
+                AddTab("Totals", RecordReport.Totals);
+                AddTab("Sales History", RecordReport.Sales);
+                AddTab("Item Sales Totals", RecordReport.ItemTotals);
+                AddTab("Lottery Sales", RecordReport.LotterySales);
+                AddTab("Closeouts", RecordReport.Closeout);
+            }
+            AddTab("Item Sales History", RecordReport.SaleLines);
+            AddTab("Price History", RecordReport.PriceHistory);
         }
-        AddTab("Item Sales History", RecordReport.SaleLines);
-        AddTab("Price History", RecordReport.PriceHistory);
 
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         var close = PosView.Button("Close", size: 10);
@@ -63,11 +78,16 @@ internal sealed class RecordsForm : Form
         CancelButton = close;
         actions.Controls.AddRange([previous, next, details, archive, close, status]);
         details.Click += (_, _) => OpenSelectedSale();
-        archive.Visible = product is null;
+        archive.Visible = product is null && !refundMode;
         layout.Controls.Add(actions, 0, 2);
         Controls.Add(layout);
 
-        Shown += (_, _) => RefreshReport(reset: true);
+        Shown += (_, _) =>
+        {
+            RefreshReport(reset: true);
+            if (refundMode)
+                tabs.SelectedTab?.Controls[0].Focus();
+        };
         tabs.SelectedIndexChanged += (_, _) => RefreshReport(reset: true);
         from.ValueChanged += (_, _) => RefreshReport(reset: true);
         through.ValueChanged += (_, _) => RefreshReport(reset: true);
@@ -103,7 +123,14 @@ internal sealed class RecordsForm : Form
     {
         if (tabs.SelectedTab?.Tag is RecordReport.Sales && tabs.SelectedTab.Controls[0] is DataGridView grid &&
             grid.CurrentRow?.DataBoundItem is DataRowView row && row["Sale ID"] is string id)
-            ViewSale(id);
+        {
+            if (refundMode && (string)row["Entry"] != "Sale")
+            {
+                status.Text = "Select a completed sale that has not been refunded.";
+                return;
+            }
+            ViewSale(id, Convert.ToDecimal(row["Total"], CultureInfo.InvariantCulture), (string)row["Sold at"]);
+        }
     }
 
     private void RefreshReport(bool reset)
@@ -138,6 +165,9 @@ internal sealed class RecordsForm : Form
             status.Text = report switch
             {
                 RecordReport.Totals => "",
+                RecordReport.Sales when refundMode => results.Rows.Count > 0
+                    ? "Select the original sale and press Enter to review it."
+                    : "No sales for these dates. Change the date range to look up an earlier sale.",
                 RecordReport.Sales when results.Rows.Count > 0 =>
                     $"Page {offset / PageSize + 1}. Double-click a sale to see its items.",
                 _ => results.Rows.Count == 0 ? "No records for these dates." : $"Page {offset / PageSize + 1}"
@@ -150,7 +180,7 @@ internal sealed class RecordsForm : Form
         }
     }
 
-    private void ViewSale(string saleId)
+    private void ViewSale(string saleId, decimal total, string soldAt)
     {
         (DateOnly start, DateOnly end) = Dates();
         using var details = new Form
@@ -163,12 +193,72 @@ internal sealed class RecordsForm : Form
         {
             Bind(grid, data.ReadReport(RecordReport.SaleLines, start, end, saleId: saleId), RecordReport.SaleLines, individualSale: true);
             details.Controls.Add(grid);
-            details.ShowDialog(this);
+            if (refundMode)
+                ConfigureRefund(details, saleId, total, soldAt);
+            if (details.ShowDialog(this) == DialogResult.OK)
+            {
+                RefundAmount = total;
+                DialogResult = DialogResult.OK;
+            }
         }
         catch (SqliteException error)
         {
             MessageBox.Show(this, error.Message, "Sale Items Unavailable", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private void ConfigureRefund(Form window, string saleId, decimal total, string soldAt)
+    {
+        window.Text = "Review Full-Sale Refund";
+        window.Height += 110;
+        var controls = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom, AutoSize = true, FlowDirection = FlowDirection.TopDown,
+            WrapContents = false, Padding = new Padding(10)
+        };
+        DateTimeOffset time = DateTimeOffset.Parse(soldAt, CultureInfo.InvariantCulture);
+        controls.Controls.Add(PosView.Label($"Sale from {time:g}   •   Refund {Sale.Money(total)}", 14, FontStyle.Bold));
+        controls.Controls.Add(PosView.Label("Choose how you issued the refund. Catalog items from the sale will return to stock.", 11));
+        var choices = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+        var cash = new RadioButton { Text = "Paid from &cash drawer", AutoSize = true };
+        var terminal = new RadioButton { Text = "Refunded on card &terminal", AutoSize = true };
+        var record = PosView.Button("&Record Refund", primary: true, size: 10);
+        var cancel = PosView.Button("Cancel", size: 10);
+        cancel.DialogResult = DialogResult.Cancel;
+        choices.Controls.AddRange([cash, terminal, record, cancel]);
+        controls.Controls.Add(choices);
+        window.Controls.Add(controls);
+        window.AcceptButton = record;
+        window.CancelButton = cancel;
+        window.Shown += (_, _) => cancel.Focus();
+        record.Click += (_, _) =>
+        {
+            if (!cash.Checked && !terminal.Checked)
+            {
+                MessageBox.Show(window, "Choose how the refund was paid.", window.Text);
+                cash.Focus();
+                return;
+            }
+            if (MessageBox.Show(window, $"Record the full refund of {Sale.Money(total)}?", "Confirm Refund",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                return;
+            try
+            {
+                string? problem = data.RecordRefund(saleId, DateTimeOffset.Now, cash.Checked ? PaymentMethod.Cash : PaymentMethod.Card);
+                if (problem is null)
+                    window.DialogResult = DialogResult.OK;
+                else
+                {
+                    MessageBox.Show(window, problem, window.Text);
+                    window.DialogResult = DialogResult.Cancel;
+                    RefreshReport(reset: false);
+                }
+            }
+            catch (SqliteException error)
+            {
+                MessageBox.Show(window, error.Message, "Refund Could Not Be Saved", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        };
     }
 
     private async Task ArchiveDay()
@@ -252,14 +342,14 @@ internal sealed class RecordsForm : Form
             string field = column.DataPropertyName;
             column.Visible = report switch
             {
-                RecordReport.Totals => field is "Sales" or "Subtotal" or "Discounts" or "Tax" or "Lottery" or "Total",
-                RecordReport.Sales => field is "Sold at" or "Subtotal" or "Discounts" or "Lottery" or "Tax" or "Total" or "Received" or "Change",
+                RecordReport.Totals => field is "Sales" or "Refunds" or "Subtotal" or "Discounts" or "Tax" or "Lottery" or "Total",
+                RecordReport.Sales => field is "Sold at" or "Entry" or "Subtotal" or "Discounts" or "Lottery" or "Tax" or "Total" or "Received" or "Change",
                 RecordReport.SaleLines or RecordReport.LotterySales =>
                     field is "Sold at" or "Product" or "Pack" or "Quantity" or "Unit price" or "Discount" or "Net sales" ||
                     (individualSale && field == "Type"),
                 RecordReport.ItemTotals => field != "Type",
                 RecordReport.PriceHistory => field != "Code",
-                RecordReport.Closeout => field is "Business date" or "Sales" or "Total" or "Cash over/short" or "Card over/short" or "Cash deposit" or "Notes",
+                RecordReport.Closeout => field is "Business date" or "Sales" or "Refunds" or "Total" or "Cash over/short" or "Card over/short" or "Cash deposit" or "Notes",
                 _ => true
             };
             column.Resizable = DataGridViewTriState.False;

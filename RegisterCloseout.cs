@@ -4,9 +4,10 @@ using Microsoft.Data.Sqlite;
 namespace Kpos;
 
 internal sealed record DaySales(long Count, decimal Subtotal, decimal Discounts, decimal Tax,
-    decimal Lottery, decimal Cash, decimal Card)
+    decimal Lottery, decimal Cash, decimal Card, long Refunds = 0)
 {
     public decimal Total => Cash + Card;
+    public bool HasActivity => Count != 0 || Refunds != 0;
 }
 
 internal sealed record DayCloseout(DateOnly Day, DateTimeOffset ClosedAt, DaySales Sales, decimal Opening,
@@ -21,7 +22,7 @@ internal sealed record DayCloseout(DateOnly Day, DateTimeOffset ClosedAt, DaySal
 internal sealed partial class RegisterData
 {
     private const string CloseoutReportSql = """
-        SELECT business_date AS "Business date", closed_at AS "Closed at", sale_count AS Sales,
+        SELECT business_date AS "Business date", closed_at AS "Closed at", sale_count AS Sales, refund_count AS Refunds,
                subtotal_cents / 100.0 AS Subtotal, discount_cents / 100.0 AS Discounts,
                tax_cents / 100.0 AS Tax, lottery_cents / 100.0 AS Lottery,
                (cash_sales_cents + card_sales_cents) / 100.0 AS Total,
@@ -50,10 +51,10 @@ internal sealed partial class RegisterData
     public DaySales GetDaySales(DateOnly day, SqliteTransaction? transaction = null)
     {
         using var query = Command("""
-            SELECT count(*), coalesce(sum(subtotal_cents), 0), coalesce(sum(discount_cents), 0),
+            SELECT count(*) - count(refund_of), coalesce(sum(subtotal_cents), 0), coalesce(sum(discount_cents), 0),
                    coalesce(sum(tax_cents), 0), coalesce(sum(lottery_cents), 0),
                    coalesce(sum(CASE WHEN tender = 'Cash' THEN total_cents END), 0),
-                   coalesce(sum(CASE WHEN tender = 'Card' THEN total_cents END), 0)
+                   coalesce(sum(CASE WHEN tender = 'Card' THEN total_cents END), 0), count(refund_of)
             FROM sales WHERE business_date = $day
             """, transaction);
         query.Parameters.AddWithValue("$day", Day(day));
@@ -76,7 +77,7 @@ internal sealed partial class RegisterData
     {
         using var query = Command("""
             SELECT closed_at, sale_count, subtotal_cents, discount_cents, tax_cents, lottery_cents,
-                   cash_sales_cents, card_sales_cents, opening_cents, counted_cash_cents, counted_card_cents,
+                   cash_sales_cents, card_sales_cents, refund_count, opening_cents, counted_cash_cents, counted_card_cents,
                    next_bank_cents, notes
             FROM day_closeouts WHERE business_date = $day
             """, transaction);
@@ -86,36 +87,37 @@ internal sealed partial class RegisterData
             return null;
 
         return new DayCloseout(day, DateTimeOffset.Parse(reader.GetString(0), CultureInfo.InvariantCulture),
-            ReadDaySales(reader, 1), reader.GetInt64(8) / 100m, reader.GetInt64(9) / 100m,
-            reader.GetInt64(10) / 100m, reader.GetInt64(11) / 100m, reader.GetString(12));
+            ReadDaySales(reader, 1), reader.GetInt64(9) / 100m, reader.GetInt64(10) / 100m,
+            reader.GetInt64(11) / 100m, reader.GetInt64(12) / 100m, reader.GetString(13));
     }
 
     public string? CloseDay(DayCloseout closeout)
     {
-        if (closeout.Opening < 0 || closeout.CashCounted < 0 || closeout.CardCounted < 0 ||
+        if (closeout.Opening < 0 || closeout.CashCounted < 0 ||
             closeout.NextBank < 0 || closeout.NextBank > closeout.CashCounted)
-            return "Enter nonnegative counts. The next bank cannot exceed the cash counted.";
+            return "Enter nonnegative drawer counts. The next bank cannot exceed the cash counted.";
 
         using var transaction = connection.BeginTransaction(deferred: false);
         if (ReadCloseout(closeout.Day, transaction) is not null)
             return "This day is already closed. Reload it to view the saved closeout.";
 
         DaySales sales = GetDaySales(closeout.Day, transaction);
-        if (sales.Count == 0)
-            return "This date has no completed sales.";
+        if (!sales.HasActivity)
+            return "This date has no sales or refunds.";
         if (sales != closeout.Sales)
             return "Sales changed while this window was open. Reload the date and count the drawer again.";
 
         using var insert = Command("""
             INSERT INTO day_closeouts (business_date, closed_at, sale_count, subtotal_cents, discount_cents,
                 tax_cents, lottery_cents, cash_sales_cents, card_sales_cents, opening_cents, counted_cash_cents,
-                counted_card_cents, next_bank_cents, notes)
+                counted_card_cents, next_bank_cents, notes, refund_count)
             VALUES ($day, $time, $count, $subtotal, $discounts, $tax, $lottery, $cashSales, $cardSales,
-                $opening, $cash, $card, $bank, $notes)
+                $opening, $cash, $card, $bank, $notes, $refunds)
             """, transaction);
         insert.Parameters.AddWithValue("$day", Day(closeout.Day));
         insert.Parameters.AddWithValue("$time", closeout.ClosedAt.ToString("O", CultureInfo.InvariantCulture));
         insert.Parameters.AddWithValue("$count", sales.Count);
+        insert.Parameters.AddWithValue("$refunds", sales.Refunds);
         insert.Parameters.AddWithValue("$subtotal", Cents(sales.Subtotal));
         insert.Parameters.AddWithValue("$discounts", Cents(sales.Discounts));
         insert.Parameters.AddWithValue("$tax", Cents(sales.Tax));
@@ -145,7 +147,7 @@ internal sealed partial class RegisterData
     private static DaySales ReadDaySales(SqliteDataReader reader, int offset) => new(
         reader.GetInt64(offset), reader.GetInt64(offset + 1) / 100m, reader.GetInt64(offset + 2) / 100m,
         reader.GetInt64(offset + 3) / 100m, reader.GetInt64(offset + 4) / 100m,
-        reader.GetInt64(offset + 5) / 100m, reader.GetInt64(offset + 6) / 100m);
+        reader.GetInt64(offset + 5) / 100m, reader.GetInt64(offset + 6) / 100m, reader.GetInt64(offset + 7));
 
     private void AddCloseoutsAndSaleKinds(SqliteTransaction transaction)
     {

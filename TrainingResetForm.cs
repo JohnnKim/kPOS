@@ -11,6 +11,15 @@ internal sealed partial class RegisterData
         if (GetDaySales(day, transaction) != expectedSales || ReadCloseout(day, transaction) != expectedCloseout)
             throw new InvalidOperationException("The selected day changed. Reopen the reset window and review its latest totals.");
 
+        using var linked = Command("""
+            SELECT refund.business_date FROM sales AS original JOIN sales AS refund ON refund.refund_of = original.id
+            WHERE original.business_date = $day AND refund.business_date <> $day
+            ORDER BY refund.business_date DESC LIMIT 1
+            """, transaction);
+        linked.Parameters.AddWithValue("$day", Day(day));
+        if (linked.ExecuteScalar() is string refundDate)
+            throw new InvalidOperationException($"A refund on {refundDate} is linked to this day. Reset that refund day first.");
+
         // The reserved write lock keeps sales and closeouts from changing while the backup is taken.
         ExportBackup(DatabasePath, recoveryZip);
         string archiveFolder = Path.Combine(folders.DailyArchives, day.ToString("yyyy", CultureInfo.InvariantCulture),
@@ -110,19 +119,19 @@ internal sealed class TrainingResetForm : Form
     {
         sales = data.GetDaySales(Day);
         closeout = data.ReadCloseout(Day);
-        summary.Text = $"{sales.Count:N0} sales · {Sale.Money(sales.Total)} · {(closeout is null ? "Open day" : "Saved closeout")}";
+        summary.Text = $"{sales.Count:N0} sales · {sales.Refunds:N0} refunds · {Sale.Money(sales.Total)} · {(closeout is null ? "Open day" : "Saved closeout")}";
         instruction.Text = $"Type {ConfirmationDate} to enable reset.";
         confirmation.Clear();
         UpdateButton();
     }
 
     private void UpdateButton() =>
-        reset.Enabled = (sales?.Count > 0 || closeout is not null) && confirmation.Text == ConfirmationDate;
+        reset.Enabled = (sales?.HasActivity == true || closeout is not null) && confirmation.Text == ConfirmationDate;
 
     private void Reset()
     {
         if (!reset.Enabled || sales is null || MessageBox.Show(this,
-                $"Clear {sales.Count:N0} sales and the closeout for {ConfirmationDate}? Use this only for test data.",
+                $"Clear {sales.Count:N0} sales, {sales.Refunds:N0} refunds, and the closeout for {ConfirmationDate}? Use this only for test data.",
                 Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
             return;
 
@@ -133,7 +142,7 @@ internal sealed class TrainingResetForm : Form
             UseWaitCursor = true;
             int removed = data.ResetTrainingDay(Day, folders, recovery, sales, closeout);
             UseWaitCursor = false;
-            MessageBox.Show(this, $"Cleared {removed:N0} test sales.\n\nRecovery backup:\n{recovery}",
+            MessageBox.Show(this, $"Cleared {removed:N0} test transactions.\n\nRecovery backup:\n{recovery}",
                 Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             DialogResult = DialogResult.OK;
         }

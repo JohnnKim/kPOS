@@ -59,7 +59,7 @@ internal sealed class RegisterForm : Form
         taxRate = data.TaxRate;
         keys = data.ReadRegisterKeys();
         scanCode.DetectKeyboardScanner = keys.AutoScan;
-        scanCode.ScanReady += (_, _) => RunRegisterAction(SubmitScan);
+        scanCode.ScanReady += (_, _) => RunRegisterAction(() => SubmitScan());
         scanCode.BurstReady += (_, _) => RunRegisterAction(() =>
         {
             string code = scanCode.Text;
@@ -134,7 +134,7 @@ internal sealed class RegisterForm : Form
         {
             if (keys == Keys.Enter || (keys == Keys.Tab && scanCode.TextLength > 0))
             {
-                RunRegisterAction(SubmitScan);
+                RunRegisterAction(() => SubmitScan(allowRefundShortcut: keys == Keys.Enter));
                 return true;
             }
 
@@ -175,6 +175,7 @@ internal sealed class RegisterForm : Form
         AddCommand(saleMenu, "Line &Discount", Keys.F7, DiscountLine);
         AddCommand(saleMenu, "De&lete Line", Keys.F5, DeleteLine);
         AddCommand(saleMenu, "&Void Sale", Keys.F4, VoidSale);
+        AddCommand(saleMenu, "&Refund Sale…", Keys.Control | Keys.Shift | Keys.R, RefundSale);
         saleMenu.DropDownItems.Add(new ToolStripSeparator());
         AddCommand(saleMenu, "E&xit", Keys.F2, Close);
         var lists = new ToolStripMenuItem("&Lists");
@@ -322,7 +323,7 @@ internal sealed class RegisterForm : Form
             (keys.Lottery, "Lottery"), ("F4", "Void"),
             (keys.Misc, "Misc"), ("F5", "Delete"),
             ("F7", "Discount"), ("F10", "Case"),
-            ("Ctrl+E", "Closeout"), ("Ctrl+R", "Reports")
+            ("Ctrl+E", "Closeout"), keys.Refund.Length > 0 ? (keys.Refund, "Refund") : ("Ctrl+R", "Reports")
         ];
         for (int i = 0; i < tilesToShow.Length; i++)
         {
@@ -397,12 +398,18 @@ internal sealed class RegisterForm : Form
         }
     }
 
-    private void SubmitScan()
+    private void SubmitScan(bool allowRefundShortcut = false)
     {
         string code = scanCode.Text.Trim();
         scanCode.Clear();
         if (code.Length == 0)
             return;
+
+        if (allowRefundShortcut && code.Equals(keys.Refund, StringComparison.OrdinalIgnoreCase))
+        {
+            RefundSale();
+            return;
+        }
 
         if (code.Length == 1 && char.IsLetter(code[0]))
         {
@@ -639,6 +646,13 @@ internal sealed class RegisterForm : Form
     {
         using var dialog = new RecordsForm(data, folders);
         dialog.ShowDialog(this);
+    }
+
+    private void RefundSale()
+    {
+        using var dialog = new RecordsForm(data, folders, refundMode: true);
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+            status.Text = $"Refund recorded for {Sale.Money(dialog.RefundAmount)}. Ready to scan.";
     }
 
     private async void ExportBackup()

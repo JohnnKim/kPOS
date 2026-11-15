@@ -30,10 +30,11 @@ internal sealed class SettingsForm : Form
         var quantityKey = Shortcut("Quantity", keys.Quantity);
         var lotteryKey = Shortcut("Lottery", keys.Lottery);
         var miscKey = Shortcut("Misc", keys.Misc);
+        var refundKey = Shortcut("Refund (two letters or blank)", keys.Refund, length: 2);
         var stockKey = Shortcut("Stock in Orders (Alt + letter)", keys.Stock);
         var autoScan = new CheckBox { Text = "Submit fast barcode scans without Enter", AutoSize = true, Checked = keys.AutoScan };
         AddTab("Shortcuts", "Type sale shortcuts in the scanner field and press Enter.",
-            quantityKey.Row, lotteryKey.Row, miscKey.Row, stockKey.Row, autoScan);
+            quantityKey.Row, lotteryKey.Row, miscKey.Row, refundKey.Row, stockKey.Row, autoScan);
         AddTab("Tax", "Sales tax rate (%)", rate);
         var path = new TextBox { ReadOnly = true, Text = folders.Root, Width = 430 };
         AddTab("Data", "Installation and records folder", path);
@@ -93,13 +94,13 @@ internal sealed class SettingsForm : Form
             }
         };
 
-        RegisterKeys CurrentKeys() => new(quantityKey.Input.Text, lotteryKey.Input.Text, miscKey.Input.Text, stockKey.Input.Text, autoScan.Checked);
+        RegisterKeys CurrentKeys() => new(quantityKey.Input.Text, lotteryKey.Input.Text, miscKey.Input.Text, stockKey.Input.Text, autoScan.Checked, refundKey.Input.Text);
 
-        static (FlowLayoutPanel Row, TextBox Input) Shortcut(string name, string value)
+        static (FlowLayoutPanel Row, TextBox Input) Shortcut(string name, string value, int length = 1)
         {
             var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 1, 0, 0) };
             var label = new Label { Text = name, Width = 240, Margin = new Padding(3, 5, 3, 0) };
-            var input = new TextBox { Text = value, Width = 35, MaxLength = 1, CharacterCasing = CharacterCasing.Upper, AccessibleName = name };
+            var input = new TextBox { Text = value, Width = 50, MaxLength = length, CharacterCasing = CharacterCasing.Upper, AccessibleName = name };
             row.Controls.AddRange([label, input]);
             return (row, input);
         }

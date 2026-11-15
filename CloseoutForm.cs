@@ -145,17 +145,17 @@ internal sealed class CloseoutForm : Form
         decimal previousBank = data.LastBankBefore(Day);
         opening.Text = AmountText(saved?.Opening ?? previousBank);
         cash.Text = saved is null ? "" : AmountText(saved.CashCounted);
-        card.Text = saved is null && sales.Card > 0 ? "" : AmountText(saved?.CardCounted ?? 0);
+        card.Text = saved is null && sales.Card != 0 ? "" : AmountText(saved?.CardCounted ?? 0);
         bank.Text = AmountText(saved?.NextBank ?? previousBank);
         notes.Text = saved?.Notes ?? "";
         foreach (TextBox box in new[] { opening, cash, card, bank, notes })
             box.ReadOnly = saved is not null;
-        count.Enabled = saved is null && sales.Count > 0;
+        count.Enabled = saved is null && sales.HasActivity;
         print.Enabled = archive.Enabled = saved is not null;
         feedback.Text = saved is not null ? $"Closed {saved.ClosedAt.LocalDateTime:g}."
-            : sales.Count == 0 ? "No completed sales for this date." : "";
-        salesSummary.Text = $"Total sales    {Sale.Money(sales.Total)}\n" +
-            $"Completed sales    {sales.Count:N0}\nGross subtotal    {Sale.Money(sales.Subtotal)}\n" +
+            : !sales.HasActivity ? "No sales or refunds for this date." : "";
+        salesSummary.Text = $"Net sales    {Sale.Money(sales.Total)}\n" +
+            $"Completed sales    {sales.Count:N0}    •    Refunds    {sales.Refunds:N0}\nNet subtotal    {Sale.Money(sales.Subtotal)}\n" +
             $"Discounts    {Sale.Money(sales.Discounts)}\nSales tax    {Sale.Money(sales.Tax)}\n" +
             $"Lottery included    {Sale.Money(sales.Lottery)}";
         RefreshReconciliation();
@@ -165,7 +165,8 @@ internal sealed class CloseoutForm : Form
     {
         if (!Sale.TryParseMoney(opening.Text, out decimal start) ||
             !Sale.TryParseMoney(cash.Text, out decimal actualCash) ||
-            !Sale.TryParseMoney(card.Text, out decimal actualCard) ||
+            !decimal.TryParse(card.Text.Trim(), NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                CultureInfo.InvariantCulture, out decimal actualCard) || decimal.Round(actualCard, 2) != actualCard ||
             !Sale.TryParseMoney(bank.Text, out decimal nextBank) || nextBank > actualCash)
             return null;
 
@@ -175,14 +176,14 @@ internal sealed class CloseoutForm : Form
     private void RefreshReconciliation()
     {
         DayCloseout? closeout = saved ?? Draft();
-        closeDay.Enabled = saved is null && sales.Count > 0 && closeout is not null;
+        closeDay.Enabled = saved is null && sales.HasActivity && closeout is not null;
         Sale.TryParseMoney(opening.Text, out decimal start);
         reconciliation.Text = $"Expected cash {Sale.Money(start + sales.Cash)}   •   Expected card {Sale.Money(sales.Card)}";
         if (closeout is not null)
             reconciliation.Text += $"\nCash over/short {Sale.Money(closeout.CashDifference)}   •   Card over/short {Sale.Money(closeout.CardDifference)}" +
                 $"\nCash to deposit {Sale.Money(closeout.CashDeposit)}";
-        else if (sales.Count > 0)
-            reconciliation.Text += "\nEnter counted cash and card totals. Keep the next bank within the cash counted.";
+        else if (sales.HasActivity)
+            reconciliation.Text += "\nEnter counted cash and the net card terminal total. Keep the next bank within the cash counted.";
     }
 
     private void SaveCloseout()
@@ -243,7 +244,7 @@ internal sealed class CloseoutForm : Form
             using var text = new Font(Font.FontFamily, 10);
             page.Graphics!.DrawString(
                 $"kPOS End of Day Closeout\nBusiness date: {report.Day:d}\nClosed: {report.ClosedAt.LocalDateTime:g}\n\n" +
-                $"Sales: {report.Sales.Count:N0}\nGross subtotal: {Sale.Money(report.Sales.Subtotal)}\nDiscounts: {Sale.Money(report.Sales.Discounts)}\nSales tax: {Sale.Money(report.Sales.Tax)}\nLottery included: {Sale.Money(report.Sales.Lottery)}\nTotal sales: {Sale.Money(report.Sales.Total)}\n\nOpening drawer: {Sale.Money(report.Opening)}\n" +
+                $"Sales: {report.Sales.Count:N0}\nRefunds: {report.Sales.Refunds:N0}\nNet subtotal: {Sale.Money(report.Sales.Subtotal)}\nDiscounts: {Sale.Money(report.Sales.Discounts)}\nSales tax: {Sale.Money(report.Sales.Tax)}\nLottery included: {Sale.Money(report.Sales.Lottery)}\nNet sales: {Sale.Money(report.Sales.Total)}\n\nOpening drawer: {Sale.Money(report.Opening)}\n" +
                 $"Cash counted: {Sale.Money(report.CashCounted)}\nCard terminal total: {Sale.Money(report.CardCounted)}\n" +
                 $"Next bank: {Sale.Money(report.NextBank)}\nExpected cash: {Sale.Money(report.ExpectedCash)}\nExpected card: {Sale.Money(report.Sales.Card)}\nCash over/short: {Sale.Money(report.CashDifference)}\nCard over/short: {Sale.Money(report.CardDifference)}\nCash to deposit: {Sale.Money(report.CashDeposit)}\n\nNotes\n{report.Notes}",
                 text, Brushes.Black, page.MarginBounds);
