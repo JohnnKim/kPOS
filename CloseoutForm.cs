@@ -37,7 +37,7 @@ internal sealed class CloseoutForm : Form
         BackColor = PosView.Canvas;
         date.Width = 127;
         date.AccessibleName = "Business date";
-        date.Value = data.FirstOpenDayWithSales(DateOnly.FromDateTime(DateTime.Today)).ToDateTime(TimeOnly.MinValue);
+        date.Value = data.FirstOpenDayWithActivity(DateOnly.FromDateTime(DateTime.Today)).ToDateTime(TimeOnly.MinValue);
 
         var layout = new TableLayoutPanel
         {
@@ -153,7 +153,7 @@ internal sealed class CloseoutForm : Form
         count.Enabled = saved is null && sales.HasActivity;
         print.Enabled = archive.Enabled = saved is not null;
         feedback.Text = saved is not null ? $"Closed {saved.ClosedAt.LocalDateTime:g}."
-            : !sales.HasActivity ? "No sales or refunds for this date." : "";
+            : !sales.HasActivity ? "No register activity for this date." : "";
         salesSummary.Text = $"Net sales    {Sale.Money(sales.Total)}\n" +
             $"Completed sales    {sales.Count:N0}    •    Refunds    {sales.Refunds:N0}\nNet subtotal    {Sale.Money(sales.Subtotal)}\n" +
             $"Discounts    {Sale.Money(sales.Discounts)}\nSales tax    {Sale.Money(sales.Tax)}\n" +
@@ -178,7 +178,8 @@ internal sealed class CloseoutForm : Form
         DayCloseout? closeout = saved ?? Draft();
         closeDay.Enabled = saved is null && sales.HasActivity && closeout is not null;
         Sale.TryParseMoney(opening.Text, out decimal start);
-        reconciliation.Text = $"Expected cash {Sale.Money(start + sales.Cash)}   •   Expected card {Sale.Money(sales.Card)}";
+        reconciliation.Text = $"Drawer expenses {Sale.Money(sales.Expenses)}\n" +
+            $"Expected cash {Sale.Money(closeout?.ExpectedCash ?? start + sales.Cash - sales.Expenses)}   •   Expected card {Sale.Money(sales.Card)}";
         if (closeout is not null)
             reconciliation.Text += $"\nCash over/short {Sale.Money(closeout.CashDifference)}   •   Card over/short {Sale.Money(closeout.CardDifference)}" +
                 $"\nCash to deposit {Sale.Money(closeout.CashDeposit)}";
@@ -245,7 +246,7 @@ internal sealed class CloseoutForm : Form
             page.Graphics!.DrawString(
                 $"kPOS End of Day Closeout\nBusiness date: {report.Day:d}\nClosed: {report.ClosedAt.LocalDateTime:g}\n\n" +
                 $"Sales: {report.Sales.Count:N0}\nRefunds: {report.Sales.Refunds:N0}\nNet subtotal: {Sale.Money(report.Sales.Subtotal)}\nDiscounts: {Sale.Money(report.Sales.Discounts)}\nSales tax: {Sale.Money(report.Sales.Tax)}\nLottery included: {Sale.Money(report.Sales.Lottery)}\nNet sales: {Sale.Money(report.Sales.Total)}\n\nOpening drawer: {Sale.Money(report.Opening)}\n" +
-                $"Cash counted: {Sale.Money(report.CashCounted)}\nCard terminal total: {Sale.Money(report.CardCounted)}\n" +
+                $"Drawer expenses: {Sale.Money(report.Sales.Expenses)}\nCash counted: {Sale.Money(report.CashCounted)}\nCard terminal total: {Sale.Money(report.CardCounted)}\n" +
                 $"Next bank: {Sale.Money(report.NextBank)}\nExpected cash: {Sale.Money(report.ExpectedCash)}\nExpected card: {Sale.Money(report.Sales.Card)}\nCash over/short: {Sale.Money(report.CashDifference)}\nCard over/short: {Sale.Money(report.CardDifference)}\nCash to deposit: {Sale.Money(report.CashDeposit)}\n\nNotes\n{report.Notes}",
                 text, Brushes.Black, page.MarginBounds);
         };

@@ -72,7 +72,7 @@ internal sealed partial class RegisterData : IDisposable
             UPDATE register_settings SET tax_rate = $rate, change_seconds = $seconds,
                 require_item_count = $count, start_maximized = $maximized, quantity_key = $quantity,
                 lottery_key = $lottery, misc_key = $misc, stock_key = $stock, auto_scan = $auto,
-                refund_key = $refund WHERE id = 1
+                refund_key = $refund, expense_key = $expense WHERE id = 1
             """, transaction);
         command.Parameters.AddWithValue("$rate", decimal.ToInt64(taxRate * 10000));
         command.Parameters.AddWithValue("$seconds", changeSeconds);
@@ -83,6 +83,7 @@ internal sealed partial class RegisterData : IDisposable
         command.Parameters.AddWithValue("$misc", keys.Misc);
         command.Parameters.AddWithValue("$stock", keys.Stock);
         command.Parameters.AddWithValue("$refund", keys.Refund);
+        command.Parameters.AddWithValue("$expense", keys.Expense);
         command.Parameters.AddWithValue("$auto", keys.AutoScan);
         command.ExecuteNonQuery();
         transaction.Commit();
@@ -241,6 +242,8 @@ internal sealed partial class RegisterData : IDisposable
             CreatePurchaseOrderProfiles(transaction);
         if (currentVersion < 7)
             AddRefunds(transaction);
+        if (currentVersion < 8)
+            AddDrawerExpenses(transaction);
 
         transaction.Commit();
     }

@@ -49,6 +49,11 @@ internal sealed class RegisterForm : Form
     private readonly Label tax = CreateAmountLabel();
     private readonly Label totalDue = CreateAmountLabel();
     private readonly Label totalCaption = PosView.Label("TOTAL DUE", 12, FontStyle.Bold, Color.White);
+    private readonly TableLayoutPanel totalBanner = new()
+    {
+        ColumnCount = 1, RowCount = 2, Dock = DockStyle.Fill, BackColor = PosView.Navy,
+        Margin = new Padding(0, 5, 0, 0), Padding = new Padding(10, 3, 10, 2)
+    };
     private readonly Label lastChange = CreateAmountLabel();
     private bool nextItemIsCase;
     private bool exporting;
@@ -135,7 +140,7 @@ internal sealed class RegisterForm : Form
         {
             if (keys == Keys.Enter || (keys == Keys.Tab && scanCode.TextLength > 0))
             {
-                RunRegisterAction(() => SubmitScan(allowRefundShortcut: keys == Keys.Enter));
+                RunRegisterAction(() => SubmitScan(allowRegisterCommand: keys == Keys.Enter));
                 return true;
             }
 
@@ -177,6 +182,7 @@ internal sealed class RegisterForm : Form
         AddCommand(saleMenu, "De&lete Line", Keys.F5, DeleteLine);
         AddCommand(saleMenu, "&Void Sale", Keys.F4, VoidSale);
         AddCommand(saleMenu, "&Refund Line", Keys.Control | Keys.Shift | Keys.R, RefundLine);
+        AddCommand(saleMenu, "Drawer &Expense…", Keys.Control | Keys.Shift | Keys.E, RecordExpense);
         saleMenu.DropDownItems.Add(new ToolStripSeparator());
         AddCommand(saleMenu, "E&xit", Keys.F2, Close);
         var lists = new ToolStripMenuItem("&Lists");
@@ -277,19 +283,14 @@ internal sealed class RegisterForm : Form
         AddTotal("Sales tax", tax, 3, taxCaption);
 
         totals.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var total = new TableLayoutPanel
-        {
-            ColumnCount = 1, RowCount = 2, Dock = DockStyle.Fill, BackColor = PosView.Navy,
-            Margin = new Padding(0, 5, 0, 0), Padding = new Padding(10, 3, 10, 2)
-        };
-        total.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
-        total.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        total.Controls.Add(totalCaption, 0, 0);
+        totalBanner.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
+        totalBanner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        totalBanner.Controls.Add(totalCaption, 0, 0);
         totalDue.Font = PosView.Text(35, FontStyle.Bold);
         totalDue.ForeColor = Color.White;
-        total.Controls.Add(totalDue, 0, 1);
-        totals.Controls.Add(total, 0, 4);
-        totals.SetColumnSpan(total, 2);
+        totalBanner.Controls.Add(totalDue, 0, 1);
+        totals.Controls.Add(totalBanner, 0, 4);
+        totals.SetColumnSpan(totalBanner, 2);
         AddTotal("Last change", lastChange, 5);
         return PosView.Frame(totals, new Padding(11));
 
@@ -324,7 +325,8 @@ internal sealed class RegisterForm : Form
             (keys.Lottery, "Lottery"), ("F4", "Void"),
             (keys.Misc, "Misc"), ("F5", "Delete"),
             ("F7", "Discount"), ("F10", "Case"),
-            ("Ctrl+E", "Closeout"), keys.Refund.Length > 0 ? (keys.Refund, "Refund") : ("Ctrl+R", "Reports")
+            keys.Expense.Length > 0 ? (keys.Expense, "Expense") : ("Ctrl+E", "Closeout"),
+            keys.Refund.Length > 0 ? (keys.Refund, "Refund") : ("Ctrl+R", "Reports")
         ];
         for (int i = 0; i < tilesToShow.Length; i++)
         {
@@ -399,16 +401,22 @@ internal sealed class RegisterForm : Form
         }
     }
 
-    private void SubmitScan(bool allowRefundShortcut = false)
+    private void SubmitScan(bool allowRegisterCommand = false)
     {
         string code = scanCode.Text.Trim();
         scanCode.Clear();
         if (code.Length == 0)
             return;
 
-        if (allowRefundShortcut && code.Equals(keys.Refund, StringComparison.OrdinalIgnoreCase))
+        if (allowRegisterCommand && code.Equals(keys.Refund, StringComparison.OrdinalIgnoreCase))
         {
             RefundLine();
+            return;
+        }
+
+        if (allowRegisterCommand && code.Equals(keys.Expense, StringComparison.OrdinalIgnoreCase))
+        {
+            RecordExpense();
             return;
         }
 
@@ -665,6 +673,14 @@ internal sealed class RegisterForm : Form
         RefreshTicket(row.Index);
     }
 
+    private void RecordExpense()
+    {
+        Guid expenseId = Guid.NewGuid();
+        using var dialog = new ExpenseForm((amount, reason) => data.RecordExpense(expenseId, DateTimeOffset.Now, amount, reason));
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+            status.Text = $"Drawer expense recorded: {Sale.Money(dialog.Amount)}.";
+    }
+
     private async void ExportBackup()
     {
         if (exporting)
@@ -807,6 +823,7 @@ internal sealed class RegisterForm : Form
         taxCaption.Text = $"Sales tax ({Sale.Rate(taxRate)})";
         tax.Text = Sale.Money(totals.Tax);
         totalCaption.Text = totals.Total < 0 ? "REFUND DUE" : "TOTAL DUE";
+        totalBanner.BackColor = totals.Total < 0 ? PosView.Refund : PosView.Navy;
         totalDue.Text = Sale.Money(Math.Abs(totals.Total));
     }
 }

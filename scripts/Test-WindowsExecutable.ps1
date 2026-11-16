@@ -148,6 +148,16 @@ public static class KposExecutableTest
                 Send(FindTextBox(editor), 0x0100, 0x1b); // Escape
                 WaitUntil(() => HasText(register, "Code 000000099999 was not added. Ready to scan."),
                     "return to the register after canceling product entry");
+                EnterText(scanner, "E");
+                IntPtr expense = FindWindow(desktop, process.ProcessId, "Drawer Expense");
+                IntPtr expenseAmount = FindTextBox(expense);
+                IntPtr expenseReason = FindTextBox(expense, except: expenseAmount);
+                IntPtr recordExpense = FindChildWithText(expense, "&Record Expense");
+                EnterText(expenseAmount, "4.25");
+                if (recordExpense == IntPtr.Zero || IsWindowEnabled(recordExpense))
+                    throw new InvalidOperationException("A drawer expense must have a reason.");
+                EnterText(expenseReason, "Store supplies");
+                WaitUntil(() => HasText(register, "Drawer expense recorded: $4.25."), "record the drawer expense using its shortcut");
                 Send(FindChildWithText(register, "End of &Day"), 0x00F5, 0); // BM_CLICK
                 IntPtr closeout = FindWindow(desktop, process.ProcessId, "End of Day Closeout");
                 WaitUntil(() => HasText(closeout, "&Close Day") && HasText(closeout, "Sales Summary") &&

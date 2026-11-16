@@ -4,16 +4,16 @@ using Microsoft.Data.Sqlite;
 namespace Kpos;
 
 internal sealed record DaySales(long Count, decimal Subtotal, decimal Discounts, decimal Tax,
-    decimal Lottery, decimal Cash, decimal Card, long Refunds = 0)
+    decimal Lottery, decimal Cash, decimal Card, long Refunds = 0, decimal Expenses = 0)
 {
     public decimal Total => Cash + Card;
-    public bool HasActivity => Count != 0 || Refunds != 0;
+    public bool HasActivity => Count != 0 || Refunds != 0 || Expenses != 0;
 }
 
 internal sealed record DayCloseout(DateOnly Day, DateTimeOffset ClosedAt, DaySales Sales, decimal Opening,
     decimal CashCounted, decimal CardCounted, decimal NextBank, string Notes)
 {
-    public decimal ExpectedCash => Opening + Sales.Cash;
+    public decimal ExpectedCash => Opening + Sales.Cash - Sales.Expenses;
     public decimal CashDifference => CashCounted - ExpectedCash;
     public decimal CardDifference => CardCounted - Sales.Card;
     public decimal CashDeposit => CashCounted - NextBank;
@@ -27,9 +27,10 @@ internal sealed partial class RegisterData
                tax_cents / 100.0 AS Tax, lottery_cents / 100.0 AS Lottery,
                (cash_sales_cents + card_sales_cents) / 100.0 AS Total,
                opening_cents / 100.0 AS "Opening drawer",
-               (opening_cents + cash_sales_cents) / 100.0 AS "Expected cash",
+               expense_cents / 100.0 AS "Drawer expenses",
+               (opening_cents + cash_sales_cents - expense_cents) / 100.0 AS "Expected cash",
                counted_cash_cents / 100.0 AS "Counted cash",
-               (counted_cash_cents - opening_cents - cash_sales_cents) / 100.0 AS "Cash over/short",
+               (counted_cash_cents - opening_cents - cash_sales_cents + expense_cents) / 100.0 AS "Cash over/short",
                card_sales_cents / 100.0 AS "Expected card",
                counted_card_cents / 100.0 AS "Counted card",
                (counted_card_cents - card_sales_cents) / 100.0 AS "Card over/short",
@@ -39,11 +40,16 @@ internal sealed partial class RegisterData
         ORDER BY business_date DESC
         """;
 
-    public DateOnly FirstOpenDayWithSales(DateOnly fallback)
+    public DateOnly FirstOpenDayWithActivity(DateOnly fallback)
     {
         using var query = Command("""
-            SELECT min(business_date) FROM sales
-            WHERE NOT EXISTS (SELECT 1 FROM day_closeouts WHERE day_closeouts.business_date = sales.business_date)
+            SELECT min(business_date) FROM (
+                SELECT min(business_date) AS business_date FROM sales
+                WHERE NOT EXISTS (SELECT 1 FROM day_closeouts WHERE day_closeouts.business_date = sales.business_date)
+                UNION ALL
+                SELECT min(business_date) FROM drawer_expenses
+                WHERE NOT EXISTS (SELECT 1 FROM day_closeouts WHERE day_closeouts.business_date = drawer_expenses.business_date)
+            )
             """);
         return query.ExecuteScalar() is string date ? ParseDay(date) : OpenBusinessDate(fallback);
     }
@@ -55,7 +61,8 @@ internal sealed partial class RegisterData
                    coalesce(sum(tax_cents), 0), coalesce(sum(lottery_cents), 0),
                    coalesce(sum(CASE WHEN tender = 'Cash' THEN total_cents END), 0),
                    coalesce(sum(CASE WHEN tender = 'Card' THEN total_cents END), 0),
-                   count(CASE WHEN {{HasReturnedItems}} THEN 1 END)
+                   count(CASE WHEN {{HasReturnedItems}} THEN 1 END),
+                   (SELECT coalesce(sum(amount_cents), 0) FROM drawer_expenses WHERE business_date = $day)
             FROM sales WHERE business_date = $day
             """, transaction);
         query.Parameters.AddWithValue("$day", Day(day));
@@ -78,7 +85,7 @@ internal sealed partial class RegisterData
     {
         using var query = Command("""
             SELECT closed_at, sale_count, subtotal_cents, discount_cents, tax_cents, lottery_cents,
-                   cash_sales_cents, card_sales_cents, refund_count, opening_cents, counted_cash_cents, counted_card_cents,
+                   cash_sales_cents, card_sales_cents, refund_count, expense_cents, opening_cents, counted_cash_cents, counted_card_cents,
                    next_bank_cents, notes
             FROM day_closeouts WHERE business_date = $day
             """, transaction);
@@ -88,8 +95,8 @@ internal sealed partial class RegisterData
             return null;
 
         return new DayCloseout(day, DateTimeOffset.Parse(reader.GetString(0), CultureInfo.InvariantCulture),
-            ReadDaySales(reader, 1), reader.GetInt64(9) / 100m, reader.GetInt64(10) / 100m,
-            reader.GetInt64(11) / 100m, reader.GetInt64(12) / 100m, reader.GetString(13));
+            ReadDaySales(reader, 1), reader.GetInt64(10) / 100m, reader.GetInt64(11) / 100m,
+            reader.GetInt64(12) / 100m, reader.GetInt64(13) / 100m, reader.GetString(14));
     }
 
     public string? CloseDay(DayCloseout closeout)
@@ -104,21 +111,22 @@ internal sealed partial class RegisterData
 
         DaySales sales = GetDaySales(closeout.Day, transaction);
         if (!sales.HasActivity)
-            return "This date has no sales or refunds.";
+            return "This date has no register activity.";
         if (sales != closeout.Sales)
-            return "Sales changed while this window was open. Reload the date and count the drawer again.";
+            return "Register activity changed while this window was open. Reload the date and count the drawer again.";
 
         using var insert = Command("""
             INSERT INTO day_closeouts (business_date, closed_at, sale_count, subtotal_cents, discount_cents,
                 tax_cents, lottery_cents, cash_sales_cents, card_sales_cents, opening_cents, counted_cash_cents,
-                counted_card_cents, next_bank_cents, notes, refund_count)
+                counted_card_cents, next_bank_cents, notes, refund_count, expense_cents)
             VALUES ($day, $time, $count, $subtotal, $discounts, $tax, $lottery, $cashSales, $cardSales,
-                $opening, $cash, $card, $bank, $notes, $refunds)
+                $opening, $cash, $card, $bank, $notes, $refunds, $expenses)
             """, transaction);
         insert.Parameters.AddWithValue("$day", Day(closeout.Day));
         insert.Parameters.AddWithValue("$time", closeout.ClosedAt.ToString("O", CultureInfo.InvariantCulture));
         insert.Parameters.AddWithValue("$count", sales.Count);
         insert.Parameters.AddWithValue("$refunds", sales.Refunds);
+        insert.Parameters.AddWithValue("$expenses", Cents(sales.Expenses));
         insert.Parameters.AddWithValue("$subtotal", Cents(sales.Subtotal));
         insert.Parameters.AddWithValue("$discounts", Cents(sales.Discounts));
         insert.Parameters.AddWithValue("$tax", Cents(sales.Tax));
@@ -148,7 +156,8 @@ internal sealed partial class RegisterData
     private static DaySales ReadDaySales(SqliteDataReader reader, int offset) => new(
         reader.GetInt64(offset), reader.GetInt64(offset + 1) / 100m, reader.GetInt64(offset + 2) / 100m,
         reader.GetInt64(offset + 3) / 100m, reader.GetInt64(offset + 4) / 100m,
-        reader.GetInt64(offset + 5) / 100m, reader.GetInt64(offset + 6) / 100m, reader.GetInt64(offset + 7));
+        reader.GetInt64(offset + 5) / 100m, reader.GetInt64(offset + 6) / 100m, reader.GetInt64(offset + 7),
+        reader.GetInt64(offset + 8) / 100m);
 
     private void AddCloseoutsAndSaleKinds(SqliteTransaction transaction)
     {

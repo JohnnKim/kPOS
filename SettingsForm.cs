@@ -31,10 +31,11 @@ internal sealed class SettingsForm : Form
         var lotteryKey = Shortcut("Lottery", keys.Lottery);
         var miscKey = Shortcut("Misc", keys.Misc);
         var refundKey = Shortcut("Refund (two letters or blank)", keys.Refund, length: 2);
+        var expenseKey = Shortcut("Drawer expense (letter or blank)", keys.Expense);
         var stockKey = Shortcut("Stock in Orders (Alt + letter)", keys.Stock);
         var autoScan = new CheckBox { Text = "Submit fast barcode scans without Enter", AutoSize = true, Checked = keys.AutoScan };
         AddTab("Shortcuts", "Type sale shortcuts in the scanner field and press Enter.",
-            quantityKey.Row, lotteryKey.Row, miscKey.Row, refundKey.Row, stockKey.Row, autoScan);
+            quantityKey.Row, lotteryKey.Row, miscKey.Row, refundKey.Row, expenseKey.Row, stockKey.Row, autoScan);
         AddTab("Tax", "Sales tax rate (%)", rate);
         var path = new TextBox { ReadOnly = true, Text = folders.Root, Width = 430 };
         AddTab("Data", "Installation and records folder", path);
@@ -94,7 +95,8 @@ internal sealed class SettingsForm : Form
             }
         };
 
-        RegisterKeys CurrentKeys() => new(quantityKey.Input.Text, lotteryKey.Input.Text, miscKey.Input.Text, stockKey.Input.Text, autoScan.Checked, refundKey.Input.Text);
+        RegisterKeys CurrentKeys() => new(quantityKey.Input.Text, lotteryKey.Input.Text, miscKey.Input.Text,
+            stockKey.Input.Text, autoScan.Checked, refundKey.Input.Text, expenseKey.Input.Text);
 
         static (FlowLayoutPanel Row, TextBox Input) Shortcut(string name, string value, int length = 1)
         {
@@ -110,7 +112,8 @@ internal sealed class SettingsForm : Form
             var page = new TabPage(name);
             var fields = new FlowLayoutPanel
             {
-                Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(12)
+                Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false,
+                AutoScroll = true, Padding = new Padding(12)
             };
             if (label.Length > 0)
                 fields.Controls.Add(new Label { Text = label, AutoSize = true });

@@ -42,6 +42,7 @@ internal sealed partial class RegisterData
             using var delete = Command("""
                 DELETE FROM sale_lines WHERE sale_id IN (SELECT id FROM sales WHERE business_date = $day);
                 DELETE FROM day_closeouts WHERE business_date = $day;
+                DELETE FROM drawer_expenses WHERE business_date = $day;
                 DELETE FROM sales WHERE business_date = $day;
                 SELECT changes();
                 """, transaction);
@@ -86,14 +87,14 @@ internal sealed class TrainingResetForm : Form
         Font = PosView.Text(11);
         BackColor = PosView.Canvas;
         day.MaxDate = data.CurrentBusinessDate().ToDateTime(TimeOnly.MinValue);
-        day.Value = data.FirstOpenDayWithSales(data.CurrentBusinessDate()).ToDateTime(TimeOnly.MinValue);
+        day.Value = data.FirstOpenDayWithActivity(data.CurrentBusinessDate()).ToDateTime(TimeOnly.MinValue);
 
         var layout = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(15)
         };
         layout.Controls.Add(PosView.Label("Reset Test Day", 22, FontStyle.Bold));
-        layout.Controls.Add(PosView.Label("Testing only. This clears sales and closeout for the selected business date.", 11, color: PosView.Error));
+        layout.Controls.Add(PosView.Label("Testing only. Clears sales, drawer expenses, and closeout for the selected date.", 11, color: PosView.Error));
         var dateRow = new FlowLayoutPanel { AutoSize = true };
         dateRow.Controls.AddRange([PosView.Label("&Business date", 11, FontStyle.Bold), day]);
         layout.Controls.Add(dateRow);
@@ -119,7 +120,8 @@ internal sealed class TrainingResetForm : Form
     {
         sales = data.GetDaySales(Day);
         closeout = data.ReadCloseout(Day);
-        summary.Text = $"{sales.Count:N0} sales · {sales.Refunds:N0} refunds · {Sale.Money(sales.Total)} · {(closeout is null ? "Open day" : "Saved closeout")}";
+        summary.Text = $"{sales.Count:N0} sales · {sales.Refunds:N0} refunds · {Sale.Money(sales.Expenses)} drawer expenses" +
+            $" · {(closeout is null ? "Open day" : "Saved closeout")}";
         instruction.Text = $"Type {ConfirmationDate} to enable reset.";
         confirmation.Clear();
         UpdateButton();
@@ -131,7 +133,7 @@ internal sealed class TrainingResetForm : Form
     private void Reset()
     {
         if (!reset.Enabled || sales is null || MessageBox.Show(this,
-                $"Clear {sales.Count:N0} sales, {sales.Refunds:N0} refunds, and the closeout for {ConfirmationDate}? Use this only for test data.",
+                $"Clear sales, refunds, drawer expenses, and closeout for {ConfirmationDate}? Use this only for test data.",
                 Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
             return;
 
@@ -140,9 +142,9 @@ internal sealed class TrainingResetForm : Form
             Directory.CreateDirectory(folders.Backups);
             string recovery = Path.Combine(folders.Backups, $"before-test-reset-{ConfirmationDate}-{Guid.NewGuid():N}.zip");
             UseWaitCursor = true;
-            int removed = data.ResetTrainingDay(Day, folders, recovery, sales, closeout);
+            data.ResetTrainingDay(Day, folders, recovery, sales, closeout);
             UseWaitCursor = false;
-            MessageBox.Show(this, $"Cleared {removed:N0} test transactions.\n\nRecovery backup:\n{recovery}",
+            MessageBox.Show(this, $"Reset test records for {ConfirmationDate}.\n\nRecovery backup:\n{recovery}",
                 Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             DialogResult = DialogResult.OK;
         }

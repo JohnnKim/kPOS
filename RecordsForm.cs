@@ -53,6 +53,7 @@ internal sealed class RecordsForm : Form
             AddTab("Sales History", RecordReport.Sales);
             AddTab("Item Sales Totals", RecordReport.ItemTotals);
             AddTab("Lottery Sales", RecordReport.LotterySales);
+            AddTab("Drawer Expenses", RecordReport.Expenses);
             AddTab("Closeouts", RecordReport.Closeout);
         }
         AddTab("Item Sales History", RecordReport.SaleLines);
@@ -281,7 +282,8 @@ internal sealed class RecordsForm : Form
                     (individualSale && field == "Type"),
                 RecordReport.ItemTotals => field != "Type",
                 RecordReport.PriceHistory => field != "Code",
-                RecordReport.Closeout => field is "Business date" or "Sales" or "Refunds" or "Total" or "Cash over/short" or "Card over/short" or "Cash deposit" or "Notes",
+                RecordReport.Closeout => field is "Business date" or "Sales" or "Refunds" or "Total" or "Drawer expenses" or
+                    "Cash over/short" or "Card over/short" or "Cash deposit" or "Notes",
                 _ => true
             };
             column.Resizable = DataGridViewTriState.False;
@@ -289,7 +291,7 @@ internal sealed class RecordsForm : Form
             column.FillWeight = field switch
             {
                 "Sold at" or "Recorded at" => 142,
-                "Product" or "Notes" => 192,
+                "Product" or "Notes" or "Reason" => 192,
                 "Sales" or "Quantity" or "Units per case" or "Pack" or "Type" => 63,
                 _ => 100
             };
@@ -303,7 +305,8 @@ internal sealed class RecordsForm : Form
                 _ => field
             };
             if (field is "Subtotal" or "Discounts" or "Tax" or "Total" or "Received" or "Change" or "Unit price" or
-                "Case price" or "Discount" or "Net sales" or "Lottery" or "Cash over/short" or "Card over/short" or "Cash deposit")
+                "Case price" or "Discount" or "Net sales" or "Lottery" or "Cash over/short" or "Card over/short" or
+                "Cash deposit" or "Amount" or "Drawer expenses")
             {
                 column.DefaultCellStyle.Format = "C2";
                 column.DefaultCellStyle.FormatProvider = CultureInfo.GetCultureInfo("en-US");

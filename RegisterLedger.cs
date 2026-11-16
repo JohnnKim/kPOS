@@ -8,11 +8,11 @@ internal enum PaymentMethod { Card, Cash }
 
 internal readonly record struct Payment(PaymentMethod Method, decimal Received);
 
-internal enum RecordReport { Totals, Sales, SaleLines, ItemTotals, PriceHistory, Products, LotterySales, Closeout }
+internal enum RecordReport { Totals, Sales, SaleLines, ItemTotals, PriceHistory, Products, LotterySales, Closeout, Expenses }
 
 internal sealed partial class RegisterData
 {
-    public const int SchemaVersion = 7;
+    public const int SchemaVersion = 8;
     public const int DefaultChangeSeconds = 8;
     public const int MaximumChangeSeconds = 120;
     private const string HasSoldItems = """
@@ -190,6 +190,12 @@ internal sealed partial class RegisterData
                 ORDER BY business_date DESC, changed_at DESC, id DESC
                 """,
             RecordReport.Closeout => CloseoutReportSql,
+            RecordReport.Expenses => """
+                SELECT business_date AS "Business date", recorded_at AS "Recorded at",
+                       amount_cents / 100.0 AS Amount, reason AS Reason
+                FROM drawer_expenses WHERE business_date BETWEEN $start AND $end
+                ORDER BY business_date DESC, recorded_at DESC, id DESC
+                """,
             RecordReport.Products => """
                 SELECT barcode AS Barcode, code AS Code, description AS Product, size AS Size,
                        unit_cents / 100.0 AS "Unit price", units_per_case AS "Units per case",

@@ -103,6 +103,8 @@ public sealed class CloseoutTests
                     ALTER TABLE register_settings DROP COLUMN stock_key;
                     ALTER TABLE register_settings DROP COLUMN auto_scan;
                     ALTER TABLE register_settings DROP COLUMN refund_key;
+                    ALTER TABLE register_settings DROP COLUMN expense_key;
+                    DROP TABLE drawer_expenses;
                     ALTER TABLE register_settings DROP COLUMN require_item_count;
                     ALTER TABLE register_settings DROP COLUMN start_maximized;
                     DROP TABLE order_draft;

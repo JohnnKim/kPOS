@@ -21,6 +21,7 @@ public sealed class TrainingResetTests
         {
             var timestamp = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
             data.RecordSale(Guid.NewGuid(), timestamp, sale, totals, new Payment(PaymentMethod.Cash, 20));
+            data.RecordExpense(Guid.NewGuid(), timestamp, 2m, "Training expense");
         }
 
         DaySales sales = data.GetDaySales(day);
@@ -42,10 +43,12 @@ public sealed class TrainingResetTests
 
             Assert.AreEqual(1, data.ResetTrainingDay(day, folders, recoveryZip, sales, saved));
             Assert.AreEqual(0L, data.GetDaySales(day).Count);
+            Assert.AreEqual(0m, data.GetDaySales(day).Expenses);
             Assert.IsNull(data.ReadCloseout(day));
             Assert.HasCount(0, data.ReadReport(RecordReport.SaleLines, day, day).Rows);
             Assert.AreEqual(1L, data.GetDaySales(day.AddDays(-1)).Count);
             Assert.AreEqual(1L, data.GetDaySales(day.AddDays(1)).Count);
+            Assert.AreEqual(2m, data.GetDaySales(day.AddDays(1)).Expenses);
             Assert.IsNotNull(data.FindProduct("101"));
             Assert.IsFalse(File.Exists(dailyZip));
             Assert.IsTrue(File.Exists(Path.Combine(folders.Backups, "recovery", Path.GetFileName(dailyZip))));
@@ -53,6 +56,7 @@ public sealed class TrainingResetTests
                 backup.GetEntry("Database/register.db")!.ExtractToFile(restored);
             using var recovered = new RegisterData(restored);
             Assert.AreEqual(1L, recovered.GetDaySales(day).Count);
+            Assert.AreEqual(2m, recovered.GetDaySales(day).Expenses);
             Assert.AreEqual("Training", recovered.ReadCloseout(day)?.Notes);
         }
         finally

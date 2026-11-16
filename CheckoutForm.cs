@@ -255,7 +255,7 @@ internal sealed class CheckoutForm : Form
             ? payment.Method == PaymentMethod.Cash ? "Cash refund" : "Card refund"
             : payment.Method == PaymentMethod.Cash ? "Cash received" : "Amount received";
         AddAmountRow(summary, 3, paymentLabel, Math.Abs(payment.Received), 18);
-        var result = isRefund ? CreateAmountBanner("REFUND RECORDED", -payment.Received)
+        var result = isRefund ? CreateAmountBanner("REFUND RECORDED", -payment.Received, PosView.Refund)
             : CreateAmountBanner("CHANGE DUE", ChangeDue);
         result.Margin = new Padding(0, 14, 0, 8);
         AddWide(summary, 4, result);
@@ -337,7 +337,8 @@ internal sealed class CheckoutForm : Form
         summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
         summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
         bool isRefund = totals.Total < 0;
-        AddWide(summary, 0, CreateAmountBanner(isRefund ? "REFUND DUE" : "TOTAL DUE", Math.Abs(totals.Total)));
+        AddWide(summary, 0, isRefund ? CreateAmountBanner("REFUND DUE", -totals.Total, PosView.Refund)
+            : CreateAmountBanner("TOTAL DUE", totals.Total));
         AddAmountRow(summary, 1, "Merchandise", totals.Merchandise);
         AddAmountRow(summary, 2, "Lottery", totals.Lottery);
         AddAmountRow(summary, 3, "Discounts", -totals.Discount);
@@ -379,10 +380,10 @@ internal sealed class CheckoutForm : Form
         return summary;
     }
 
-    private static Label CreateAmountBanner(string caption, decimal value)
+    private static Label CreateAmountBanner(string caption, decimal value, Color? background = null)
     {
         var banner = PosView.Label($"{caption}\n{Sale.Money(value)}", 30, FontStyle.Bold, Color.White);
-        banner.BackColor = PosView.Navy;
+        banner.BackColor = background ?? PosView.Navy;
         banner.Padding = new Padding(12, 8, 12, 8);
         banner.Margin = new Padding(0, 0, 0, 8);
         banner.Dock = DockStyle.Fill;

@@ -7,6 +7,7 @@ internal static class PosView
     public static readonly Color Muted = Color.FromArgb(68, 88, 113);
     public static readonly Color Navy = Color.FromArgb(20, 44, 73);
     public static readonly Color Blue = Color.FromArgb(28, 87, 167);
+    public static readonly Color Refund = Color.FromArgb(138, 66, 12);
     public static readonly Color Line = Color.FromArgb(171, 187, 205);
     public static readonly Color Light = Color.FromArgb(243, 247, 251);
     public static readonly Color Error = Color.FromArgb(157, 34, 38);

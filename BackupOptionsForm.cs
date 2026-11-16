@@ -63,7 +63,8 @@ internal sealed class BackupOptionsForm : Form
             (RecordReport.Totals, "Sales totals"), (RecordReport.Products, "Product catalog"),
             (RecordReport.Sales, "Sale history"), (RecordReport.PriceHistory, "Price history"),
             (RecordReport.SaleLines, "Sale line details"), (RecordReport.Closeout, "Closeout history"),
-            (RecordReport.ItemTotals, "Item sales totals"), (RecordReport.LotterySales, "Lottery sales")
+            (RecordReport.ItemTotals, "Item sales totals"), (RecordReport.LotterySales, "Lottery sales"),
+            (RecordReport.Expenses, "Drawer expenses")
         ];
         for (int i = 0; i < types.Length; i++)
         {
