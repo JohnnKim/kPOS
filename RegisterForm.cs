@@ -45,9 +45,8 @@ internal sealed class RegisterForm : Form
     private readonly Label legalAge = new() { AutoSize = true, ForeColor = Color.FromArgb(24, 53, 82) };
     private readonly System.Windows.Forms.Timer legalAgeTimer = new() { Interval = 30000 };
     private readonly Label discounts = CreateAmountLabel();
-    private readonly Label taxCaption = new() { Anchor = AnchorStyles.Left, AutoSize = true };
     private readonly Label tax = CreateAmountLabel();
-    private readonly Label totalDue = CreateAmountLabel();
+    private readonly Label totalDue = PosView.BannerAmount("", 30);
     private readonly Label totalCaption = PosView.Label("TOTAL DUE", 12, FontStyle.Bold, Color.White);
     private readonly TableLayoutPanel totalBanner = new()
     {
@@ -72,10 +71,13 @@ internal sealed class RegisterForm : Form
             if ((code.Length >= 8 && code.All(char.IsAsciiDigit)) || data.FindProduct(code) is not null)
                 SubmitScan();
         });
+        SuspendLayout();
+        AutoScaleDimensions = new SizeF(96, 96);
+        AutoScaleMode = AutoScaleMode.Dpi;
         Text = "kPOS - Sales Entry (Training)";
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(1280, 780);
-        MinimumSize = new Size(1000, 660);
+        MinimumSize = new Size(780, 515);
         if (data.StartMaximized)
             WindowState = FormWindowState.Maximized;
         Font = PosView.Text(12);
@@ -87,12 +89,12 @@ internal sealed class RegisterForm : Form
             Dock = DockStyle.Fill, Padding = new Padding(17, 11, 17, 14),
             ColumnCount = 2, RowCount = 4
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 68));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 56));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 125));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var header = CreateHeader();
         layout.Controls.Add(header, 0, 0);
         layout.SetColumnSpan(header, 2);
@@ -104,14 +106,15 @@ internal sealed class RegisterForm : Form
         layout.Controls.Add(ticketFrame, 0, 2);
         layout.Controls.Add(CreateScanArea(), 0, 3);
 
-        var side = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(4, 0, 0, 0) };
-        side.RowStyles.Add(new RowStyle(SizeType.Absolute, 276));
-        side.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var side = new TableLayoutPanel { ColumnCount = 1, RowCount = 2, Margin = new Padding(4, 0, 0, 0) };
+        side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         side.Controls.Add(CreateTotals(), 0, 0);
         hotkeys = CreateHotkeys();
         side.Controls.Add(hotkeys, 0, 1);
-        layout.Controls.Add(side, 1, 2);
-        layout.SetRowSpan(side, 2);
+        var sidebar = PosView.Scroll(side);
+        layout.Controls.Add(sidebar, 1, 2);
+        layout.SetRowSpan(sidebar, 2);
 
         MenuStrip menu = CreateMenu();
         MainMenuStrip = menu;
@@ -126,6 +129,7 @@ internal sealed class RegisterForm : Form
         ticket.MouseUp += (_, _) => FocusScanner();
         RefreshTicket();
         ShowLastChange(data.LastChange());
+        ResumeLayout();
     }
 
     protected override bool ProcessCmdKey(ref Message message, Keys keys)
@@ -216,11 +220,11 @@ internal sealed class RegisterForm : Form
         var header = new TableLayoutPanel
         {
             Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
-            BackColor = PosView.Navy, Padding = new Padding(16, 0, 16, 0)
+            BackColor = PosView.Navy, Padding = new Padding(10, 6, 10, 6), AutoSize = true
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var title = PosView.Label("kPOS   /   Sales Entry", 22, FontStyle.Bold, Color.White);
+        var title = PosView.Label("Sales Entry", 18, FontStyle.Bold, Color.White);
         title.Anchor = AnchorStyles.Left;
         legalAge.Font = PosView.Text(14, FontStyle.Bold);
         legalAge.ForeColor = Color.White;
@@ -232,8 +236,8 @@ internal sealed class RegisterForm : Form
 
     private Control CreateActions()
     {
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Padding = new Padding(0, 3, 0, 0) };
-        Add("&Checkout · F9", FinishSale, primary: true);
+        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
+        Add("&Checkout", FinishSale, primary: true);
         Add("Item L&ookup", LookupItem);
         Add("Catalo&g", ViewProducts);
         Add("End of &Day", ViewCloseout);
@@ -253,10 +257,9 @@ internal sealed class RegisterForm : Form
 
     private Control CreateScanArea()
     {
-        var area = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
-        area.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
-        area.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
-        area.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var area = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3 };
+        for (int row = 0; row < 3; row++)
+            area.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         scanPrompt.Font = PosView.Text(13, FontStyle.Bold);
         scanPrompt.ForeColor = PosView.Ink;
         scanCode.Font = PosView.Text(22, FontStyle.Bold);
@@ -267,42 +270,39 @@ internal sealed class RegisterForm : Form
         area.Controls.Add(scanPrompt, 0, 0);
         area.Controls.Add(scanCode, 0, 1);
         area.Controls.Add(status, 0, 2);
-        var frame = PosView.Frame(area, new Padding(12, 7, 12, 4));
+        var frame = PosView.Frame(area, new Padding(10, 6, 10, 4), fitContent: true);
         frame.Margin = new Padding(3, 7, 7, 3);
         return frame;
     }
 
     private Control CreateTotals()
     {
-        var totals = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 6 };
-        totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 53));
-        totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 47));
+        var totals = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 6 };
+        totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        totals.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         AddTotal("Merchandise", subtotal, 0);
         AddTotal("Lottery", lottery, 1);
         AddTotal("Discounts", discounts, 2);
-        AddTotal("Sales tax", tax, 3, taxCaption);
+        AddTotal("Sales tax", tax, 3);
 
-        totals.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        totalBanner.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
-        totalBanner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        totals.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        totalBanner.AutoSize = true;
+        totalBanner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        totalBanner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         totalBanner.Controls.Add(totalCaption, 0, 0);
-        totalDue.Font = PosView.Text(35, FontStyle.Bold);
-        totalDue.ForeColor = Color.White;
         totalBanner.Controls.Add(totalDue, 0, 1);
         totals.Controls.Add(totalBanner, 0, 4);
         totals.SetColumnSpan(totalBanner, 2);
         AddTotal("Last change", lastChange, 5);
-        return PosView.Frame(totals, new Padding(11));
+        return PosView.Frame(totals, new Padding(8), fitContent: true);
 
-        void AddTotal(string label, Label amount, int row, Label? caption = null)
+        void AddTotal(string label, Label amount, int row)
         {
-            totals.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-            caption ??= new Label { Anchor = AnchorStyles.Left, AutoSize = true };
-            caption.Text = label;
-            caption.ForeColor = PosView.Muted;
-            caption.Font = PosView.Text(12);
+            totals.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            Label caption = PosView.Label(label, 12, color: PosView.Muted);
+            caption.Anchor = AnchorStyles.Left;
             amount.ForeColor = PosView.Ink;
-            amount.Font = PosView.Text(15, FontStyle.Bold);
+            amount.Font = PosView.Text(13, FontStyle.Bold);
             totals.Controls.Add(caption, 0, row);
             totals.Controls.Add(amount, 1, row);
         }
@@ -365,16 +365,11 @@ internal sealed class RegisterForm : Form
         ticket.Columns.Add("Price", "Unit Price");
         ticket.Columns.Add("Discount", "Disc %");
         ticket.Columns.Add("Extended", "Amount");
-        ticket.Columns["Description"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
-        ticket.Columns["Description"]!.MinimumWidth = 120;
-        ticket.Columns["Quantity"]!.Width = 53;
-        ticket.Columns["Price"]!.Width = 117;
-        ticket.Columns["Discount"]!.Width = 76;
-        ticket.Columns["Extended"]!.Width = 128;
+        PosView.FitTicketColumns(ticket, "Description", "Quantity", "Price", "Discount", "Extended");
         foreach (DataGridViewColumn column in ticket.Columns)
             column.SortMode = DataGridViewColumnSortMode.NotSortable;
         foreach (string name in new[] { "Quantity", "Price", "Discount", "Extended" })
-            PosView.AmountColumn(ticket, name, name == "Extended" ? 16 : 13);
+            PosView.AmountColumn(ticket, name, name == "Extended" ? 14 : 12);
     }
 
     private void FocusScanner()
@@ -782,7 +777,7 @@ internal sealed class RegisterForm : Form
     }
 
     private void RefreshLegalAge() =>
-        legalAge.Text = $"Legal Age 21+  •  DOB on or before {DateTime.Today.AddYears(-21):MMM d, yyyy}";
+        legalAge.Text = $"Legal Date  {DateTime.Today.AddYears(-21):MMM d, yyyy}";
 
     protected override void Dispose(bool disposing)
     {
@@ -820,7 +815,6 @@ internal sealed class RegisterForm : Form
         subtotal.Text = Sale.Money(totals.Merchandise);
         lottery.Text = Sale.Money(totals.Lottery);
         discounts.Text = Sale.Money(totals.Discount);
-        taxCaption.Text = $"Sales tax ({Sale.Rate(taxRate)})";
         tax.Text = Sale.Money(totals.Tax);
         totalCaption.Text = totals.Total < 0 ? "REFUND DUE" : "TOTAL DUE";
         totalBanner.BackColor = totals.Total < 0 ? PosView.Refund : PosView.Navy;

@@ -47,7 +47,7 @@ public static class KposExecutableTest
                 IntPtr scanner = FindTextBox(register);
                 WaitUntil(() => HasText(register, "Ready to scan"), "initialize the scan field");
                 string cutoff = DateTime.Today.AddYears(-21).ToString("MMM d, yyyy");
-                WaitUntil(() => HasText(register, "Legal Age 21+  •  DOB on or before " + cutoff), "show the legal age cutoff");
+                WaitUntil(() => TextIsInBounds(register, "Legal Date  " + cutoff), "show the legal date in the register header");
 
                 EnterText(scanner, "000000000101", submit: false);
                 WaitUntil(() => HasText(register, "Added: Pale Ale"), "add a scanner burst without Enter");
@@ -59,7 +59,8 @@ public static class KposExecutableTest
 
                 Send(scanner, 0x0100, 0x78); // F9
                 IntPtr checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
-                WaitUntil(() => HasText(checkout, "Sales tax (2.9%)") && HasText(checkout, "TOTAL DUE\n$24.68"),
+                WaitUntil(() => HasText(checkout, "Sales tax (2.9%)") && TextIsInBounds(checkout, "TOTAL DUE") &&
+                    TextIsInBounds(checkout, "$24.68"),
                     "show tax and the amount due at checkout");
                 IntPtr cashInput;
                 IntPtr countInput = FindCountField(checkout, "24.68", out cashInput);
@@ -73,7 +74,7 @@ public static class KposExecutableTest
                 WaitUntil(() => HasText(checkout, "Change due: $5.32"), "calculate change");
                 var changeTime = Stopwatch.StartNew();
                 Send(cashInput, 0x0100, 0x0d); // Enter
-                WaitUntil(() => HasText(checkout, "CHANGE DUE\n$5.32") && HasText(checkout, "Subtotal") &&
+                WaitUntil(() => TextIsInBounds(checkout, "CHANGE DUE") && TextIsInBounds(checkout, "$5.32") && HasText(checkout, "Subtotal") &&
                     HasText(checkout, "Sales tax") && HasText(checkout, "Total") && HasText(checkout, "Cash received") &&
                     HasText(checkout, "$23.98") && HasText(checkout, "$0.70") && HasText(checkout, "$24.68") &&
                     HasText(checkout, "$30.00"), "show the full cash change summary");
@@ -99,7 +100,8 @@ public static class KposExecutableTest
                 IntPtr terminalAmount = cashInput;
                 WaitUntil(() => IsWindowEnabled(terminalAmount) && IsSelected(terminalAmount, 5), "preselect the exact amount for the terminal payment");
                 Send(terminalAmount, 0x0100, 0x0d); // Enter
-                WaitUntil(() => HasText(checkout, "CHANGE DUE\n$0.00") && HasText(checkout, "Amount received"), "record the terminal payment");
+                WaitUntil(() => HasText(checkout, "CHANGE DUE") && HasText(checkout, "$0.00") &&
+                    HasText(checkout, "Amount received"), "record the terminal payment");
                 changeTime.Restart();
                 Send(FindChildWithText(checkout, "&Next Sale"), 0x0100, 0x0d); // Enter
                 WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "bypass the change screen with Enter");
@@ -122,13 +124,14 @@ public static class KposExecutableTest
                 Send(scanner, 0x0100, 0x78); // F9
                 checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
                 WaitUntil(() => HasText(checkout, "Lottery") && HasText(checkout, "$5.00") &&
-                    HasText(checkout, "TOTAL DUE\n$8.09"), "separate lottery from the taxable misc item");
+                    HasText(checkout, "TOTAL DUE") && HasText(checkout, "$8.09"), "separate lottery from the taxable misc item");
                 countInput = FindCountField(checkout, "8.09", out cashInput);
                 EnterText(countInput, "2");
                 IntPtr lotteryAmount = cashInput;
                 WaitUntil(() => IsWindowEnabled(lotteryAmount) && IsSelected(lotteryAmount, 4), "unlock the lottery payment");
                 EnterText(lotteryAmount, "10.00");
-                WaitUntil(() => HasText(checkout, "CHANGE DUE\n$1.91") && HasText(checkout, "Cash received"), "record mixed cash sale");
+                WaitUntil(() => HasText(checkout, "CHANGE DUE") && HasText(checkout, "$1.91") &&
+                    HasText(checkout, "Cash received"), "record mixed cash sale");
                 Send(FindChildWithText(checkout, "&Next Sale"), 0x0100, 0x0d); // Enter
                 WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "return after recording lottery");
 
@@ -161,8 +164,8 @@ public static class KposExecutableTest
                 WaitUntil(() => HasText(register, "Drawer expense recorded: $4.25."), "record the drawer expense using its shortcut");
                 Send(FindChildWithText(register, "End of &Day"), 0x00F5, 0); // BM_CLICK
                 IntPtr closeout = FindWindow(desktop, process.ProcessId, "End of Day Closeout");
-                WaitUntil(() => HasText(closeout, "End-of-Day Totals") && HasText(closeout, "Revised") &&
-                    HasText(closeout, "Calculated") && HasText(closeout, "State Tax") && HasText(closeout, "Net Deposits") &&
+                WaitUntil(() => TextIsInBounds(closeout, "End-of-Day Totals") && TextIsInBounds(closeout, "Revised") &&
+                    TextIsInBounds(closeout, "Calculated") && TextIsInBounds(closeout, "State Tax") && HasText(closeout, "Net Deposits") &&
                     HasText(closeout, "Bank Should") && HasText(closeout, "MC/Visa"),
                     "show the LPOS closeout fields");
                 Send(closeout, 0x0010, 0); // WM_CLOSE
@@ -215,14 +218,14 @@ public static class KposExecutableTest
                     HasText(register, "REFUND DUE") && HasText(register, "$12.34"), "return one unit from the selected line");
                 Send(scanner, 0x0100, 0x78); // F9
                 checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
-                WaitUntil(() => HasText(checkout, "REFUND DUE\n$12.34"), "show the payout for the returned item");
+                WaitUntil(() => HasText(checkout, "REFUND DUE") && HasText(checkout, "$12.34"), "show the payout for the returned item");
                 IntPtr cashRefund = FindChildWithText(checkout, "Record &Cash Refund");
                 if (cashRefund == IntPtr.Zero || IsWindowEnabled(cashRefund))
                     throw new InvalidOperationException("Refund payout must be locked before confirming the item count.");
                 EnterText(FindTextBox(checkout), "1");
                 WaitUntil(() => IsWindowEnabled(cashRefund), "confirm one returned item");
                 Send(cashRefund, 0x00F5, 0); // BM_CLICK
-                WaitUntil(() => HasText(checkout, "REFUND RECORDED\n$12.34"), "record the cash refund");
+                WaitUntil(() => HasText(checkout, "REFUND RECORDED") && HasText(checkout, "$12.34"), "record the cash refund");
                 Send(FindChildWithText(checkout, "&Next Sale"), 0x0100, 0x0d); // Enter
                 WaitUntil(() => HasText(register, "Training refund complete. Ready to scan.") &&
                     HasText(register, "$1.91"), "record the refund and retain the last change due");
@@ -417,6 +420,33 @@ public static class KposExecutableTest
     }
 
     private static bool HasText(IntPtr register, string expected) => FindChildWithText(register, expected) != IntPtr.Zero;
+
+    private static bool TextIsInBounds(IntPtr root, string expected)
+    {
+        IntPtr child = FindChildWithText(root, expected);
+        WindowRect label;
+        if (child == IntPtr.Zero || !GetWindowRect(child, out label) || label.Right <= label.Left || label.Bottom <= label.Top)
+            return false;
+        for (IntPtr parent = GetParent(child); parent != IntPtr.Zero; parent = GetParent(parent))
+        {
+            WindowRect bounds;
+            if (!GetWindowRect(parent, out bounds) || label.Left < bounds.Left || label.Top < bounds.Top ||
+                label.Right > bounds.Right || label.Bottom > bounds.Bottom)
+                return false;
+            if (parent == root)
+                return true;
+        }
+        return false;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowRect { public int Left, Top, Right, Bottom; }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr window, out WindowRect bounds);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetParent(IntPtr window);
 
     private static IntPtr FindChildWithText(IntPtr register, string expected)
     {

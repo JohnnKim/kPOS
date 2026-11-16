@@ -37,13 +37,68 @@ internal static class PosView
         return button;
     }
 
-    public static Panel Frame(Control content, Padding padding, Color? edge = null)
+    public static Panel Frame(Control content, Padding padding, Color? edge = null, bool fitContent = false)
     {
-        var frame = new Panel { Dock = DockStyle.Fill, BackColor = edge ?? Line, Padding = new Padding(1) };
-        var inside = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = padding };
+        var frame = new Panel { Dock = DockStyle.Fill, BackColor = edge ?? Line, Padding = new Padding(1),
+            AutoSize = fitContent, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+        var inside = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = padding,
+            AutoSize = fitContent, AutoSizeMode = AutoSizeMode.GrowAndShrink };
         inside.Controls.Add(content);
         frame.Controls.Add(inside);
         return frame;
+    }
+
+    public static Panel Scroll(Control content)
+    {
+        var viewport = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+        content.AutoSize = true;
+        content.Dock = DockStyle.Top;
+        viewport.Controls.Add(content);
+        return viewport;
+    }
+
+    public static Label BannerAmount(string text, float size)
+    {
+        Font fullSize = Text(size, FontStyle.Bold);
+        Font? fitted = null;
+        var label = new Label
+        {
+            Text = text, ForeColor = Color.White, Font = fullSize, TextAlign = ContentAlignment.MiddleRight,
+            Dock = DockStyle.Fill, Margin = new Padding(0), MinimumSize = new Size(0, fullSize.Height + 6)
+        };
+        label.SizeChanged += (_, _) => Fit();
+        label.TextChanged += (_, _) => Fit();
+        label.DpiChangedAfterParent += (_, _) => Fit();
+        label.Disposed += (_, _) => { fitted?.Dispose(); fullSize.Dispose(); };
+        return label;
+
+        void Fit()
+        {
+            if (label.ClientSize.Width < 1 || label.Text.Length == 0)
+                return;
+            using Graphics graphics = label.CreateGraphics();
+            int width = TextRenderer.MeasureText(graphics, label.Text, fullSize, Size.Empty,
+                TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;
+            float pointSize = width <= label.ClientSize.Width ? size
+                : Math.Max(8, (float)Math.Floor(size * (label.ClientSize.Width - 4) / width));
+            if (Math.Abs(label.Font.Size - pointSize) < 0.1f)
+                return;
+            Font? previous = fitted;
+            fitted = pointSize == size ? null : Text(pointSize, FontStyle.Bold);
+            label.Font = fitted ?? fullSize;
+            previous?.Dispose();
+        }
+    }
+
+    public static void FitTicketColumns(DataGridView grid, string description, params string[] numbers)
+    {
+        grid.Columns[description]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        grid.Columns[description]!.MinimumWidth = 100;
+        grid.Columns[description]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        grid.RowTemplate.MinimumHeight = 34;
+        grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders;
+        foreach (string name in numbers)
+            grid.Columns[name]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
     }
 
     public static void Grid(DataGridView grid, float size = 13, int rowHeight = 44)

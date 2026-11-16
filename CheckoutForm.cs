@@ -24,9 +24,12 @@ internal sealed class CheckoutForm : Form
     public CheckoutForm(Sale sale, SaleTotals totals, int changeSeconds, Action<Payment> recordPayment,
         bool requireItemCount = false, bool maximize = true)
     {
+        SuspendLayout();
+        AutoScaleDimensions = new SizeF(96, 96);
+        AutoScaleMode = AutoScaleMode.Dpi;
         Text = "Checkout (Training)";
         ClientSize = new Size(1150, 690);
-        MinimumSize = new Size(860, 580);
+        MinimumSize = new Size(720, 500);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
         MinimizeBox = false;
@@ -38,20 +41,21 @@ internal sealed class CheckoutForm : Form
 
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 2, RowCount = 2
+            Dock = DockStyle.Fill, Padding = new Padding(12), ColumnCount = 2, RowCount = 2
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 53));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 47));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var title = PosView.Label("Checkout", 26, FontStyle.Bold);
+        var title = PosView.Label("Checkout", 20, FontStyle.Bold);
         title.Margin = new Padding(3, 0, 3, 10);
         layout.Controls.Add(title, 0, 0);
         layout.SetColumnSpan(title, 2);
         var receipt = PosView.Frame(CreateReceipt(sale), Padding.Empty);
         receipt.Margin = new Padding(0, 0, 12, 0);
         layout.Controls.Add(receipt, 0, 1);
-        layout.Controls.Add(PosView.Frame(CreatePaymentSummary(totals, requireItemCount, sale.HasReturns), new Padding(13)), 1, 1);
+        Control summary = CreatePaymentSummary(totals, requireItemCount, sale.HasReturns);
+        layout.Controls.Add(PosView.Frame(PosView.Scroll(summary), new Padding(8)), 1, 1);
         Controls.Add(layout);
 
         amount.Text = totals.Total.ToString("F2", CultureInfo.InvariantCulture);
@@ -79,6 +83,7 @@ internal sealed class CheckoutForm : Form
         cashRefund.Click += (_, _) => CompletePayment(new Payment(PaymentMethod.Cash, totals.Total));
         cardRefund.Click += (_, _) => CompletePayment(new Payment(PaymentMethod.Card, totals.Total));
         RefreshPayment();
+        ResumeLayout();
 
         void ConfirmCount()
         {
@@ -232,29 +237,27 @@ internal sealed class CheckoutForm : Form
     {
         var center = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, Padding = new Padding(18), ColumnCount = 3, RowCount = 3
+            Padding = new Padding(12), ColumnCount = 3, RowCount = 1
         };
-        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 18));
-        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 64));
-        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 18));
-        center.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 12));
+        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 76));
+        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 12));
         center.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        center.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
 
         var summary = new TableLayoutPanel
         {
-            Dock = DockStyle.Top, AutoSize = true, BackColor = Color.White, ColumnCount = 2, Padding = new Padding(20)
+            Dock = DockStyle.Fill, AutoSize = true, BackColor = Color.White, ColumnCount = 2, Padding = new Padding(12)
         };
-        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
-        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
-        AddAmountRow(summary, 0, "Subtotal", totals.Subtotal - totals.Discount, 18);
-        AddAmountRow(summary, 1, "Sales tax", totals.Tax, 18);
-        AddAmountRow(summary, 2, "Total", totals.Total, 22);
+        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        summary.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        AddAmountRow(summary, 0, "Subtotal", totals.Subtotal - totals.Discount, 16);
+        AddAmountRow(summary, 1, "Sales tax", totals.Tax, 16);
+        AddAmountRow(summary, 2, "Total", totals.Total, 18);
         bool isRefund = totals.Total < 0;
         string paymentLabel = isRefund
             ? payment.Method == PaymentMethod.Cash ? "Cash refund" : "Card refund"
             : payment.Method == PaymentMethod.Cash ? "Cash received" : "Amount received";
-        AddAmountRow(summary, 3, paymentLabel, Math.Abs(payment.Received), 18);
+        AddAmountRow(summary, 3, paymentLabel, Math.Abs(payment.Received), 16);
         var result = isRefund ? CreateAmountBanner("REFUND RECORDED", -payment.Received, PosView.Refund)
             : CreateAmountBanner("CHANGE DUE", ChangeDue);
         result.Margin = new Padding(0, 14, 0, 8);
@@ -267,13 +270,8 @@ internal sealed class CheckoutForm : Form
         summary.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         summary.Controls.Add(countdown, 0, 5);
         summary.Controls.Add(next, 1, 5);
-        // The framed panel fits its content before the outer layout centers it.
-        var frame = PosView.Frame(summary, new Padding(1), PosView.Navy);
-        frame.AutoSize = true;
-        frame.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        frame.MinimumSize = new Size(0, 420);
-        center.Controls.Add(frame, 1, 1);
-        Controls.Add(center);
+        center.Controls.Add(PosView.Frame(summary, Padding.Empty, fitContent: true), 1, 0);
+        Controls.Add(PosView.Scroll(center));
         AcceptButton = next;
         next.Focus();
 
@@ -303,16 +301,11 @@ internal sealed class CheckoutForm : Form
         grid.Columns.Add("Quantity", "Qty");
         grid.Columns.Add("UnitPrice", "Unit Price");
         grid.Columns.Add("Extended", "Amount");
-        grid.Columns["Item"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
-        grid.Columns["Item"]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
-        grid.Columns["Quantity"]!.Width = 64;
-        grid.Columns["UnitPrice"]!.Width = 114;
-        grid.Columns["Extended"]!.Width = 126;
-        grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCellsExceptHeaders;
+        PosView.FitTicketColumns(grid, "Item", "Quantity", "UnitPrice", "Extended");
         foreach (DataGridViewColumn column in grid.Columns)
             column.SortMode = DataGridViewColumnSortMode.NotSortable;
-        PosView.AmountColumn(grid, "UnitPrice");
-        PosView.AmountColumn(grid, "Extended");
+        PosView.AmountColumn(grid, "UnitPrice", 12);
+        PosView.AmountColumn(grid, "Extended", 13);
 
         foreach (SaleLine line in sale.Lines)
         {
@@ -332,10 +325,10 @@ internal sealed class CheckoutForm : Form
     {
         var summary = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, AutoScroll = true, ColumnCount = 2, Margin = Padding.Empty
+            ColumnCount = 2, Margin = Padding.Empty
         };
-        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
-        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
+        summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        summary.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bool isRefund = totals.Total < 0;
         AddWide(summary, 0, isRefund ? CreateAmountBanner("REFUND DUE", -totals.Total, PosView.Refund)
             : CreateAmountBanner("TOTAL DUE", totals.Total));
@@ -346,8 +339,7 @@ internal sealed class CheckoutForm : Form
         int row = 5;
         if (requireCount)
         {
-            string prompt = saleHasReturns ? "Count purchase and return items, then enter the quantity"
-                : "Count the items and enter the quantity";
+            string prompt = saleHasReturns ? "Count purchases and returns" : "Item count";
             var label = PosView.Label(prompt, 12, FontStyle.Bold);
             label.Margin = new Padding(3, 10, 3, 3);
             AddWide(summary, row++, label);
@@ -380,13 +372,17 @@ internal sealed class CheckoutForm : Form
         return summary;
     }
 
-    private static Label CreateAmountBanner(string caption, decimal value, Color? background = null)
+    private static Control CreateAmountBanner(string caption, decimal value, Color? background = null)
     {
-        var banner = PosView.Label($"{caption}\n{Sale.Money(value)}", 30, FontStyle.Bold, Color.White);
-        banner.BackColor = background ?? PosView.Navy;
-        banner.Padding = new Padding(12, 8, 12, 8);
-        banner.Margin = new Padding(0, 0, 0, 8);
-        banner.Dock = DockStyle.Fill;
+        var banner = new TableLayoutPanel
+        {
+            BackColor = background ?? PosView.Navy, Padding = new Padding(10, 5, 10, 5),
+            Margin = new Padding(0, 0, 0, 6), Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 2
+        };
+        banner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        banner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        banner.Controls.Add(PosView.Label(caption, 12, FontStyle.Bold, Color.White), 0, 0);
+        banner.Controls.Add(PosView.BannerAmount(Sale.Money(value), 28), 0, 1);
         return banner;
     }
 

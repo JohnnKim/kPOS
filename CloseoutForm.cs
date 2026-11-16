@@ -43,6 +43,9 @@ internal sealed class CloseoutForm : Form
     {
         this.data = data;
         this.folders = folders;
+        SuspendLayout();
+        AutoScaleDimensions = new SizeF(96, 96);
+        AutoScaleMode = AutoScaleMode.Dpi;
         Text = "End of Day Closeout";
         ClientSize = new Size(870, 734);
         MinimumSize = new Size(700, 520);
@@ -52,7 +55,7 @@ internal sealed class CloseoutForm : Form
         BackColor = PosView.Canvas;
         date.Value = data.FirstOpenDayWithActivity(DateOnly.FromDateTime(DateTime.Today)).ToDateTime(TimeOnly.MinValue);
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, ColumnCount = 2, Padding = new Padding(12) };
+        var layout = new TableLayoutPanel { ColumnCount = 2, Padding = new Padding(10), MinimumSize = new Size(660, 0) };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46));
         for (int row = 0; row < 5; row++)
@@ -126,6 +129,8 @@ internal sealed class CloseoutForm : Form
         layout.Controls.Add(right, 1, 1);
 
         var noteRow = Section(2);
+        noteRow.ColumnStyles[0] = new ColumnStyle(SizeType.AutoSize);
+        noteRow.ColumnStyles[1] = new ColumnStyle(SizeType.Percent, 100);
         AddRow(noteRow, 0, "Notes", notes);
         Wide(noteRow, 2);
         Wide(feedback, 3);
@@ -135,7 +140,7 @@ internal sealed class CloseoutForm : Form
         actions.Controls.AddRange([dismiss, closeDay, archive, print]);
         Wide(actions, 4);
 
-        Controls.Add(layout);
+        Controls.Add(PosView.Scroll(layout));
         AcceptButton = closeDay;
         CancelButton = dismiss;
         date.ValueChanged += (_, _) => LoadDay();
@@ -149,6 +154,7 @@ internal sealed class CloseoutForm : Form
                 fields[Field.Closing].Text = AmountText(dialog.Counted);
         };
         LoadDay();
+        ResumeLayout();
 
         void Wide(Control control, int row)
         {
@@ -400,10 +406,10 @@ internal sealed class CloseoutForm : Form
     private static TableLayoutPanel Section(int columns)
     {
         var section = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = columns };
-        section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, columns == 2 ? 58 : 44));
-        section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, columns == 2 ? 42 : 28));
+        section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        section.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, columns == 2 ? 142 : 118));
         if (columns == 3)
-            section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28));
+            section.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         return section;
     }
 

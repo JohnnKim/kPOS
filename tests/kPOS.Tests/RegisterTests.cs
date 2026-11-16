@@ -6,6 +6,20 @@ namespace Kpos.Tests;
 public sealed class RegisterTests
 {
     [TestMethod]
+    public void LargePaymentAmountFitsAndRestoresItsSizeWhenTheWindowWidens()
+    {
+        using Label amount = PosView.BannerAmount("$123,456,789,012.34", 30);
+        amount.Dock = DockStyle.None;
+        amount.Width = 190;
+        using Graphics graphics = amount.CreateGraphics();
+        Assert.IsTrue(TextRenderer.MeasureText(graphics, amount.Text, amount.Font, Size.Empty,
+            TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width <= amount.ClientSize.Width);
+
+        amount.Width = 700;
+        Assert.AreEqual(30f, amount.Font.Size);
+    }
+
+    [TestMethod]
     public void RegisterStartsWithAnEmptyTicketAndEditableScanField()
     {
         using var data = new RegisterData(":memory:");
