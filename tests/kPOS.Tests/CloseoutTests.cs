@@ -8,6 +8,36 @@ namespace Kpos.Tests;
 public sealed class CloseoutTests
 {
     [TestMethod]
+    public void RevisedAmountsAndTenderReconcileWithoutChangingCalculatedSales()
+    {
+        using var data = new RegisterData(":memory:");
+        var time = new DateTimeOffset(2026, 11, 16, 18, 0, 0, TimeSpan.FromHours(-7));
+        DateOnly day = DateOnly.FromDateTime(time.DateTime);
+        var ticket = new Sale();
+        ticket.AddMisc("Other", 100m, taxable: false);
+        data.RecordSale(Guid.NewGuid(), time, ticket, ticket.GetTotals(0m), new Payment(PaymentMethod.Cash, 100m));
+        data.RecordExpense(Guid.NewGuid(), time, 10m, "Supplies");
+
+        var revised = new EndOfDayTotals(100m, 3m, 2m, 5m);
+        var tender = new EndOfDayTender(71m, 6m, 14m, 0m, 0m, 0m, 10m, 2m, 0m, 0m);
+        var adjustments = new EndOfDayAdjustments(5m, 2m, 3m, 4m, 7m, 2m);
+        var amounts = new EndOfDayAmounts(revised, tender, adjustments);
+        var closeout = new DayCloseout(day, time, data.GetDaySales(day), 50m, 121m, tender.CardTotal, 50m, "", amounts);
+        Assert.IsNull(data.CloseDay(closeout));
+        DayCloseout saved = data.ReadCloseout(day)!;
+        Assert.AreEqual(amounts, saved.Amounts);
+        Assert.AreEqual(100m, EndOfDayTotals.FromSales(saved.Sales).Total);
+        Assert.AreEqual(110m, saved.Amounts!.Revised.Total);
+        Assert.AreEqual(71m, saved.Amounts.BankShould(saved));
+        Assert.AreEqual(0m, saved.Amounts.Difference(saved));
+        Assert.AreEqual(1L, data.CloseNumber(day));
+        Assert.AreEqual(2L, data.CloseNumber(day.AddDays(1)));
+        var row = data.ReadReport(RecordReport.Closeout, day, day).Rows[0];
+        Assert.AreEqual(110m, Convert.ToDecimal(row["Revised total"], System.Globalization.CultureInfo.InvariantCulture));
+        Assert.AreEqual(10m, Convert.ToDecimal(row["Debit"], System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [TestMethod]
     public void LotteryStaysUntaxedAndTheCloseoutFreezesTheDay()
     {
         using var data = new RegisterData(":memory:");

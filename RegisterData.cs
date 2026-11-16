@@ -244,6 +244,17 @@ internal sealed partial class RegisterData : IDisposable
             AddRefunds(transaction);
         if (currentVersion < 8)
             AddDrawerExpenses(transaction);
+        if (currentVersion < 9)
+        {
+            using var closeoutAmounts = Command("""
+                ALTER TABLE day_closeouts ADD COLUMN reconciliation_amounts TEXT;
+                ALTER TABLE day_closeouts ADD COLUMN close_number INTEGER;
+                UPDATE day_closeouts SET close_number = rowid;
+                CREATE UNIQUE INDEX day_closeouts_number ON day_closeouts(close_number);
+                PRAGMA user_version = 9;
+                """, transaction);
+            closeoutAmounts.ExecuteNonQuery();
+        }
 
         transaction.Commit();
     }

@@ -299,7 +299,7 @@ internal sealed class ProductListForm : Form
         bool removing = !deleted.Checked;
         if (removing && MessageBox.Show(this,
                 $"Delete {product.Description} ({product.Code}) from the catalog? Past sales will remain available.",
-                "Delete Product", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                "Delete Product", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes)
             return;
         try
         {

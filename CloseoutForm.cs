@@ -6,128 +6,149 @@ namespace Kpos;
 
 internal sealed class CloseoutForm : Form
 {
+    private enum Field
+    {
+        Sales, SalesTax, StateTax, NetLottery, CreditGiven, PaidOnAccount, OtherPayouts, GiftCertificatesSold,
+        Opening, Closing, NextBank, Cash, Checks, VisaMastercard, Amex, Discover, Diners, Debit,
+        GiftCertificates, Coupons, OtherCard, Deposits, Returns
+    }
+
     private readonly RegisterData data;
     private readonly RegisterFolders folders;
-    private readonly DateTimePicker date = new() { Format = DateTimePickerFormat.Short, Width = 110 };
-    private readonly TextBox opening = AmountBox("Opening drawer");
-    private readonly TextBox cash = AmountBox("Cash counted");
-    private readonly TextBox card = AmountBox("Card terminal total");
-    private readonly TextBox bank = AmountBox("Next bank");
-    private readonly TextBox notes = new() { Dock = DockStyle.Fill, Multiline = true, Height = 55, MaxLength = 500 };
-    private readonly Label salesSummary = new() { Dock = DockStyle.Fill, AutoSize = true };
-    private readonly Label reconciliation = new() { Dock = DockStyle.Fill, AutoSize = true };
-    private readonly Label feedback = new() { Dock = DockStyle.Fill, AutoSize = true };
+    private readonly DateTimePicker date = new() { Format = DateTimePickerFormat.Short, Width = 122, AccessibleName = "Business date" };
+    private readonly Dictionary<Field, TextBox> fields = [];
+    private readonly Label closeNumber = PosView.Label("", 12, FontStyle.Bold, Color.White);
+    private readonly Label calculatedSales = ValueLabel();
+    private readonly Label calculatedTax = ValueLabel();
+    private readonly Label calculatedStateTax = ValueLabel();
+    private readonly Label calculatedLottery = ValueLabel();
+    private readonly Label calculatedTotal = ValueLabel();
+    private readonly Label revisedTotal = ValueLabel();
+    private readonly Label systemPayouts = ValueLabel();
+    private readonly Label netDeposits = ValueLabel();
+    private readonly Label bankShould = ValueLabel();
+    private readonly Label cashToDeposit = ValueLabel();
+    private readonly Label difference = PosView.Label("", 17, FontStyle.Bold);
+    private readonly Label feedback = PosView.Label("", 10);
+    private readonly TextBox notes = new() { Dock = DockStyle.Fill, MaxLength = 500, AccessibleName = "Closeout notes" };
     private readonly Button count = PosView.Button("Count &Bills and Coins…", size: 10);
-    private readonly Button closeDay = PosView.Button("&Close Day", primary: true, size: 11);
-    private readonly Button print = PosView.Button("&Print Report…", size: 11);
-    private readonly Button archive = PosView.Button("Save &Archive", size: 11);
+    private readonly Button closeDay = PosView.Button("&OK", primary: true, size: 11);
+    private readonly Button print = PosView.Button("&Print Report…", size: 10);
+    private readonly Button archive = PosView.Button("Save &Archive", size: 10);
     private DaySales sales = new(0, 0, 0, 0, 0, 0, 0);
     private DayCloseout? saved;
+    private bool loading;
 
     public CloseoutForm(RegisterData data, RegisterFolders folders)
     {
         this.data = data;
         this.folders = folders;
         Text = "End of Day Closeout";
-        ClientSize = new Size(940, 610);
-        MinimumSize = new Size(790, 575);
+        ClientSize = new Size(870, 734);
+        MinimumSize = new Size(700, 520);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
-        Font = PosView.Text(11);
+        Font = PosView.Text(10);
         BackColor = PosView.Canvas;
-        date.Width = 127;
-        date.AccessibleName = "Business date";
         date.Value = data.FirstOpenDayWithActivity(DateOnly.FromDateTime(DateTime.Today)).ToDateTime(TimeOnly.MinValue);
 
-        var layout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill, AutoScroll = true, ColumnCount = 2, RowCount = 5, Padding = new Padding(14)
-        };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 47));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 53));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 61));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 235));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 183));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, ColumnCount = 2, Padding = new Padding(12) };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46));
+        for (int row = 0; row < 5; row++)
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        var header = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = PosView.Navy, Padding = new Padding(10, 6, 10, 4) };
-        var title = PosView.Label("End of Day", 23, FontStyle.Bold, Color.White);
-        title.Margin = new Padding(3, 0, 30, 3);
-        var dateLabel = PosView.Label("&Business date", 11, FontStyle.Bold, Color.White);
-        dateLabel.Margin = new Padding(3, 12, 3, 3);
-        date.Margin = new Padding(3, 9, 3, 3);
-        header.Controls.AddRange([title, dateLabel, date]);
+        var header = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, ColumnCount = 3, BackColor = PosView.Navy, Padding = new Padding(8), AutoSize = true
+        };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.Controls.Add(PosView.Label("End-of-Day Totals", 18, FontStyle.Bold, Color.White), 0, 0);
+        date.Anchor = AnchorStyles.Left;
+        header.Controls.Add(date, 1, 0);
+        closeNumber.Anchor = AnchorStyles.Right;
+        header.Controls.Add(closeNumber, 2, 0);
         Wide(header, 0);
 
-        var salesPanel = Section("Sales Summary", 0, 1);
-        salesPanel.Controls.Add(salesSummary, 0, 1);
-        salesPanel.SetColumnSpan(salesSummary, 2);
+        var left = Column();
+        var totals = Section(3);
+        totals.Controls.Add(ValueLabel("Revised"), 1, 0);
+        totals.Controls.Add(ValueLabel("Calculated"), 2, 0);
+        AddField(totals, 1, "Sales", Field.Sales, calculatedSales);
+        AddField(totals, 2, "Sales Tax", Field.SalesTax, calculatedTax);
+        AddField(totals, 3, "State Tax", Field.StateTax, calculatedStateTax);
+        AddField(totals, 4, "Net Lottery", Field.NetLottery, calculatedLottery);
+        AddRow(totals, 5, "Total", revisedTotal, calculatedTotal);
+        AddSection(left, totals);
 
-        var drawer = Section("Drawer and Terminal", 1, 1);
-        Field(drawer, "Opening drawer ($)", opening, 1);
-        Field(drawer, "Counted cash ($)", cash, 2);
-        Field(drawer, "Terminal total ($)", card, 3);
-        Field(drawer, "Next bank ($)", bank, 4);
-        count.Anchor = AnchorStyles.Right;
-        drawer.Controls.Add(count, 0, 5);
-        drawer.SetColumnSpan(count, 2);
+        var adjustments = Section(2);
+        AddField(adjustments, 0, "Credit Given", Field.CreditGiven);
+        AddField(adjustments, 1, "Paid on Account", Field.PaidOnAccount);
+        AddRow(adjustments, 2, "System Payouts", systemPayouts);
+        AddField(adjustments, 3, "Other Payouts", Field.OtherPayouts);
+        AddField(adjustments, 4, "Gift Certs Sold", Field.GiftCertificatesSold);
+        AddSection(left, adjustments);
 
-        var balance = Section("Reconciliation", 0, 2);
-        balance.Controls.Add(reconciliation, 0, 1);
-        balance.SetColumnSpan(reconciliation, 2);
+        var drawers = Section(2);
+        AddField(drawers, 0, "Opening Drawers", Field.Opening);
+        AddField(drawers, 1, "Closing Drawers", Field.Closing);
+        AddField(drawers, 2, "Next Bank", Field.NextBank);
+        AddRow(drawers, 3, "Bank Should", bankShould);
+        AddRow(drawers, 4, "Cash to Deposit", cashToDeposit);
+        drawers.Controls.Add(count, 0, 5);
+        drawers.SetColumnSpan(count, 2);
+        AddSection(left, drawers);
+        layout.Controls.Add(left, 0, 1);
 
-        var notesPanel = Section("Notes", 1, 2);
-        notes.Height = 108;
-        notes.AccessibleName = "Closeout notes";
-        notesPanel.Controls.Add(notes, 0, 1);
-        notesPanel.SetColumnSpan(notes, 2);
+        var right = Column();
+        var tender = Section(2);
+        AddField(tender, 0, "Cash", Field.Cash);
+        fields[Field.Cash].PlaceholderText = "From drawer counts";
+        AddField(tender, 1, "Checks", Field.Checks);
+        AddField(tender, 2, "MC/Visa", Field.VisaMastercard);
+        AddField(tender, 3, "Amer Ex", Field.Amex);
+        AddField(tender, 4, "Discover", Field.Discover);
+        AddField(tender, 5, "Diners", Field.Diners);
+        AddField(tender, 6, "Debit", Field.Debit);
+        AddField(tender, 7, "Gift Cert", Field.GiftCertificates);
+        AddField(tender, 8, "Coupons", Field.Coupons);
+        AddField(tender, 9, "Unallocated Card", Field.OtherCard);
+        AddSection(right, tender);
 
-        feedback.Margin = new Padding(5, 6, 3, 4);
-        feedback.ForeColor = PosView.Muted;
+        var deposits = Section(2);
+        AddField(deposits, 0, "Deposits", Field.Deposits);
+        AddField(deposits, 1, "Returns", Field.Returns);
+        AddRow(deposits, 2, "Net Deposits", netDeposits);
+        AddSection(right, deposits);
+        AddSection(right, difference);
+        layout.Controls.Add(right, 1, 1);
+
+        var noteRow = Section(2);
+        AddRow(noteRow, 0, "Notes", notes);
+        Wide(noteRow, 2);
         Wide(feedback, 3);
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
-        var dismiss = PosView.Button("Close", size: 10);
+        var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
+        var dismiss = PosView.Button("&Cancel", size: 10);
         dismiss.DialogResult = DialogResult.Cancel;
-        actions.Controls.AddRange([closeDay, print, archive, dismiss]);
+        actions.Controls.AddRange([dismiss, closeDay, archive, print]);
         Wide(actions, 4);
-        CancelButton = dismiss;
-        Controls.Add(layout);
 
+        Controls.Add(layout);
+        AcceptButton = closeDay;
+        CancelButton = dismiss;
         date.ValueChanged += (_, _) => LoadDay();
-        foreach (TextBox box in new[] { opening, cash, card, bank })
-            box.TextChanged += (_, _) => RefreshReconciliation();
+        closeDay.Click += (_, _) => SaveCloseout();
+        print.Click += (_, _) => PrintCloseout();
+        archive.Click += (_, _) => SaveArchive();
         count.Click += (_, _) =>
         {
             using var dialog = new CashCountForm();
             if (dialog.ShowDialog(this) == DialogResult.OK)
-                cash.Text = AmountText(dialog.Counted);
+                fields[Field.Closing].Text = AmountText(dialog.Counted);
         };
-        closeDay.Click += (_, _) => SaveCloseout();
-        print.Click += (_, _) => PrintCloseout();
-        archive.Click += (_, _) => SaveArchive();
         LoadDay();
-
-        TableLayoutPanel Section(string heading, int column, int row)
-        {
-            var panel = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
-            var title = PosView.Label(heading, 15, FontStyle.Bold);
-            title.Margin = new Padding(3, 0, 3, 8);
-            panel.Controls.Add(title, 0, 0);
-            panel.SetColumnSpan(title, 2);
-            layout.Controls.Add(PosView.Frame(panel, new Padding(10, 7, 10, 7)), column, row);
-            return panel;
-        }
-
-        static void Field(TableLayoutPanel panel, string title, Control input, int row)
-        {
-            var label = PosView.Label(title, 11, color: PosView.Muted);
-            label.Anchor = AnchorStyles.Left;
-            panel.Controls.Add(label, 0, row);
-            panel.Controls.Add(input, 1, row);
-        }
 
         void Wide(Control control, int row)
         {
@@ -140,58 +161,119 @@ internal sealed class CloseoutForm : Form
 
     private void LoadDay()
     {
+        loading = true;
         saved = data.ReadCloseout(Day);
         sales = saved?.Sales ?? data.GetDaySales(Day);
+        closeNumber.Text = $"Close Nbr. {data.CloseNumber(Day):N0}";
+        EndOfDayTotals calculated = EndOfDayTotals.FromSales(sales);
+        EndOfDayAmounts? amounts = saved is null ? null : EndOfDayAmounts.FromCloseout(saved);
+        EndOfDayTotals revised = amounts?.Revised ?? calculated;
+        calculatedSales.Text = Sale.Money(calculated.Sales);
+        calculatedTax.Text = Sale.Money(calculated.SalesTax);
+        calculatedStateTax.Text = Sale.Money(calculated.StateTax);
+        calculatedLottery.Text = Sale.Money(calculated.NetLottery);
+        calculatedTotal.Text = Sale.Money(calculated.Total);
+        systemPayouts.Text = Sale.Money(sales.Expenses);
+
+        Set(Field.Sales, revised.Sales);
+        Set(Field.SalesTax, revised.SalesTax);
+        Set(Field.StateTax, revised.StateTax);
+        Set(Field.NetLottery, revised.NetLottery);
+        var tender = amounts?.Tender;
+        Set(Field.Cash, tender?.Cash);
+        Set(Field.Checks, tender?.Checks ?? 0m);
+        Set(Field.VisaMastercard, tender?.VisaMastercard ?? 0m);
+        Set(Field.Amex, tender?.Amex ?? 0m);
+        Set(Field.Discover, tender?.Discover ?? 0m);
+        Set(Field.Diners, tender?.Diners ?? 0m);
+        Set(Field.Debit, tender?.Debit ?? 0m);
+        Set(Field.GiftCertificates, tender?.GiftCertificates ?? 0m);
+        Set(Field.Coupons, tender?.Coupons ?? 0m);
+        Set(Field.OtherCard, tender?.OtherCard ?? 0m);
+        var adjustments = amounts?.Adjustments;
+        Set(Field.CreditGiven, adjustments?.CreditGiven ?? 0m);
+        Set(Field.PaidOnAccount, adjustments?.PaidOnAccount ?? 0m);
+        Set(Field.OtherPayouts, adjustments?.OtherPayouts ?? 0m);
+        Set(Field.GiftCertificatesSold, adjustments?.GiftCertificatesSold ?? 0m);
+        Set(Field.Deposits, adjustments?.Deposits ?? 0m);
+        Set(Field.Returns, adjustments?.Returns ?? 0m);
         decimal previousBank = data.LastBankBefore(Day);
-        opening.Text = AmountText(saved?.Opening ?? previousBank);
-        cash.Text = saved is null ? "" : AmountText(saved.CashCounted);
-        card.Text = saved is null && sales.Card != 0 ? "" : AmountText(saved?.CardCounted ?? 0);
-        bank.Text = AmountText(saved?.NextBank ?? previousBank);
+        Set(Field.Opening, saved?.Opening ?? previousBank);
+        Set(Field.Closing, saved?.CashCounted);
+        Set(Field.NextBank, saved?.NextBank ?? previousBank);
         notes.Text = saved?.Notes ?? "";
-        foreach (TextBox box in new[] { opening, cash, card, bank, notes })
-            box.ReadOnly = saved is not null;
+        notes.ReadOnly = saved is not null;
         count.Enabled = saved is null && sales.HasActivity;
         print.Enabled = archive.Enabled = saved is not null;
         feedback.Text = saved is not null ? $"Closed {saved.ClosedAt.LocalDateTime:g}."
-            : !sales.HasActivity ? "No register activity for this date." : "";
-        salesSummary.Text = $"Net sales    {Sale.Money(sales.Total)}\n" +
-            $"Completed sales    {sales.Count:N0}    •    Refunds    {sales.Refunds:N0}\nNet subtotal    {Sale.Money(sales.Subtotal)}\n" +
-            $"Discounts    {Sale.Money(sales.Discounts)}\nSales tax    {Sale.Money(sales.Tax)}\n" +
-            $"Lottery included    {Sale.Money(sales.Lottery)}";
+            : "Calculated tax is the combined register amount. Enter a revised split if needed.";
+        loading = false;
         RefreshReconciliation();
+
+        void Set(Field field, decimal? value)
+        {
+            fields[field].Text = value is decimal amount ? AmountText(amount) : "";
+            fields[field].ReadOnly = saved is not null;
+        }
     }
 
-    private DayCloseout? Draft()
+    private DayCloseout? Draft(bool requireDrawers)
     {
-        if (!Sale.TryParseMoney(opening.Text, out decimal start) ||
-            !Sale.TryParseMoney(cash.Text, out decimal actualCash) ||
-            !decimal.TryParse(card.Text.Trim(), NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
-                CultureInfo.InvariantCulture, out decimal actualCard) || decimal.Round(actualCard, 2) != actualCard ||
-            !Sale.TryParseMoney(bank.Text, out decimal nextBank) || nextBank > actualCash)
+        var values = new Dictionary<Field, decimal>();
+        foreach (var (field, input) in fields)
+        {
+            if (input.Text.Trim().Length == 0 && (field == Field.Cash || (!requireDrawers && field == Field.Closing)))
+                continue;
+            if (!decimal.TryParse(input.Text.Trim(), NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
+                    CultureInfo.InvariantCulture, out decimal value) || decimal.Round(value, 2) != value)
+                return null;
+            values.Add(field, value);
+        }
+
+        decimal opening = values[Field.Opening];
+        decimal closing = values.GetValueOrDefault(Field.Closing);
+        decimal next = values[Field.NextBank];
+        if (requireDrawers && (opening < 0 || closing < 0 || next < 0 || next > closing))
             return null;
 
-        return new DayCloseout(Day, DateTimeOffset.Now, sales, start, actualCash, actualCard, nextBank, notes.Text.Trim());
+        var totals = new EndOfDayTotals(values[Field.Sales], values[Field.SalesTax], values[Field.StateTax], values[Field.NetLottery]);
+        var tender = new EndOfDayTender(values.GetValueOrDefault(Field.Cash, closing - opening), values[Field.Checks],
+            values[Field.VisaMastercard], values[Field.Amex], values[Field.Discover], values[Field.Diners], values[Field.Debit],
+            values[Field.GiftCertificates], values[Field.Coupons], values[Field.OtherCard]);
+        var adjustments = new EndOfDayAdjustments(values[Field.CreditGiven], values[Field.PaidOnAccount],
+            values[Field.OtherPayouts], values[Field.GiftCertificatesSold], values[Field.Deposits], values[Field.Returns]);
+        return new DayCloseout(Day, DateTimeOffset.Now, sales, opening, closing, tender.CardTotal, next, notes.Text.Trim(),
+            new EndOfDayAmounts(totals, tender, adjustments));
     }
 
     private void RefreshReconciliation()
     {
-        DayCloseout? closeout = saved ?? Draft();
-        closeDay.Enabled = saved is null && sales.HasActivity && closeout is not null;
-        Sale.TryParseMoney(opening.Text, out decimal start);
-        reconciliation.Text = $"Drawer expenses {Sale.Money(sales.Expenses)}\n" +
-            $"Expected cash {Sale.Money(closeout?.ExpectedCash ?? start + sales.Cash - sales.Expenses)}   •   Expected card {Sale.Money(sales.Card)}";
-        if (closeout is not null)
-            reconciliation.Text += $"\nCash over/short {Sale.Money(closeout.CashDifference)}   •   Card over/short {Sale.Money(closeout.CardDifference)}" +
-                $"\nCash to deposit {Sale.Money(closeout.CashDeposit)}";
-        else if (sales.HasActivity)
-            reconciliation.Text += "\nEnter counted cash and the net card terminal total. Keep the next bank within the cash counted.";
+        if (loading)
+            return;
+        DayCloseout? draft = saved ?? Draft(requireDrawers: false);
+        closeDay.Enabled = saved is null && sales.HasActivity && Draft(requireDrawers: true) is not null;
+        if (draft is null)
+        {
+            revisedTotal.Text = netDeposits.Text = bankShould.Text = cashToDeposit.Text = "—";
+            difference.Text = "Enter valid amounts";
+            return;
+        }
+
+        EndOfDayAmounts amounts = EndOfDayAmounts.FromCloseout(draft);
+        revisedTotal.Text = Sale.Money(amounts.Revised.Total);
+        netDeposits.Text = Sale.Money(amounts.Adjustments.NetDeposits);
+        bankShould.Text = Sale.Money(amounts.BankShould(draft));
+        cashToDeposit.Text = saved is null && fields[Field.Closing].Text.Trim().Length == 0 ? "—" : Sale.Money(draft.CashDeposit);
+        decimal balance = amounts.Difference(draft);
+        difference.Text = balance == 0 ? "Balanced" : $"{(balance < 0 ? "Short by" : "Over by")} {Sale.Money(Math.Abs(balance))}";
+        difference.ForeColor = balance == 0 ? PosView.Ink : PosView.Error;
     }
 
     private void SaveCloseout()
     {
-        if (Draft() is not DayCloseout closeout ||
-            MessageBox.Show(this, $"Close {Day:d} with these counted amounts?", Text,
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+        if (Draft(requireDrawers: true) is not DayCloseout closeout ||
+            MessageBox.Show(this, $"Close {Day:d} with these amounts?", Text, MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes)
             return;
 
         try
@@ -202,7 +284,6 @@ internal sealed class CloseoutForm : Form
                 LoadDay();
                 return;
             }
-
             LoadDay();
             SaveArchive();
         }
@@ -216,7 +297,6 @@ internal sealed class CloseoutForm : Form
     {
         if (saved is null)
             return;
-
         string folder = Path.Combine(folders.DailyArchives, Day.ToString("yyyy", CultureInfo.InvariantCulture),
             Day.ToString("MM", CultureInfo.InvariantCulture));
         string path = Path.Combine(folder, Day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "_closeout.zip");
@@ -238,17 +318,44 @@ internal sealed class CloseoutForm : Form
     {
         if (saved is not DayCloseout report)
             return;
-
+        var amounts = EndOfDayAmounts.FromCloseout(report);
+        var calculated = EndOfDayTotals.FromSales(report.Sales);
+        var revised = amounts.Revised;
+        var tender = amounts.Tender;
+        var adjustments = amounts.Adjustments;
+        string[] lines =
+        [
+            $"End-of-Day Totals     {report.Day:d}     {closeNumber.Text}",
+            $"Closed {report.ClosedAt.LocalDateTime:g}",
+            "",
+            $"{"",-19} {"Revised",12} {"Calculated",12}",
+            Compare("Sales", revised.Sales, calculated.Sales),
+            Compare("Sales Tax", revised.SalesTax, calculated.SalesTax),
+            Compare("State Tax", revised.StateTax, calculated.StateTax),
+            Compare("Net Lottery", revised.NetLottery, calculated.NetLottery),
+            Compare("Total", revised.Total, calculated.Total),
+            "",
+            Pair("Credit Given", adjustments.CreditGiven, "Cash", tender.Cash),
+            Pair("Paid on Account", adjustments.PaidOnAccount, "Checks", tender.Checks),
+            Pair("System Payouts", report.Sales.Expenses, "MC/Visa", tender.VisaMastercard),
+            Pair("Other Payouts", adjustments.OtherPayouts, "Amer Ex", tender.Amex),
+            Pair("Gift Certs Sold", adjustments.GiftCertificatesSold, "Discover", tender.Discover),
+            Pair("Opening Drawers", report.Opening, "Diners", tender.Diners),
+            Pair("Closing Drawers", report.CashCounted, "Debit", tender.Debit),
+            Pair("Next Bank", report.NextBank, "Gift Cert", tender.GiftCertificates),
+            Pair("Bank Should", amounts.BankShould(report), "Coupons", tender.Coupons),
+            Pair("Cash to Deposit", report.CashDeposit, "Unallocated Card", tender.OtherCard),
+            Pair("Deposits", adjustments.Deposits, "Returns", adjustments.Returns),
+            $"Net Deposits {Sale.Money(adjustments.NetDeposits)}",
+            difference.Text,
+            "",
+            report.Notes
+        ];
         using var document = new PrintDocument { DocumentName = $"kPOS Closeout {report.Day:yyyy-MM-dd}" };
         document.PrintPage += (_, page) =>
         {
-            using var text = new Font(Font.FontFamily, 10);
-            page.Graphics!.DrawString(
-                $"kPOS End of Day Closeout\nBusiness date: {report.Day:d}\nClosed: {report.ClosedAt.LocalDateTime:g}\n\n" +
-                $"Sales: {report.Sales.Count:N0}\nRefunds: {report.Sales.Refunds:N0}\nNet subtotal: {Sale.Money(report.Sales.Subtotal)}\nDiscounts: {Sale.Money(report.Sales.Discounts)}\nSales tax: {Sale.Money(report.Sales.Tax)}\nLottery included: {Sale.Money(report.Sales.Lottery)}\nNet sales: {Sale.Money(report.Sales.Total)}\n\nOpening drawer: {Sale.Money(report.Opening)}\n" +
-                $"Drawer expenses: {Sale.Money(report.Sales.Expenses)}\nCash counted: {Sale.Money(report.CashCounted)}\nCard terminal total: {Sale.Money(report.CardCounted)}\n" +
-                $"Next bank: {Sale.Money(report.NextBank)}\nExpected cash: {Sale.Money(report.ExpectedCash)}\nExpected card: {Sale.Money(report.Sales.Card)}\nCash over/short: {Sale.Money(report.CashDifference)}\nCard over/short: {Sale.Money(report.CardDifference)}\nCash to deposit: {Sale.Money(report.CashDeposit)}\n\nNotes\n{report.Notes}",
-                text, Brushes.Black, page.MarginBounds);
+            using var font = new Font(FontFamily.GenericMonospace, 9);
+            page.Graphics!.DrawString(string.Join(Environment.NewLine, lines), font, Brushes.Black, page.MarginBounds);
         };
         using var dialog = new PrintDialog { Document = document, UseEXDialog = true };
         try
@@ -260,10 +367,67 @@ internal sealed class CloseoutForm : Form
         {
             MessageBox.Show(this, error.Message, "Print Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+
+        static string Compare(string name, decimal revised, decimal calculated) =>
+            $"{name,-19} {Sale.Money(revised),12} {Sale.Money(calculated),12}";
+
+        static string Pair(string first, decimal left, string second, decimal right) =>
+            $"{first,-19} {Sale.Money(left),12}     {second,-17} {Sale.Money(right),12}";
     }
 
-    private static string MoneyOrDash(decimal? value) => value is decimal amount ? Sale.Money(amount) : "—";
+    private void AddField(TableLayoutPanel section, int row, string name, Field field, Label? calculated = null)
+    {
+        var input = new TextBox
+        {
+            Dock = DockStyle.Fill, MaxLength = 14, AccessibleName = name, TextAlign = HorizontalAlignment.Right
+        };
+        fields.Add(field, input);
+        input.TextChanged += (_, _) => RefreshReconciliation();
+        input.Enter += (_, _) => input.SelectAll();
+        AddRow(section, row, name, input, calculated);
+    }
 
-    private static TextBox AmountBox(string name) => new() { AccessibleName = name, Dock = DockStyle.Fill, MaxLength = 13 };
+    private static void AddRow(TableLayoutPanel section, int row, string name, Control value, Label? calculated = null)
+    {
+        var label = PosView.Label(name, 10);
+        label.Anchor = AnchorStyles.Left;
+        section.Controls.Add(label, 0, row);
+        section.Controls.Add(value, 1, row);
+        if (calculated is not null)
+            section.Controls.Add(calculated, 2, row);
+    }
+
+    private static TableLayoutPanel Section(int columns)
+    {
+        var section = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = columns };
+        section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, columns == 2 ? 58 : 44));
+        section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, columns == 2 ? 42 : 28));
+        if (columns == 3)
+            section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28));
+        return section;
+    }
+
+    private static TableLayoutPanel Column() => new() { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1 };
+
+    private static void AddSection(TableLayoutPanel column, Control content)
+    {
+        var frame = new TableLayoutPanel
+        {
+            ColumnCount = 1, Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            BackColor = Color.White, CellBorderStyle = TableLayoutPanelCellBorderStyle.Single, Padding = new Padding(8)
+        };
+        content.Dock = DockStyle.Fill;
+        frame.Controls.Add(content, 0, 0);
+        column.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        column.Controls.Add(frame, 0, column.RowCount++);
+    }
+
+    private static Label ValueLabel(string text = "")
+    {
+        var label = PosView.Label(text, 10, FontStyle.Bold);
+        label.Anchor = AnchorStyles.Right;
+        return label;
+    }
+
     private static string AmountText(decimal amount) => amount.ToString("F2", CultureInfo.InvariantCulture);
 }

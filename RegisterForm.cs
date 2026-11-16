@@ -451,7 +451,7 @@ internal sealed class RegisterForm : Form
         var choice = MessageBox.Show(this,
             $"No product matches code {code}.\n\nAdd it to the product database?",
             "Unrecognized Product Code", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
-            MessageBoxDefaultButton.Button2);
+            MessageBoxDefaultButton.Button1);
         if (choice == DialogResult.Yes)
         {
             using var editor = new ProductEditorForm(code, product => data.SaveProduct(product));
@@ -793,7 +793,7 @@ internal sealed class RegisterForm : Form
 
     private bool Confirm(string message, string title) =>
         MessageBox.Show(this, message, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question,
-            MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+            MessageBoxDefaultButton.Button1) == DialogResult.Yes;
 
     private void RefreshTicket(int selected = 0)
     {

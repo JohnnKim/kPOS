@@ -90,6 +90,7 @@ public static class KposExecutableTest
                 WaitUntil(() => HasText(register, "Added: Pale Ale"), "add the lookup result without a mouse");
                 Send(scanner, 0x0100, 0x74); // F5
                 IntPtr voidProduct = FindWindow(desktop, process.ProcessId, "Void Product");
+                WaitUntil(() => DefaultsToYes(voidProduct), "default to Yes when voiding an item");
                 Send(voidProduct, 0x0111, 7); // No
                 Send(scanner, 0x0100, 0x78); // F9
                 checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
@@ -160,9 +161,10 @@ public static class KposExecutableTest
                 WaitUntil(() => HasText(register, "Drawer expense recorded: $4.25."), "record the drawer expense using its shortcut");
                 Send(FindChildWithText(register, "End of &Day"), 0x00F5, 0); // BM_CLICK
                 IntPtr closeout = FindWindow(desktop, process.ProcessId, "End of Day Closeout");
-                WaitUntil(() => HasText(closeout, "&Close Day") && HasText(closeout, "Sales Summary") &&
-                    HasText(closeout, "Drawer and Terminal") && HasText(closeout, "Reconciliation"),
-                    "show the organized closeout sections");
+                WaitUntil(() => HasText(closeout, "End-of-Day Totals") && HasText(closeout, "Revised") &&
+                    HasText(closeout, "Calculated") && HasText(closeout, "State Tax") && HasText(closeout, "Net Deposits") &&
+                    HasText(closeout, "Bank Should") && HasText(closeout, "MC/Visa"),
+                    "show the LPOS closeout fields");
                 Send(closeout, 0x0010, 0); // WM_CLOSE
                 Send(FindChildWithText(register, "&Reports"), 0x00F5, 0); // BM_CLICK
                 IntPtr records = FindWindow(desktop, process.ProcessId, "Sales Records");
@@ -195,6 +197,7 @@ public static class KposExecutableTest
                 WaitUntil(() => !IsWindow(addItem), "close catalog add editor");
                 Send(FindChildWithText(catalog, "&Delete Product"), 0x00F5, 0); // BM_CLICK
                 IntPtr deleteProduct = FindWindow(desktop, process.ProcessId, "Delete Product");
+                WaitUntil(() => DefaultsToYes(deleteProduct), "default to Yes when deleting an item");
                 Send(deleteProduct, 0x0111, 7); // No
                 Send(catalog, 0x0010, 0); // WM_CLOSE
                 Send(FindChildWithText(register, "Export &Backup"), 0x00F5, 0); // BM_CLICK
@@ -359,6 +362,13 @@ public static class KposExecutableTest
             throw new InvalidOperationException("Payment must be locked before confirming the item count.");
         amount = input;
         return FindTextBox(checkout, except: input);
+    }
+
+    private static bool DefaultsToYes(IntPtr dialog)
+    {
+        IntPtr result;
+        SendMessageTimeout(dialog, 0x0400, IntPtr.Zero, IntPtr.Zero, 2, 200, out result); // DM_GETDEFID
+        return (result.ToInt64() & 0xffff) == 6; // IDYES
     }
 
     private static bool IsSelected(IntPtr input, int length)

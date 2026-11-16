@@ -99,7 +99,7 @@ internal sealed class CatalogImportForm : Form
         if (picker.ShowDialog(this) != DialogResult.OK)
             return;
         if (recognized.TextLength > 0 && MessageBox.Show(this, "Replace the current text with this image?", Text,
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes)
             return;
 
         image.Enabled = reviewText.Enabled = recognized.Enabled = save.Enabled = false;
@@ -202,7 +202,7 @@ internal sealed class CatalogImportForm : Form
     private void SaveRows()
     {
         if (rows.Count == 0 || MessageBox.Show(this, $"Apply these {rows.Count:N0} product rows to the catalog?", Text,
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes)
             return;
         try
         {

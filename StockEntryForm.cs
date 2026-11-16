@@ -56,7 +56,7 @@ internal sealed class StockEntryForm : Form
         remove.Click += (_, _) =>
         {
             if (MessageBox.Show(this, "Remove this inventory entry?", Text, MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) == DialogResult.Yes)
+                    MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) == DialogResult.Yes)
                 Store(null, deleting: true);
         };
 

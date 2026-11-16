@@ -282,7 +282,7 @@ internal sealed class RecordsForm : Form
                     (individualSale && field == "Type"),
                 RecordReport.ItemTotals => field != "Type",
                 RecordReport.PriceHistory => field != "Code",
-                RecordReport.Closeout => field is "Business date" or "Sales" or "Refunds" or "Total" or "Drawer expenses" or
+                RecordReport.Closeout => field is "Business date" or "Close number" or "Sales" or "Revised total" or "Drawer expenses" or
                     "Cash over/short" or "Card over/short" or "Cash deposit" or "Notes",
                 _ => true
             };
@@ -306,7 +306,7 @@ internal sealed class RecordsForm : Form
             };
             if (field is "Subtotal" or "Discounts" or "Tax" or "Total" or "Received" or "Change" or "Unit price" or
                 "Case price" or "Discount" or "Net sales" or "Lottery" or "Cash over/short" or "Card over/short" or
-                "Cash deposit" or "Amount" or "Drawer expenses")
+                "Cash deposit" or "Amount" or "Drawer expenses" or "Revised total")
             {
                 column.DefaultCellStyle.Format = "C2";
                 column.DefaultCellStyle.FormatProvider = CultureInfo.GetCultureInfo("en-US");

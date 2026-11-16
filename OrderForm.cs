@@ -311,7 +311,7 @@ internal sealed class OrderForm : Form
     private void ClearDraft()
     {
         if (!grid.EndEdit() || MessageBox.Show(this, "Clear all quantities in the order draft?", Text,
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes)
             return;
         Run(() =>
         {

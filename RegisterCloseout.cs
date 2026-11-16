@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
 namespace Kpos;
@@ -11,7 +12,7 @@ internal sealed record DaySales(long Count, decimal Subtotal, decimal Discounts,
 }
 
 internal sealed record DayCloseout(DateOnly Day, DateTimeOffset ClosedAt, DaySales Sales, decimal Opening,
-    decimal CashCounted, decimal CardCounted, decimal NextBank, string Notes)
+    decimal CashCounted, decimal CardCounted, decimal NextBank, string Notes, EndOfDayAmounts? Amounts = null)
 {
     public decimal ExpectedCash => Opening + Sales.Cash - Sales.Expenses;
     public decimal CashDifference => CashCounted - ExpectedCash;
@@ -35,7 +36,31 @@ internal sealed partial class RegisterData
                counted_card_cents / 100.0 AS "Counted card",
                (counted_card_cents - card_sales_cents) / 100.0 AS "Card over/short",
                next_bank_cents / 100.0 AS "Next bank",
-               (counted_cash_cents - next_bank_cents) / 100.0 AS "Cash deposit", notes AS Notes
+               (counted_cash_cents - next_bank_cents) / 100.0 AS "Cash deposit", notes AS Notes,
+               close_number AS "Close number",
+               (subtotal_cents - discount_cents - lottery_cents) / 100.0 AS "Calculated sales",
+               coalesce(json_extract(reconciliation_amounts, '$.Revised.Sales'), (subtotal_cents - discount_cents - lottery_cents) / 100.0) AS "Revised sales",
+               coalesce(json_extract(reconciliation_amounts, '$.Revised.SalesTax'), tax_cents / 100.0) AS "Revised sales tax",
+               coalesce(json_extract(reconciliation_amounts, '$.Revised.StateTax'), 0) AS "Revised state tax",
+               coalesce(json_extract(reconciliation_amounts, '$.Revised.NetLottery'), lottery_cents / 100.0) AS "Revised net lottery",
+               coalesce(json_extract(reconciliation_amounts, '$.Revised.Total'), (cash_sales_cents + card_sales_cents) / 100.0) AS "Revised total",
+               coalesce(json_extract(reconciliation_amounts, '$.Tender.Cash'), (counted_cash_cents - opening_cents) / 100.0) AS "Tender cash",
+               coalesce(json_extract(reconciliation_amounts, '$.Tender.Checks'), 0) AS Checks,
+               coalesce(json_extract(reconciliation_amounts, '$.Tender.VisaMastercard'), 0) AS "MC/Visa",
+               coalesce(json_extract(reconciliation_amounts, '$.Tender.Amex'), 0) AS "Amer Ex",
+               coalesce(json_extract(reconciliation_amounts, '$.Tender.Discover'), 0) AS Discover,
+               coalesce(json_extract(reconciliation_amounts, '$.Tender.Diners'), 0) AS Diners,
+               coalesce(json_extract(reconciliation_amounts, '$.Tender.Debit'), 0) AS Debit,
+               coalesce(json_extract(reconciliation_amounts, '$.Tender.GiftCertificates'), 0) AS "Gift Cert",
+               coalesce(json_extract(reconciliation_amounts, '$.Tender.Coupons'), 0) AS Coupons,
+               coalesce(json_extract(reconciliation_amounts, '$.Tender.OtherCard'), counted_card_cents / 100.0) AS "Unallocated card",
+               coalesce(json_extract(reconciliation_amounts, '$.Adjustments.CreditGiven'), 0) AS "Credit given",
+               coalesce(json_extract(reconciliation_amounts, '$.Adjustments.PaidOnAccount'), 0) AS "Paid on account",
+               coalesce(json_extract(reconciliation_amounts, '$.Adjustments.OtherPayouts'), 0) AS "Other payouts",
+               coalesce(json_extract(reconciliation_amounts, '$.Adjustments.GiftCertificatesSold'), 0) AS "Gift certs sold",
+               coalesce(json_extract(reconciliation_amounts, '$.Adjustments.Deposits'), 0) AS Deposits,
+               coalesce(json_extract(reconciliation_amounts, '$.Adjustments.Returns'), 0) AS Returns,
+               coalesce(json_extract(reconciliation_amounts, '$.Adjustments.NetDeposits'), 0) AS "Net deposits"
         FROM day_closeouts WHERE business_date BETWEEN $start AND $end
         ORDER BY business_date DESC
         """;
@@ -86,7 +111,7 @@ internal sealed partial class RegisterData
         using var query = Command("""
             SELECT closed_at, sale_count, subtotal_cents, discount_cents, tax_cents, lottery_cents,
                    cash_sales_cents, card_sales_cents, refund_count, expense_cents, opening_cents, counted_cash_cents, counted_card_cents,
-                   next_bank_cents, notes
+                   next_bank_cents, notes, reconciliation_amounts
             FROM day_closeouts WHERE business_date = $day
             """, transaction);
         query.Parameters.AddWithValue("$day", Day(day));
@@ -96,7 +121,18 @@ internal sealed partial class RegisterData
 
         return new DayCloseout(day, DateTimeOffset.Parse(reader.GetString(0), CultureInfo.InvariantCulture),
             ReadDaySales(reader, 1), reader.GetInt64(10) / 100m, reader.GetInt64(11) / 100m,
-            reader.GetInt64(12) / 100m, reader.GetInt64(13) / 100m, reader.GetString(14));
+            reader.GetInt64(12) / 100m, reader.GetInt64(13) / 100m, reader.GetString(14),
+            reader.IsDBNull(15) ? null : JsonSerializer.Deserialize<EndOfDayAmounts>(reader.GetString(15)));
+    }
+
+    public long CloseNumber(DateOnly day)
+    {
+        using var query = Command("""
+            SELECT coalesce((SELECT close_number FROM day_closeouts WHERE business_date = $day),
+                            (SELECT coalesce(max(close_number), 0) + 1 FROM day_closeouts))
+            """);
+        query.Parameters.AddWithValue("$day", Day(day));
+        return (long)query.ExecuteScalar()!;
     }
 
     public string? CloseDay(DayCloseout closeout)
@@ -118,9 +154,10 @@ internal sealed partial class RegisterData
         using var insert = Command("""
             INSERT INTO day_closeouts (business_date, closed_at, sale_count, subtotal_cents, discount_cents,
                 tax_cents, lottery_cents, cash_sales_cents, card_sales_cents, opening_cents, counted_cash_cents,
-                counted_card_cents, next_bank_cents, notes, refund_count, expense_cents)
+                counted_card_cents, next_bank_cents, notes, refund_count, expense_cents, reconciliation_amounts, close_number)
             VALUES ($day, $time, $count, $subtotal, $discounts, $tax, $lottery, $cashSales, $cardSales,
-                $opening, $cash, $card, $bank, $notes, $refunds, $expenses)
+                $opening, $cash, $card, $bank, $notes, $refunds, $expenses, $amounts,
+                (SELECT coalesce(max(close_number), 0) + 1 FROM day_closeouts))
             """, transaction);
         insert.Parameters.AddWithValue("$day", Day(closeout.Day));
         insert.Parameters.AddWithValue("$time", closeout.ClosedAt.ToString("O", CultureInfo.InvariantCulture));
@@ -138,6 +175,7 @@ internal sealed partial class RegisterData
         insert.Parameters.AddWithValue("$card", Cents(closeout.CardCounted));
         insert.Parameters.AddWithValue("$bank", Cents(closeout.NextBank));
         insert.Parameters.AddWithValue("$notes", closeout.Notes);
+        insert.Parameters.AddWithValue("$amounts", closeout.Amounts is null ? DBNull.Value : JsonSerializer.Serialize(closeout.Amounts));
         insert.ExecuteNonQuery();
         transaction.Commit();
         return null;
