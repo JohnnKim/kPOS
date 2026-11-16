@@ -31,10 +31,10 @@ internal sealed class CloseoutForm : Form
     private readonly Label difference = PosView.Label("", 17, FontStyle.Bold);
     private readonly Label feedback = PosView.Label("", 10);
     private readonly TextBox notes = new() { Dock = DockStyle.Fill, MaxLength = 500, AccessibleName = "Closeout notes" };
-    private readonly Button count = PosView.Button("Count &Bills and Coins…", size: 10);
-    private readonly Button closeDay = PosView.Button("&OK", primary: true, size: 11);
-    private readonly Button print = PosView.Button("&Print Report…", size: 10);
-    private readonly Button archive = PosView.Button("Save &Archive", size: 10);
+    private readonly Button count = CloseoutButton("Count &Bills and Coins…");
+    private readonly Button closeDay = CloseoutButton("&OK", primary: true);
+    private readonly Button print = CloseoutButton("&Print Report…");
+    private readonly Button archive = CloseoutButton("Save &Archive");
     private DaySales sales = new(0, 0, 0, 0, 0, 0, 0);
     private DayCloseout? saved;
     private bool loading;
@@ -47,15 +47,18 @@ internal sealed class CloseoutForm : Form
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
         Text = "End of Day Closeout";
-        ClientSize = new Size(870, 734);
-        MinimumSize = new Size(700, 520);
+        ClientSize = new Size(870, 600);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
+        AutoScroll = true;
         Font = PosView.Text(10);
         BackColor = PosView.Canvas;
         date.Value = data.FirstOpenDayWithActivity(DateOnly.FromDateTime(DateTime.Today)).ToDateTime(TimeOnly.MinValue);
 
-        var layout = new TableLayoutPanel { ColumnCount = 2, Padding = new Padding(10), MinimumSize = new Size(660, 0) };
+        var layout = new TableLayoutPanel
+        {
+            AutoSize = true, Dock = DockStyle.Top, ColumnCount = 2, Padding = new Padding(8)
+        };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46));
         for (int row = 0; row < 5; row++)
@@ -63,7 +66,7 @@ internal sealed class CloseoutForm : Form
 
         var header = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, ColumnCount = 3, BackColor = PosView.Navy, Padding = new Padding(8), AutoSize = true
+            Dock = DockStyle.Fill, ColumnCount = 3, BackColor = PosView.Navy, Padding = new Padding(8, 4, 8, 4), AutoSize = true
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -133,14 +136,23 @@ internal sealed class CloseoutForm : Form
         noteRow.ColumnStyles[1] = new ColumnStyle(SizeType.Percent, 100);
         AddRow(noteRow, 0, "Notes", notes);
         Wide(noteRow, 2);
+        feedback.MinimumSize = new Size(0, feedback.Font.Height);
         Wide(feedback, 3);
         var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
-        var dismiss = PosView.Button("&Cancel", size: 10);
+        var dismiss = CloseoutButton("&Cancel");
         dismiss.DialogResult = DialogResult.Cancel;
         actions.Controls.AddRange([dismiss, closeDay, archive, print]);
         Wide(actions, 4);
 
-        Controls.Add(PosView.Scroll(layout));
+        Controls.Add(layout);
+        Load += (_, _) =>
+        {
+            int frameHeight = Height - ClientSize.Height;
+            int availableHeight = Screen.FromControl(this).WorkingArea.Height - frameHeight;
+            int contentHeight = layout.GetPreferredSize(new Size(ClientSize.Width, 0)).Height;
+            ClientSize = new Size(ClientSize.Width, Math.Min(contentHeight, availableHeight));
+            MinimumSize = new Size(LogicalToDeviceUnits(700), Height);
+        };
         AcceptButton = closeDay;
         CancelButton = dismiss;
         date.ValueChanged += (_, _) => LoadDay();
@@ -385,7 +397,8 @@ internal sealed class CloseoutForm : Form
     {
         var input = new TextBox
         {
-            Dock = DockStyle.Fill, MaxLength = 14, AccessibleName = name, TextAlign = HorizontalAlignment.Right
+            Dock = DockStyle.Fill, MaxLength = 14, AccessibleName = name, TextAlign = HorizontalAlignment.Right,
+            Margin = new Padding(3, 1, 3, 1)
         };
         fields.Add(field, input);
         input.TextChanged += (_, _) => RefreshReconciliation();
@@ -420,7 +433,8 @@ internal sealed class CloseoutForm : Form
         var frame = new TableLayoutPanel
         {
             ColumnCount = 1, Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            BackColor = Color.White, CellBorderStyle = TableLayoutPanelCellBorderStyle.Single, Padding = new Padding(8)
+            BackColor = Color.White, CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
+            Padding = new Padding(6, 3, 6, 3), Margin = new Padding(3, 2, 3, 2)
         };
         content.Dock = DockStyle.Fill;
         frame.Controls.Add(content, 0, 0);
@@ -433,6 +447,13 @@ internal sealed class CloseoutForm : Form
         var label = PosView.Label(text, 10, FontStyle.Bold);
         label.Anchor = AnchorStyles.Right;
         return label;
+    }
+
+    private static Button CloseoutButton(string text, bool primary = false)
+    {
+        var button = PosView.Button(text, primary, size: 10);
+        button.MinimumSize = new Size(0, 32);
+        return button;
     }
 
     private static string AmountText(decimal amount) => amount.ToString("F2", CultureInfo.InvariantCulture);

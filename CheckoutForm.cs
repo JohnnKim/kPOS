@@ -237,7 +237,7 @@ internal sealed class CheckoutForm : Form
     {
         var center = new TableLayoutPanel
         {
-            Padding = new Padding(12), ColumnCount = 3, RowCount = 1
+            AutoSize = true, Dock = DockStyle.Top, Padding = new Padding(12), ColumnCount = 3, RowCount = 1
         };
         center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 12));
         center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 76));
@@ -271,7 +271,7 @@ internal sealed class CheckoutForm : Form
         summary.Controls.Add(countdown, 0, 5);
         summary.Controls.Add(next, 1, 5);
         center.Controls.Add(PosView.Frame(summary, Padding.Empty, fitContent: true), 1, 0);
-        Controls.Add(PosView.Scroll(center));
+        Controls.Add(center);
         AcceptButton = next;
         next.Focus();
 

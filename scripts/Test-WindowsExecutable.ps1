@@ -77,7 +77,8 @@ public static class KposExecutableTest
                 WaitUntil(() => TextIsInBounds(checkout, "CHANGE DUE") && TextIsInBounds(checkout, "$5.32") && HasText(checkout, "Subtotal") &&
                     HasText(checkout, "Sales tax") && HasText(checkout, "Total") && HasText(checkout, "Cash received") &&
                     HasText(checkout, "$23.98") && HasText(checkout, "$0.70") && HasText(checkout, "$24.68") &&
-                    HasText(checkout, "$30.00"), "show the full cash change summary");
+                    HasText(checkout, "$30.00") && TextIsInBounds(checkout, "&Next Sale") && !HasScrollBars(checkout),
+                    "show the full cash change summary without scrolling");
                 WaitUntil(() => HasText(checkout, "Next sale in 7s\nEnter to continue"), "count down from the default display time");
                 WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "return after the change display");
                 WaitUntil(() => HasText(register, "Last change") && HasText(register, "$5.32"), "keep the previous change on the register");
@@ -165,9 +166,11 @@ public static class KposExecutableTest
                 Send(FindChildWithText(register, "End of &Day"), 0x00F5, 0); // BM_CLICK
                 IntPtr closeout = FindWindow(desktop, process.ProcessId, "End of Day Closeout");
                 WaitUntil(() => TextIsInBounds(closeout, "End-of-Day Totals") && TextIsInBounds(closeout, "Revised") &&
-                    TextIsInBounds(closeout, "Calculated") && TextIsInBounds(closeout, "State Tax") && HasText(closeout, "Net Deposits") &&
-                    HasText(closeout, "Bank Should") && HasText(closeout, "MC/Visa"),
-                    "show the LPOS closeout fields");
+                    TextIsInBounds(closeout, "Calculated") && TextIsInBounds(closeout, "State Tax") && TextIsInBounds(closeout, "Net Deposits") &&
+                    TextIsInBounds(closeout, "Bank Should") && TextIsInBounds(closeout, "MC/Visa") && TextIsInBounds(closeout, "Notes") &&
+                    TextIsInBounds(closeout, "Count &Bills and Coins…") && TextIsInBounds(closeout, "&OK") &&
+                    TextIsInBounds(closeout, "&Cancel") && !HasScrollBars(closeout),
+                    "show all closeout controls without scrolling");
                 Send(closeout, 0x0010, 0); // WM_CLOSE
                 Send(FindChildWithText(register, "&Reports"), 0x00F5, 0); // BM_CLICK
                 IntPtr records = FindWindow(desktop, process.ProcessId, "Sales Records");
@@ -441,6 +444,28 @@ public static class KposExecutableTest
 
     [StructLayout(LayoutKind.Sequential)]
     private struct WindowRect { public int Left, Top, Right, Bottom; }
+
+    private static bool HasScrollBars(IntPtr root)
+    {
+        const int style = -16; // GWL_STYLE
+        const int scrollBars = 0x00300000; // WS_HSCROLL | WS_VSCROLL
+        bool found = (GetWindowLong(root, style) & scrollBars) != 0;
+        if (found)
+            return true;
+
+        EnumChildWindows(root, (window, _) =>
+        {
+            found = IsWindowVisible(window) && (GetWindowLong(window, style) & scrollBars) != 0;
+            return !found;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
+    private static extern int GetWindowLong(IntPtr window, int index);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr window);
 
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr window, out WindowRect bounds);
