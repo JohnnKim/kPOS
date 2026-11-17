@@ -11,7 +11,10 @@ internal sealed class RegisterForm : Form
     private readonly Sale sale = new();
     private readonly Dictionary<Keys, Action> shortcuts = [];
     private RegisterKeys keys;
-    private readonly Panel registerKeyPanel = new() { Dock = DockStyle.Fill, AutoScroll = true };
+    private readonly Panel registerKeyPanel = new()
+    {
+        Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink
+    };
     private readonly ScannerField scanCode = new()
     {
         AccessibleName = "Scan item or enter code",
@@ -107,14 +110,16 @@ internal sealed class RegisterForm : Form
         layout.Controls.Add(ticketFrame, 0, 2);
         layout.Controls.Add(CreateScanArea(), 0, 3);
 
-        var side = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0, 3, 3, 3) };
+        var side = new TableLayoutPanel { ColumnCount = 1, RowCount = 2 };
         side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        side.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         side.Controls.Add(CreateTotals(), 0, 0);
         side.Controls.Add(registerKeyPanel, 0, 1);
         ApplyDisplaySettings();
-        layout.Controls.Add(side, 1, 2);
-        layout.SetRowSpan(side, 2);
+        var sidebar = PosView.Scroll(side);
+        sidebar.Margin = new Padding(0, 3, 3, 3);
+        layout.Controls.Add(sidebar, 1, 2);
+        layout.SetRowSpan(sidebar, 2);
 
         MenuStrip menu = CreateMenu();
         MainMenuStrip = menu;

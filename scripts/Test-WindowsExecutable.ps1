@@ -51,12 +51,22 @@ public static class KposExecutableTest
                     "show kPOS and the legal date in the register header");
                 ShowWindowAsync(register, 9); // SW_RESTORE
                 WaitUntil(() => !IsZoomed(register), "restore the register window");
+                if (!SetWindowPos(register, IntPtr.Zero, 0, 0, 780, 515, 0x0016))
+                    throw new Win32Exception();
+                IntPtr sidebar = IntPtr.Zero;
+                WaitUntil(() => (sidebar = ScrollableAncestor(register, "Register Keys")) != IntPtr.Zero &&
+                    TextIsInBounds(register, "TOTAL DUE"), "keep totals accessible at the minimum register size");
+                if (!PostMessage(sidebar, 0x0115, (IntPtr)7, IntPtr.Zero)) // WM_VSCROLL, SB_BOTTOM
+                    throw new Win32Exception();
+                WaitUntil(() => TextIsInBounds(register, "Register Keys") && TextIsInBounds(register, "F9"),
+                    "scroll to register keys at the minimum window size");
                 if (!SetWindowPos(register, IntPtr.Zero, 0, 0, 1024, 700, 0x0016))
                     throw new Win32Exception();
                 WaitUntil(() => TextIsInBounds(register, "TOTAL DUE") && TextIsInBounds(register, "$0.00") &&
                     FillsAmountBanner(register, "$0.00") &&
                     TextIsInBounds(register, "Register Keys") && TextIsInBounds(register, "Refund") &&
                     TextIsInBounds(register, "F10") && TextIsInBounds(register, "F9") &&
+                    ScrollableAncestor(register, "Register Keys") == IntPtr.Zero &&
                     TextIsInBounds(register, "Se&ttings"), "fit the total, toolbar and register keys in a 1024 by 700 window");
 
                 Send(scanner, 0x0100, 0x70); // F1
@@ -522,6 +532,18 @@ public static class KposExecutableTest
             return !found;
         }, IntPtr.Zero);
         return found;
+    }
+
+    private static IntPtr ScrollableAncestor(IntPtr root, string text)
+    {
+        for (IntPtr parent = GetParent(FindChildWithText(root, text)); parent != IntPtr.Zero; parent = GetParent(parent))
+        {
+            if ((GetWindowLong(parent, -16) & 0x00200000) != 0) // WS_VSCROLL
+                return parent;
+            if (parent == root)
+                break;
+        }
+        return IntPtr.Zero;
     }
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
