@@ -137,6 +137,8 @@ public sealed class CloseoutTests
                     DROP TABLE drawer_expenses;
                     ALTER TABLE register_settings DROP COLUMN require_item_count;
                     ALTER TABLE register_settings DROP COLUMN start_maximized;
+                    ALTER TABLE register_settings DROP COLUMN show_register_keys;
+                    ALTER TABLE register_settings DROP COLUMN show_last_change;
                     DROP TABLE order_draft;
                     DROP TABLE inventory_receipts;
                     DROP TABLE inventory_counts;

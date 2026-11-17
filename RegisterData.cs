@@ -54,6 +54,8 @@ internal sealed partial class RegisterData : IDisposable
 
     public bool RequireItemCount => ReadDisplaySetting("require_item_count");
     public bool StartMaximized => ReadDisplaySetting("start_maximized");
+    public bool ShowRegisterKeys => ReadDisplaySetting("show_register_keys");
+    public bool ShowLastChange => ReadDisplaySetting("show_last_change");
 
     private bool ReadDisplaySetting(string column)
     {
@@ -61,7 +63,8 @@ internal sealed partial class RegisterData : IDisposable
         return (long)command.ExecuteScalar()! != 0;
     }
 
-    public void SaveSettings(decimal taxRate, int changeSeconds, bool requireItemCount = true, bool startMaximized = true, RegisterKeys? keys = null)
+    public void SaveSettings(decimal taxRate, int changeSeconds, bool requireItemCount = true, bool startMaximized = true,
+        RegisterKeys? keys = null, bool? showRegisterKeys = null, bool? showLastChange = null)
     {
         using var transaction = connection.BeginTransaction(deferred: false);
         keys ??= ReadRegisterKeys(transaction);
@@ -72,7 +75,9 @@ internal sealed partial class RegisterData : IDisposable
             UPDATE register_settings SET tax_rate = $rate, change_seconds = $seconds,
                 require_item_count = $count, start_maximized = $maximized, quantity_key = $quantity,
                 lottery_key = $lottery, misc_key = $misc, stock_key = $stock, auto_scan = $auto,
-                refund_key = $refund, expense_key = $expense WHERE id = 1
+                refund_key = $refund, expense_key = $expense,
+                show_register_keys = COALESCE($show_keys, show_register_keys),
+                show_last_change = COALESCE($show_change, show_last_change) WHERE id = 1
             """, transaction);
         command.Parameters.AddWithValue("$rate", decimal.ToInt64(taxRate * 10000));
         command.Parameters.AddWithValue("$seconds", changeSeconds);
@@ -85,6 +90,8 @@ internal sealed partial class RegisterData : IDisposable
         command.Parameters.AddWithValue("$refund", keys.Refund);
         command.Parameters.AddWithValue("$expense", keys.Expense);
         command.Parameters.AddWithValue("$auto", keys.AutoScan);
+        command.Parameters.AddWithValue("$show_keys", (object?)showRegisterKeys ?? DBNull.Value);
+        command.Parameters.AddWithValue("$show_change", (object?)showLastChange ?? DBNull.Value);
         command.ExecuteNonQuery();
         transaction.Commit();
     }
@@ -254,6 +261,15 @@ internal sealed partial class RegisterData : IDisposable
                 PRAGMA user_version = 9;
                 """, transaction);
             closeoutAmounts.ExecuteNonQuery();
+        }
+        if (currentVersion < 10)
+        {
+            using var display = Command("""
+                ALTER TABLE register_settings ADD COLUMN show_register_keys INTEGER NOT NULL DEFAULT 1;
+                ALTER TABLE register_settings ADD COLUMN show_last_change INTEGER NOT NULL DEFAULT 1;
+                PRAGMA user_version = 10;
+                """, transaction);
+            display.ExecuteNonQuery();
         }
 
         transaction.Commit();

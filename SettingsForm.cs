@@ -9,42 +9,68 @@ internal sealed class SettingsForm : Form
 
     public SettingsForm(RegisterData data, RegisterFolders folders, bool registerIdle = true)
     {
+        SuspendLayout();
+        AutoScaleDimensions = new SizeF(96, 96);
+        AutoScaleMode = AutoScaleMode.Dpi;
         Text = "Settings";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(600, 330);
+        ClientSize = new Size(680, 500);
         Font = PosView.Text(11);
         BackColor = PosView.Canvas;
-        MinimumSize = new Size(500, 300);
+        MinimumSize = new Size(580, 470);
         ShowInTaskbar = false;
+        MinimizeBox = false;
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, Padding = new Padding(12), ColumnCount = 1, RowCount = 3
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var header = PosView.Label("Settings", 20, FontStyle.Bold, Color.White);
+        header.BackColor = PosView.Navy;
+        header.Padding = new Padding(10, 5, 10, 5);
+        header.Dock = DockStyle.Fill;
+        header.Margin = new Padding(0, 0, 0, 10);
         var tabs = new TabControl { Dock = DockStyle.Fill };
-        var rate = new NumericUpDown { Minimum = 0, Maximum = 100, DecimalPlaces = 4, Increment = 0.1m, Value = data.TaxRate };
+        var rate = new NumericUpDown
+        {
+            Minimum = 0, Maximum = 100, DecimalPlaces = 4, Increment = 0.1m, Value = data.TaxRate, Width = 110
+        };
         var duration = new NumericUpDown
         {
-            Minimum = 1, Maximum = RegisterData.MaximumChangeSeconds, Value = data.ChangeSeconds
+            Minimum = 1, Maximum = RegisterData.MaximumChangeSeconds, Value = data.ChangeSeconds, Width = 110
         };
-        var requireCount = new CheckBox { Text = "Require item count before payment", AutoSize = true, Checked = data.RequireItemCount };
-        var maximize = new CheckBox { Text = "Start maximized", AutoSize = true, Checked = data.StartMaximized };
-        AddTab("Checkout", "Change display duration (seconds)", duration, requireCount);
-        AddTab("Display", "", maximize);
+        var requireCount = Option("Require item count before payment", data.RequireItemCount);
+        var maximize = Option("Start maximized", data.StartMaximized);
+        var showKeys = Option("Show Register Keys on the sales screen", data.ShowRegisterKeys);
+        var showChange = Option("Show last change on the sales screen", data.ShowLastChange);
+        AddTab("Checkout", ("Change display duration (seconds)", duration), (null, requireCount));
+        AddTab("Display", (null, maximize), (null, showKeys), (null, showChange));
         RegisterKeys keys = data.ReadRegisterKeys();
-        var quantityKey = Shortcut("Quantity", keys.Quantity);
-        var lotteryKey = Shortcut("Lottery", keys.Lottery);
-        var miscKey = Shortcut("Misc", keys.Misc);
-        var refundKey = Shortcut("Refund (two letters or blank)", keys.Refund, length: 2);
-        var expenseKey = Shortcut("Drawer expense (letter or blank)", keys.Expense);
-        var stockKey = Shortcut("Stock in Orders (Alt + letter)", keys.Stock);
-        var autoScan = new CheckBox { Text = "Submit fast barcode scans without Enter", AutoSize = true, Checked = keys.AutoScan };
-        AddTab("Shortcuts", "Type sale shortcuts in the scanner field and press Enter.",
-            quantityKey.Row, lotteryKey.Row, miscKey.Row, refundKey.Row, expenseKey.Row, stockKey.Row, autoScan);
-        AddTab("Tax", "Sales tax rate (%)", rate);
-        var path = new TextBox { ReadOnly = true, Text = folders.Root, Width = 430 };
-        AddTab("Data", "Installation and records folder", path);
+        var quantityKey = Shortcut(keys.Quantity);
+        var lotteryKey = Shortcut(keys.Lottery);
+        var miscKey = Shortcut(keys.Misc);
+        var refundKey = Shortcut(keys.Refund, length: 2);
+        var expenseKey = Shortcut(keys.Expense);
+        var stockKey = Shortcut(keys.Stock);
+        var autoScan = Option("Submit fast barcode scans without Enter", keys.AutoScan);
+        AddTab("Shortcuts",
+            (null, PosView.Label("Type sale shortcuts in the scanner field and press Enter.", 11, color: PosView.Muted)),
+            ("Quantity", quantityKey), ("Lottery", lotteryKey), ("Misc", miscKey),
+            ("Refund (two letters or blank)", refundKey), ("Drawer expense (letter or blank)", expenseKey),
+            ("Stock in Orders (Alt + letter)", stockKey), (null, autoScan));
+        AddTab("Tax", ("Sales tax rate (%)", rate));
+        var path = new TextBox { ReadOnly = true, Text = folders.Root, Dock = DockStyle.Top,
+            AccessibleName = "Installation and records folder" };
+        AddTab("Data", (null, PosView.Label("Installation and records folder", 11)), (null, path));
         var updates = PosView.Button("Check for Updates…", size: 11);
         updates.Enabled = registerIdle;
         updates.Click += (_, _) =>
         {
             if (rate.Value != data.TaxRate || duration.Value != data.ChangeSeconds ||
-                requireCount.Checked != data.RequireItemCount || maximize.Checked != data.StartMaximized || CurrentKeys() != keys)
+                requireCount.Checked != data.RequireItemCount || maximize.Checked != data.StartMaximized ||
+                showKeys.Checked != data.ShowRegisterKeys || showChange.Checked != data.ShowLastChange || CurrentKeys() != keys)
             {
                 MessageBox.Show(this, "Save your settings before installing an update.", "kPOS Updates");
                 return;
@@ -56,8 +82,8 @@ internal sealed class SettingsForm : Form
                 DialogResult = DialogResult.OK;
             }
         };
-        AddTab("Updates", $"Installed version {ReleaseVersion.RunningVersion}", updates,
-            new Label { AutoSize = true, Text = "Finish the current sale or export before updating.", Visible = !registerIdle });
+        AddTab("Updates", (null, PosView.Label($"Installed version {ReleaseVersion.RunningVersion}", 11)), (null, updates),
+            (null, IdleMessage("Finish the current sale or export before updating.")));
 
         var testing = PosView.Button("Reset Test Day…", size: 11);
         testing.Enabled = registerIdle;
@@ -67,26 +93,28 @@ internal sealed class SettingsForm : Form
             if (window.ShowDialog(this) == DialogResult.OK)
                 HistoryReset = true;
         };
-        AddTab("Testing", "Training data only", testing,
-            new Label { AutoSize = true, Text = "Finish the current sale or export before resetting.", Visible = !registerIdle });
+        AddTab("Testing", (null, testing), (null, IdleMessage("Finish the current sale or export before resetting.")));
 
         var save = PosView.Button("&Save Settings", primary: true, size: 11);
-        var cancel = PosView.Button("Cancel", size: 11);
+        var cancel = PosView.Button("&Cancel", size: 11);
         cancel.DialogResult = DialogResult.Cancel;
         var actions = new FlowLayoutPanel
         {
-            AutoSize = true, Dock = DockStyle.Bottom, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(5)
+            AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 7, 0, 0)
         };
         actions.Controls.AddRange([cancel, save]);
-        Controls.Add(tabs);
-        Controls.Add(actions);
+        layout.Controls.Add(header, 0, 0);
+        layout.Controls.Add(tabs, 0, 1);
+        layout.Controls.Add(actions, 0, 2);
+        Controls.Add(layout);
         AcceptButton = save;
         CancelButton = cancel;
         save.Click += (_, _) =>
         {
             try
             {
-                data.SaveSettings(rate.Value, (int)duration.Value, requireCount.Checked, maximize.Checked, CurrentKeys());
+                data.SaveSettings(rate.Value, (int)duration.Value, requireCount.Checked, maximize.Checked,
+                    CurrentKeys(), showKeys.Checked, showChange.Checked);
                 DialogResult = DialogResult.OK;
             }
             catch (Exception error) when (error is SqliteException or ArgumentException)
@@ -94,31 +122,57 @@ internal sealed class SettingsForm : Form
                 MessageBox.Show(this, error.Message, "Settings Could Not Be Saved", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         };
+        ResumeLayout();
 
-        RegisterKeys CurrentKeys() => new(quantityKey.Input.Text, lotteryKey.Input.Text, miscKey.Input.Text,
-            stockKey.Input.Text, autoScan.Checked, refundKey.Input.Text, expenseKey.Input.Text);
+        RegisterKeys CurrentKeys() => new(quantityKey.Text, lotteryKey.Text, miscKey.Text,
+            stockKey.Text, autoScan.Checked, refundKey.Text, expenseKey.Text);
 
-        static (FlowLayoutPanel Row, TextBox Input) Shortcut(string name, string value, int length = 1)
+        Label IdleMessage(string text)
         {
-            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 1, 0, 0) };
-            var label = new Label { Text = name, Width = 240, Margin = new Padding(3, 5, 3, 0) };
-            var input = new TextBox { Text = value, Width = 50, MaxLength = length, CharacterCasing = CharacterCasing.Upper, AccessibleName = name };
-            row.Controls.AddRange([label, input]);
-            return (row, input);
+            var label = PosView.Label(text, 11, color: PosView.Muted);
+            label.Visible = !registerIdle;
+            return label;
         }
 
-        void AddTab(string name, string label, params Control[] inputs)
+        static CheckBox Option(string text, bool selected) =>
+            new() { Text = text, AutoSize = true, Checked = selected, ForeColor = PosView.Ink };
+
+        static TextBox Shortcut(string value, int length = 1) =>
+            new() { Text = value, Width = 72, MaxLength = length, CharacterCasing = CharacterCasing.Upper };
+
+        void AddTab(string name, params (string? Label, Control Input)[] rows)
         {
-            var page = new TabPage(name);
-            var fields = new FlowLayoutPanel
+            var page = new TabPage(name) { BackColor = Color.White };
+            var fields = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false,
-                AutoScroll = true, Padding = new Padding(12)
+                Padding = new Padding(14, 12, 14, 12), ColumnCount = 2, RowCount = rows.Length
             };
-            if (label.Length > 0)
-                fields.Controls.Add(new Label { Text = label, AutoSize = true });
-            fields.Controls.AddRange(inputs);
-            page.Controls.Add(fields);
+            fields.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            for (int row = 0; row < rows.Length; row++)
+            {
+                var (caption, input) = rows[row];
+                fields.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                input.Margin = new Padding(3, 4, 3, 4);
+                if (input.Dock == DockStyle.None)
+                    input.Anchor = AnchorStyles.Left;
+                input.TabIndex = row * 2 + 1;
+                if (caption is null)
+                {
+                    fields.Controls.Add(input, 0, row);
+                    fields.SetColumnSpan(input, 2);
+                    continue;
+                }
+
+                var label = PosView.Label(caption, 11);
+                label.Anchor = AnchorStyles.Left;
+                label.Margin = new Padding(3, 4, 18, 4);
+                label.TabIndex = row * 2;
+                fields.Controls.Add(label, 0, row);
+                input.AccessibleName = caption;
+                fields.Controls.Add(input, 1, row);
+            }
+            page.Controls.Add(PosView.Scroll(fields));
             tabs.TabPages.Add(page);
         }
     }

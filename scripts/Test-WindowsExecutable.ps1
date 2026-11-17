@@ -47,7 +47,57 @@ public static class KposExecutableTest
                 IntPtr scanner = FindTextBox(register);
                 WaitUntil(() => HasText(register, "Ready to scan"), "initialize the scan field");
                 string cutoff = DateTime.Today.AddYears(-21).ToString("MMM d, yyyy");
-                WaitUntil(() => TextIsInBounds(register, "Legal Date  " + cutoff), "show the legal date in the register header");
+                WaitUntil(() => TextIsInBounds(register, "kPOS") && TextIsInBounds(register, "Legal Date  " + cutoff),
+                    "show kPOS and the legal date in the register header");
+                ShowWindowAsync(register, 9); // SW_RESTORE
+                WaitUntil(() => !IsZoomed(register), "restore the register window");
+                if (!SetWindowPos(register, IntPtr.Zero, 0, 0, 1024, 700, 0x0016))
+                    throw new Win32Exception();
+                WaitUntil(() => TextIsInBounds(register, "TOTAL DUE") && TextIsInBounds(register, "$0.00") &&
+                    FillsAmountBanner(register, "$0.00") &&
+                    TextIsInBounds(register, "Register Keys") && TextIsInBounds(register, "Refund") &&
+                    TextIsInBounds(register, "F10") && TextIsInBounds(register, "F9") &&
+                    TextIsInBounds(register, "Se&ttings"), "fit the total, toolbar and register keys in a 1024 by 700 window");
+
+                Send(scanner, 0x0100, 0x70); // F1
+                IntPtr help = FindWindow(desktop, process.ProcessId, "Register Help");
+                WaitUntil(() => TextIsInBounds(help, "Case sale for next item") && TextIsInBounds(help, "RF + Enter") &&
+                    TextIsInBounds(help, "&Close"), "show register help with configured scanner shortcuts");
+                Send(FindChildWithText(help, "&Close"), 0x00F5, 0);
+                WaitUntil(() => !IsWindow(help), "close register help");
+
+                Send(FindChildWithText(register, "Se&ttings"), 0x00F5, 0);
+                IntPtr settings = FindWindow(desktop, process.ProcessId, "Settings");
+                WaitUntil(() => TextIsInBounds(settings, "Change display duration (seconds)") &&
+                    TextIsInBounds(settings, "&Save Settings"), "show the Settings form and its save button");
+                IntPtr tabs = FindChildByClass(settings, "WindowsForms10.SysTabControl32.");
+                Send(tabs, 0x0100, 0x27); // Right to Display
+                WaitUntil(() => TextIsInBounds(settings, "Show Register Keys on the sales screen") &&
+                    TextIsInBounds(settings, "Show last change on the sales screen"), "show both display settings");
+                Send(tabs, 0x0100, 0x27); // Right to Shortcuts
+                WaitUntil(() => TextIsInBounds(settings, "Stock in Orders (Alt + letter)") &&
+                    TextIsInBounds(settings, "Submit fast barcode scans without Enter") && !HasScrollBars(settings),
+                    "show all shortcut settings without scrolling");
+                Send(tabs, 0x0100, 0x25); // Left to Display
+                WaitUntil(() => TextIsInBounds(settings, "Show Register Keys on the sales screen"), "return to display settings");
+                IntPtr showKeys = FindChildWithText(settings, "Show Register Keys on the sales screen");
+                IntPtr showChange = FindChildWithText(settings, "Show last change on the sales screen");
+                Send(showKeys, 0x00F5, 0);
+                Send(showChange, 0x00F5, 0);
+                Send(FindChildWithText(settings, "&Save Settings"), 0x00F5, 0);
+                WaitUntil(() => HasText(register, "Settings saved.") && !TextIsInBounds(register, "Register Keys") &&
+                    !TextIsInBounds(register, "Last change"), "apply display settings to the register");
+
+                Send(FindChildWithText(register, "Se&ttings"), 0x00F5, 0);
+                settings = FindWindow(desktop, process.ProcessId, "Settings");
+                tabs = FindChildByClass(settings, "WindowsForms10.SysTabControl32.");
+                Send(tabs, 0x0100, 0x27);
+                WaitUntil(() => TextIsInBounds(settings, "Show Register Keys on the sales screen"), "reopen display settings");
+                Send(FindChildWithText(settings, "Show Register Keys on the sales screen"), 0x00F5, 0);
+                Send(FindChildWithText(settings, "Show last change on the sales screen"), 0x00F5, 0);
+                Send(FindChildWithText(settings, "&Save Settings"), 0x00F5, 0);
+                WaitUntil(() => !IsWindow(settings) && TextIsInBounds(register, "Register Keys") &&
+                    TextIsInBounds(register, "Last change"), "restore both register displays");
 
                 EnterText(scanner, "000000000101", submit: false);
                 WaitUntil(() => HasText(register, "Added: Pale Ale"), "add a scanner burst without Enter");
@@ -55,7 +105,8 @@ public static class KposExecutableTest
                 EnterText(scanner, "Q");
                 IntPtr quantity = FindWindow(desktop, process.ProcessId, "Edit Quantity");
                 EnterText(FindTextBox(quantity), "2");
-                WaitUntil(() => HasText(register, "Quantity for Pale Ale: 2"), "update the quantity from the scan field");
+                WaitUntil(() => HasText(register, "Quantity for Pale Ale: 2") && FillsAmountBanner(register, "$24.68") &&
+                    TextIsInBounds(register, "$24.68"), "update the quantity and register total");
 
                 Send(scanner, 0x0100, 0x78); // F9
                 IntPtr checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
@@ -206,7 +257,7 @@ public static class KposExecutableTest
                 WaitUntil(() => DefaultsToYes(deleteProduct), "default to Yes when deleting an item");
                 Send(deleteProduct, 0x0111, 7); // No
                 Send(catalog, 0x0010, 0); // WM_CLOSE
-                Send(FindChildWithText(register, "Export &Backup"), 0x00F5, 0); // BM_CLICK
+                Send(FindChildWithText(register, "&Backup"), 0x00F5, 0); // BM_CLICK
                 IntPtr backup = FindWindow(desktop, process.ProcessId, "Export Backup");
                 WaitUntil(() => HasText(backup, "Choose &Location…"), "open backup options from the register");
                 Send(backup, 0x0010, 0); // WM_CLOSE
@@ -384,7 +435,10 @@ public static class KposExecutableTest
         return selection.ToInt64() == ((long)length << 16);
     }
 
-    private static IntPtr FindTextBox(IntPtr parent, IntPtr except = default(IntPtr))
+    private static IntPtr FindTextBox(IntPtr parent, IntPtr except = default(IntPtr)) =>
+        FindChildByClass(parent, "WindowsForms10.Edit.", except);
+
+    private static IntPtr FindChildByClass(IntPtr parent, string prefix, IntPtr except = default(IntPtr))
     {
         IntPtr result = IntPtr.Zero;
         WaitUntil(() =>
@@ -393,12 +447,12 @@ public static class KposExecutableTest
             {
                 var className = new StringBuilder(128);
                 GetClassName(window, className, className.Capacity);
-                if (window != except && className.ToString().StartsWith("WindowsForms10.Edit.", StringComparison.OrdinalIgnoreCase))
+                if (window != except && className.ToString().StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                     result = window;
                 return result == IntPtr.Zero;
             }, IntPtr.Zero);
             return result != IntPtr.Zero;
-        }, "find the text field");
+        }, "find the " + prefix + " control");
         return result;
     }
 
@@ -428,7 +482,8 @@ public static class KposExecutableTest
     {
         IntPtr child = FindChildWithText(root, expected);
         WindowRect label;
-        if (child == IntPtr.Zero || !GetWindowRect(child, out label) || label.Right <= label.Left || label.Bottom <= label.Top)
+        if (child == IntPtr.Zero || !IsWindowVisible(child) || !GetWindowRect(child, out label) ||
+            label.Right <= label.Left || label.Bottom <= label.Top)
             return false;
         for (IntPtr parent = GetParent(child); parent != IntPtr.Zero; parent = GetParent(parent))
         {
@@ -444,6 +499,14 @@ public static class KposExecutableTest
 
     [StructLayout(LayoutKind.Sequential)]
     private struct WindowRect { public int Left, Top, Right, Bottom; }
+
+    private static bool FillsAmountBanner(IntPtr root, string amount)
+    {
+        IntPtr label = FindChildWithText(root, amount);
+        WindowRect value, banner;
+        return label != IntPtr.Zero && GetWindowRect(label, out value) && GetWindowRect(GetParent(label), out banner) &&
+            value.Right - value.Left >= (banner.Right - banner.Left) * 3 / 4;
+    }
 
     private static bool HasScrollBars(IntPtr root)
     {
@@ -466,6 +529,15 @@ public static class KposExecutableTest
 
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindowAsync(IntPtr window, int command);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsZoomed(IntPtr window);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
 
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr window, out WindowRect bounds);
@@ -595,7 +667,7 @@ try {
     }
 
     $scenario = if ($UpdateArchive) { 'one-click upgrade and restart' } elseif ($PreviousExecutable) { 'upgrade' } else { 'first installation' }
-    Write-Output "Packaged kPOS passed $scenario, barcode entry, item lookup, quantity, age display, lottery and misc entries, count confirmation, payment, change display, product deletion prompts, sales records, refunds, closeout, and ordering."
+    Write-Output "Packaged kPOS passed $scenario, register layout, F1 help, settings, barcode entry, item lookup, quantity, age display, lottery and misc entries, count confirmation, payment, change display, product deletion prompts, sales records, refunds, closeout, and ordering."
 }
 finally {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $previousData)

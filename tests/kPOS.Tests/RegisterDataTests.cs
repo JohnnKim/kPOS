@@ -19,6 +19,10 @@ public sealed class RegisterDataTests
                 Assert.IsNull(first.SaveProduct(product));
                 Assert.IsTrue(first.RequireItemCount);
                 Assert.IsTrue(first.StartMaximized);
+                Assert.IsTrue(first.ShowRegisterKeys);
+                Assert.IsTrue(first.ShowLastChange);
+                first.SaveSettings(8.275m, 5, requireItemCount: false, startMaximized: false,
+                    showRegisterKeys: false, showLastChange: false);
                 first.SaveSettings(8.275m, 5, requireItemCount: false, startMaximized: false);
             }
 
@@ -29,6 +33,8 @@ public sealed class RegisterDataTests
                 Assert.AreEqual(5, second.ChangeSeconds);
                 Assert.IsFalse(second.RequireItemCount);
                 Assert.IsFalse(second.StartMaximized);
+                Assert.IsFalse(second.ShowRegisterKeys);
+                Assert.IsFalse(second.ShowLastChange);
                 var updated = product with { Description = "New Name", UnitPrice = 13.75m, IsTaxable = false };
                 Assert.IsNull(second.SaveProduct(updated, product));
                 Assert.IsNotNull(second.SaveProduct(product, product));

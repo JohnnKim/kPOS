@@ -11,7 +11,7 @@ internal sealed class RegisterForm : Form
     private readonly Sale sale = new();
     private readonly Dictionary<Keys, Action> shortcuts = [];
     private RegisterKeys keys;
-    private Control? hotkeys;
+    private readonly Panel registerKeyPanel = new() { Dock = DockStyle.Fill, AutoScroll = true };
     private readonly ScannerField scanCode = new()
     {
         AccessibleName = "Scan item or enter code",
@@ -46,13 +46,14 @@ internal sealed class RegisterForm : Form
     private readonly System.Windows.Forms.Timer legalAgeTimer = new() { Interval = 30000 };
     private readonly Label discounts = CreateAmountLabel();
     private readonly Label tax = CreateAmountLabel();
-    private readonly Label totalDue = PosView.BannerAmount("", 30);
-    private readonly Label totalCaption = PosView.Label("TOTAL DUE", 12, FontStyle.Bold, Color.White);
-    private readonly TableLayoutPanel totalBanner = new()
+    private readonly Label totalDue = PosView.BannerAmount("", 43);
+    private readonly Label totalCaption = PosView.Label("TOTAL DUE", 14, FontStyle.Bold, Color.White);
+    private readonly Panel totalBanner = new()
     {
-        ColumnCount = 1, RowCount = 2, Dock = DockStyle.Fill, BackColor = PosView.Navy,
-        Margin = new Padding(0, 5, 0, 0), Padding = new Padding(10, 3, 10, 2)
+        Dock = DockStyle.Fill, BackColor = PosView.Navy,
+        Margin = new Padding(0, 0, 0, 4), Padding = new Padding(12, 7, 12, 5)
     };
+    private readonly Label lastChangeCaption = PosView.Label("Last change", 12, color: PosView.Muted);
     private readonly Label lastChange = CreateAmountLabel();
     private bool nextItemIsCase;
     private bool exporting;
@@ -90,7 +91,7 @@ internal sealed class RegisterForm : Form
             ColumnCount = 2, RowCount = 4
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -106,15 +107,14 @@ internal sealed class RegisterForm : Form
         layout.Controls.Add(ticketFrame, 0, 2);
         layout.Controls.Add(CreateScanArea(), 0, 3);
 
-        var side = new TableLayoutPanel { ColumnCount = 1, RowCount = 2, Margin = new Padding(4, 0, 0, 0) };
+        var side = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0, 3, 3, 3) };
         side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        side.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         side.Controls.Add(CreateTotals(), 0, 0);
-        hotkeys = CreateHotkeys();
-        side.Controls.Add(hotkeys, 0, 1);
-        var sidebar = PosView.Scroll(side);
-        layout.Controls.Add(sidebar, 1, 2);
-        layout.SetRowSpan(sidebar, 2);
+        side.Controls.Add(registerKeyPanel, 0, 1);
+        ApplyDisplaySettings();
+        layout.Controls.Add(side, 1, 2);
+        layout.SetRowSpan(side, 2);
 
         MenuStrip menu = CreateMenu();
         MainMenuStrip = menu;
@@ -192,7 +192,6 @@ internal sealed class RegisterForm : Form
         var lists = new ToolStripMenuItem("&Lists");
         AddCommand(lists, "&Item Lookup", Keys.F3, LookupItem);
         AddCommand(lists, "&Product List", Keys.Control | Keys.L, ViewProducts);
-        var settings = new ToolStripMenuItem("&Settings…", null, (_, _) => RunRegisterAction(ViewSettings));
         var reports = new ToolStripMenuItem("&Records");
         AddCommand(reports, "&End of Day…", Keys.Control | Keys.E, ViewCloseout);
         AddCommand(reports, "&Daily Reports…", Keys.Control | Keys.R, ViewRecords);
@@ -202,7 +201,9 @@ internal sealed class RegisterForm : Form
 #if KPOS_UPDATE_FIXTURE
         shortcuts.Add(Keys.F12, CheckForUpdates);
 #endif
-        menu.Items.AddRange([saleMenu, lists, reports, settings]);
+        var help = new ToolStripMenuItem("&Help");
+        AddCommand(help, "&Register Help", Keys.F1, ViewRegisterHelp);
+        menu.Items.AddRange([saleMenu, lists, reports, help]);
         return menu;
     }
 
@@ -224,7 +225,7 @@ internal sealed class RegisterForm : Form
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var title = PosView.Label("Sales Entry", 18, FontStyle.Bold, Color.White);
+        var title = PosView.Label("kPOS", 20, FontStyle.Bold, Color.White);
         title.Anchor = AnchorStyles.Left;
         legalAge.Font = PosView.Text(14, FontStyle.Bold);
         legalAge.ForeColor = Color.White;
@@ -237,19 +238,22 @@ internal sealed class RegisterForm : Form
     private Control CreateActions()
     {
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
-        Add("&Checkout", FinishSale, primary: true);
-        Add("Item L&ookup", LookupItem);
-        Add("Catalo&g", ViewProducts);
-        Add("End of &Day", ViewCloseout);
-        Add("&Reports", ViewRecords);
-        Add("Or&ders", ViewOrders);
-        Add("Export &Backup", ExportBackup);
-        Add("Se&ttings", ViewSettings);
+        Add("&Checkout", FinishSale, RegisterIcon.Checkout, primary: true);
+        Add("Item L&ookup", LookupItem, RegisterIcon.Lookup);
+        Add("Catalo&g", ViewProducts, RegisterIcon.Catalog);
+        Add("End of &Day", ViewCloseout, RegisterIcon.Closeout);
+        Add("&Reports", ViewRecords, RegisterIcon.Reports);
+        Add("Or&ders", ViewOrders, RegisterIcon.Orders);
+        Add("&Backup", ExportBackup, RegisterIcon.Backup);
+        Add("Se&ttings", ViewSettings, RegisterIcon.Settings);
         return actions;
 
-        void Add(string text, Action command, bool primary = false)
+        void Add(string text, Action command, RegisterIcon icon, bool primary = false)
         {
             var button = PosView.Button(text, primary, 11);
+            button.Margin = new Padding(2, 3, 2, 3);
+            button.Padding = new Padding(6, 3, 6, 3);
+            RegisterActionIcons.Set(button, icon);
             button.Click += (_, _) => RunRegisterAction(command);
             actions.Controls.Add(button);
         }
@@ -280,26 +284,31 @@ internal sealed class RegisterForm : Form
         var totals = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 6 };
         totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         totals.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        AddTotal("Merchandise", subtotal, 0);
-        AddTotal("Lottery", lottery, 1);
-        AddTotal("Discounts", discounts, 2);
-        AddTotal("Sales tax", tax, 3);
-
-        totals.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        totalBanner.AutoSize = true;
-        totalBanner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        totalBanner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        totalBanner.Controls.Add(totalCaption, 0, 0);
-        totalBanner.Controls.Add(totalDue, 0, 1);
-        totals.Controls.Add(totalBanner, 0, 4);
+        for (int row = 0; row < totals.RowCount; row++)
+            totals.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        totalCaption.Dock = DockStyle.Top;
+        totalDue.Dock = DockStyle.None;
+        totalBanner.Height = totalCaption.PreferredHeight + totalDue.MinimumSize.Height + totalBanner.Padding.Vertical + 8;
+        totalBanner.Controls.Add(totalDue);
+        totalBanner.Controls.Add(totalCaption);
+        totalBanner.Layout += (_, _) =>
+        {
+            // Fit large amounts to the banner's actual width, which is known after the sidebar is laid out.
+            Rectangle area = totalBanner.DisplayRectangle;
+            int top = area.Top + totalCaption.PreferredHeight;
+            totalDue.SetBounds(area.Left, top, area.Width, Math.Max(0, area.Bottom - top));
+        };
+        totals.Controls.Add(totalBanner, 0, 0);
         totals.SetColumnSpan(totalBanner, 2);
-        AddTotal("Last change", lastChange, 5);
+        AddTotal(PosView.Label("Merchandise", 12, color: PosView.Muted), subtotal, 1);
+        AddTotal(PosView.Label("Lottery", 12, color: PosView.Muted), lottery, 2);
+        AddTotal(PosView.Label("Discounts", 12, color: PosView.Muted), discounts, 3);
+        AddTotal(PosView.Label("Sales tax", 12, color: PosView.Muted), tax, 4);
+        AddTotal(lastChangeCaption, lastChange, 5);
         return PosView.Frame(totals, new Padding(8), fitContent: true);
 
-        void AddTotal(string label, Label amount, int row)
+        void AddTotal(Label caption, Label amount, int row)
         {
-            totals.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            Label caption = PosView.Label(label, 12, color: PosView.Muted);
             caption.Anchor = AnchorStyles.Left;
             amount.ForeColor = PosView.Ink;
             amount.Font = PosView.Text(13, FontStyle.Bold);
@@ -310,15 +319,6 @@ internal sealed class RegisterForm : Form
 
     private Control CreateHotkeys()
     {
-        var section = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
-        section.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        section.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        section.Controls.Add(PosView.Label("REGISTER KEYS", 11, FontStyle.Bold, PosView.Muted), 0, 0);
-        var tiles = new TableLayoutPanel { Dock = DockStyle.Top, Height = 140, ColumnCount = 2, RowCount = 5 };
-        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        for (int i = 0; i < 5; i++)
-            tiles.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         (string Key, string Action)[] tilesToShow =
         [
             (keys.Quantity, "Quantity"), ("F3", "Lookup"),
@@ -326,22 +326,34 @@ internal sealed class RegisterForm : Form
             (keys.Misc, "Misc"), ("F5", "Delete"),
             ("F7", "Discount"), ("F10", "Case"),
             keys.Expense.Length > 0 ? (keys.Expense, "Expense") : ("Ctrl+E", "Closeout"),
-            keys.Refund.Length > 0 ? (keys.Refund, "Refund") : ("Ctrl+R", "Reports")
+            keys.Refund.Length > 0 ? (keys.Refund, "Refund") : ("Ctrl+R", "Reports"),
+            ("F1", "Help"), ("F9", "Checkout")
         ];
+        var section = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 2 };
+        section.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        section.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        section.Controls.Add(PosView.Label("Register Keys", 11, FontStyle.Bold), 0, 0);
+        var tiles = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
+        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        for (int row = 0; row < (tilesToShow.Length + 1) / 2; row++)
+            tiles.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         for (int i = 0; i < tilesToShow.Length; i++)
         {
             var tile = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
-                BackColor = PosView.Light, Margin = new Padding(2, 1, 2, 2)
+                Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1,
+                BackColor = PosView.Light, Margin = new Padding(2, 1, 2, 1)
             };
-            tile.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 59));
+            tile.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tile.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             var key = PosView.Label(tilesToShow[i].Key, 10, FontStyle.Bold, Color.White);
             key.Dock = DockStyle.Fill;
             key.TextAlign = ContentAlignment.MiddleCenter;
             key.BackColor = PosView.Navy;
             key.Margin = new Padding(0);
+            key.Padding = new Padding(5, 2, 5, 2);
+            key.MinimumSize = new Size(34, 0);
             var action = PosView.Label(tilesToShow[i].Action, 10);
             action.Anchor = AnchorStyles.Left;
             tile.Controls.Add(key, 0, 0);
@@ -349,10 +361,26 @@ internal sealed class RegisterForm : Form
             tiles.Controls.Add(tile, i % 2, i / 2);
         }
         section.Controls.Add(tiles, 0, 1);
-        var frame = PosView.Frame(section, new Padding(9, 7, 9, 5));
+        var frame = PosView.Frame(section, new Padding(6, 4, 6, 4), fitContent: true);
         frame.Dock = DockStyle.Top;
-        frame.Height = 182;
         return frame;
+    }
+
+    private void ApplyDisplaySettings()
+    {
+        lastChangeCaption.Visible = lastChange.Visible = data.ShowLastChange;
+        bool showKeys = data.ShowRegisterKeys;
+        registerKeyPanel.Visible = showKeys;
+        if (registerKeyPanel.Controls.Count > 0)
+            registerKeyPanel.Controls[0].Dispose();
+        if (showKeys)
+            registerKeyPanel.Controls.Add(CreateHotkeys());
+    }
+
+    private void ViewRegisterHelp()
+    {
+        using var dialog = new RegisterHelpForm(keys);
+        dialog.ShowDialog(this);
     }
 
     private static Label CreateAmountLabel() => new() { Anchor = AnchorStyles.Right, AutoSize = true };
@@ -765,12 +793,7 @@ internal sealed class RegisterForm : Form
         taxRate = data.TaxRate;
         keys = data.ReadRegisterKeys();
         scanCode.DetectKeyboardScanner = keys.AutoScan;
-        if (hotkeys?.Parent is TableLayoutPanel side)
-        {
-            hotkeys.Dispose();
-            hotkeys = CreateHotkeys();
-            side.Controls.Add(hotkeys, 0, 1);
-        }
+        ApplyDisplaySettings();
         WindowState = data.StartMaximized ? FormWindowState.Maximized : FormWindowState.Normal;
         status.Text = "Settings saved.";
         RefreshTicket(ticket.CurrentRow?.Index ?? 0);
