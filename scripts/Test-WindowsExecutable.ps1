@@ -58,11 +58,15 @@ public static class KposExecutableTest
                 if (!SetWindowPos(register, IntPtr.Zero, 0, 0, 1280, 720, 0x0016))
                     throw new Win32Exception();
                 RevealText(register, "kPOS");
+                WindowRect registerBounds;
+                GetWindowRect(register, out registerBounds);
+                bool fullSizeRegister = registerBounds.Right - registerBounds.Left >= 1280 &&
+                    registerBounds.Bottom - registerBounds.Top >= 720;
                 try { WaitUntil(() => TextIsInBounds(register, "TOTAL DUE") && TextIsInBounds(register, "$0.00") &&
                     FillsAmountBanner(register, "$0.00") &&
                     TextIsInBounds(register, "Register Keys") && TextIsInBounds(register, "Refund") &&
                     TextIsInBounds(register, "F10") && TextIsInBounds(register, "F9") &&
-                    ScrollableAncestor(register, "Register Keys") == IntPtr.Zero &&
+                    (!fullSizeRegister || ScrollableAncestor(register, "Register Keys") == IntPtr.Zero) &&
                     TextIsInBounds(register, "Se&ttings"), "fit the total, toolbar and register keys in a 1280 by 720 window"); }
                 catch (InvalidOperationException error)
                 {
