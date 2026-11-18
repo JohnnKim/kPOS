@@ -58,12 +58,24 @@ public static class KposExecutableTest
                 if (!SetWindowPos(register, IntPtr.Zero, 0, 0, 1280, 720, 0x0016))
                     throw new Win32Exception();
                 RevealText(register, "kPOS");
-                WaitUntil(() => TextIsInBounds(register, "TOTAL DUE") && TextIsInBounds(register, "$0.00") &&
+                try { WaitUntil(() => TextIsInBounds(register, "TOTAL DUE") && TextIsInBounds(register, "$0.00") &&
                     FillsAmountBanner(register, "$0.00") &&
                     TextIsInBounds(register, "Register Keys") && TextIsInBounds(register, "Refund") &&
                     TextIsInBounds(register, "F10") && TextIsInBounds(register, "F9") &&
                     ScrollableAncestor(register, "Register Keys") == IntPtr.Zero &&
-                    TextIsInBounds(register, "Se&ttings"), "fit the total, toolbar and register keys in a 1280 by 720 window");
+                    TextIsInBounds(register, "Se&ttings"), "fit the total, toolbar and register keys in a 1280 by 720 window"); }
+                catch (InvalidOperationException error)
+                {
+                    WindowRect bounds;
+                    GetWindowRect(register, out bounds);
+                    throw new InvalidOperationException(error.Message + " Actual size=" + (bounds.Right - bounds.Left) + "x" +
+                        (bounds.Bottom - bounds.Top) + "; caption=" + TextIsInBounds(register, "TOTAL DUE") + "; amount=" +
+                        TextIsInBounds(register, "$0.00") + "; bannerFill=" + FillsAmountBanner(register, "$0.00") +
+                        "; keys=" + TextIsInBounds(register, "Register Keys") + "; refund=" + TextIsInBounds(register, "Refund") +
+                        "; F10=" + TextIsInBounds(register, "F10") + "; F9=" + TextIsInBounds(register, "F9") +
+                        "; keysScroll=" + (ScrollableAncestor(register, "Register Keys") != IntPtr.Zero) +
+                        "; settings=" + TextIsInBounds(register, "Se&ttings"), error);
+                }
 
                 Send(scanner, 0x0100, 0x70); // F1
                 IntPtr help = FindWindow(desktop, process.ProcessId, "Register Help");
