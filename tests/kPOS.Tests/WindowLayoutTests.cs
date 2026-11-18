@@ -53,6 +53,7 @@ public sealed class WindowLayoutTests
         grid.FirstDisplayedScrollingColumnIndex = grid.Columns["OnHand"]!.Index;
         Assert.IsTrue(grid.Columns["OnHand"]!.Displayed, "The last column must be reachable by horizontal scrolling.");
 
+        grid.Columns["Description"]!.MinimumWidth = 200;
         window.Size = new Size(1280, 650);
         Application.DoEvents();
         Assert.IsFalse(grid.Controls.OfType<HScrollBar>().Any(bar => bar.Visible),
@@ -62,6 +63,7 @@ public sealed class WindowLayoutTests
     [TestMethod]
     [DataRow(1280, 720)]
     [DataRow(1366, 768)]
+    [DataRow(1024, 768)]
     public void WindowControlsRemainReachableOnSmallDisplays(int width, int height)
     {
         using var data = new RegisterData(":memory:");

@@ -11,7 +11,7 @@ internal static class PosView
     internal static void ResumeLayoutTree(Control root)
     {
         foreach (Control child in root.Controls) ResumeLayoutTree(child);
-        root.ResumeLayout(root is UpDownBase);
+        root.ResumeLayout(true);
     }
 
     public const float CompactScale = 0.85f;

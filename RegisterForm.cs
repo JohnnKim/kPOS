@@ -287,6 +287,7 @@ internal sealed class RegisterForm : PosForm
     private Control CreateScanArea()
     {
         var area = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 3 };
+        area.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (int row = 0; row < 3; row++)
             area.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         scanPrompt.Font = PosView.Text(13, FontStyle.Bold);

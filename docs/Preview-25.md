@@ -1,4 +1,4 @@
-# Preview.24 — setup, layout, and window loading
+# Preview.25 — setup, layout, and window loading
 
 November 18, 2026
 

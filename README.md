@@ -1,8 +1,8 @@
 # kPOS
 Independent liquor store POS system
 
-Preview.24 adds guided setup, verified directory migration, faster window layout, and a larger register sidebar.
-See [Preview-24.md](docs/Preview-24.md) for setup, scrolling, and migration details.
+Preview.25 adds guided setup, verified directory migration, faster window layout, and a larger register sidebar.
+See [Preview-25.md](docs/Preview-25.md) for setup, scrolling, and migration details.
 
 The preview.23 home-terminal foundation, setup instructions, Windows 10 validation limits, client questions,
 and hardware/connection options are in [Home-Terminal.md](docs/Home-Terminal.md).
