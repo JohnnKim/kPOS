@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class StockEntryForm : Form
+internal sealed class StockEntryForm : PosForm
 {
     private readonly DateTimePicker date = new() { Format = DateTimePickerFormat.Short, Width = 130 };
     private readonly RadioButton opening = new() { Text = "Opening count", Checked = true, AutoSize = true };

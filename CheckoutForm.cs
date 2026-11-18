@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class CheckoutForm : Form
+internal sealed class CheckoutForm : PosForm
 {
     private readonly TextBox amount = new() { Dock = DockStyle.Fill, MaxLength = 16, AccessibleName = "Amount received" };
     private readonly TextBox itemCount = new() { Dock = DockStyle.Fill, MaxLength = 12, AccessibleName = "Confirm item count" };

@@ -1,6 +1,6 @@
 namespace Kpos;
 
-internal sealed class RegisterHelpForm : Form
+internal sealed class RegisterHelpForm : PosForm
 {
     public RegisterHelpForm(RegisterKeys keys)
     {
@@ -74,7 +74,7 @@ internal sealed class RegisterHelpForm : Form
                 table.Controls.Add(key, 0, index + 1);
                 table.Controls.Add(description, 1, index + 1);
             }
-            var frame = PosView.Frame(table, new Padding(8));
+            var frame = PosView.Frame(PosView.Scroll(table), new Padding(8));
             frame.Margin = new Padding(3, 8, 3, 6);
             layout.Controls.Add(frame, column, 1);
         }

@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace Kpos;
 
-internal sealed class SaleLineEditorForm : Form
+internal sealed class SaleLineEditorForm : PosForm
 {
     private readonly TextBox quantity = Input("Quantity", 5);
     private readonly TextBox price = Input("Price", 10);

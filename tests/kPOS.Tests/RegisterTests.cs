@@ -16,7 +16,8 @@ public sealed class RegisterTests
             TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width <= amount.ClientSize.Width);
 
         amount.Width = 700;
-        Assert.AreEqual(30f, amount.Font.Size);
+        using Font fullSize = PosView.Text(30);
+        Assert.AreEqual(fullSize.Size, amount.Font.Size);
     }
 
     [TestMethod]

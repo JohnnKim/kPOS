@@ -2,7 +2,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class OrderItemDetailsForm : Form
+internal sealed class OrderItemDetailsForm : PosForm
 {
     public OrderItemDetailsForm(RegisterData data, OrderItem item, DateOnly start, DateOnly end, int coverage)
     {

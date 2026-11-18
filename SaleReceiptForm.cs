@@ -6,7 +6,7 @@ using System.Text;
 
 namespace Kpos;
 
-internal sealed class SaleReceiptForm : Form
+internal sealed class SaleReceiptForm : PosForm
 {
     public SaleReceiptForm(string receipt)
     {
@@ -21,7 +21,7 @@ internal sealed class SaleReceiptForm : Form
         var preview = new TextBox
         {
             AccessibleName = "Receipt copy",
-            Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
+            Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Both, WordWrap = false,
             BackColor = Color.White, Font = new Font(FontFamily.GenericMonospace, 11), Text = receipt
         };
         var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, Padding = new Padding(8) };

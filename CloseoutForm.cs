@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class CloseoutForm : Form
+internal sealed class CloseoutForm : PosForm
 {
     private enum Field
     {

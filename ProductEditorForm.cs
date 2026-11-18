@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class ProductEditorForm : Form
+internal sealed class ProductEditorForm : PosForm
 {
     private readonly TextBox barcodeInput = new() { MaxLength = 80, Dock = DockStyle.Fill, AccessibleName = "Barcode" };
     private readonly TextBox code = new() { MaxLength = 80, Dock = DockStyle.Fill, AccessibleName = "Item code" };

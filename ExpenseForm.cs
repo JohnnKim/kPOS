@@ -2,7 +2,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class ExpenseForm : Form
+internal sealed class ExpenseForm : PosForm
 {
     private readonly TextBox amount = new() { Dock = DockStyle.Fill, MaxLength = 9, AccessibleName = "Cash paid out" };
     private readonly TextBox reason = new()

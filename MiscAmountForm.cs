@@ -1,6 +1,6 @@
 namespace Kpos;
 
-internal sealed class MiscAmountForm : Form
+internal sealed class MiscAmountForm : PosForm
 {
     private readonly TextBox amount = new() { Dock = DockStyle.Fill, MaxLength = 10, AccessibleName = "Price" };
     private readonly CheckBox taxable = new() { Text = "Apply sales tax", Checked = true, AutoSize = true };

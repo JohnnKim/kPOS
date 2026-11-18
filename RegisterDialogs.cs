@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class ProductListForm : Form
+internal sealed class ProductListForm : PosForm
 {
     private IReadOnlyList<Product> products;
     private Product[] matches = [];
@@ -176,6 +176,10 @@ internal sealed class ProductListForm : Form
         grid.Columns["Code"]!.Width = 112;
         grid.Columns["Barcode"]!.Width = 136;
         grid.Columns["Description"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+        grid.Columns["Description"]!.MinimumWidth = 200;
+        grid.Columns["Description"]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders;
+        grid.ScrollBars = ScrollBars.Both;
         grid.Columns["Size"]!.Width = 121;
         grid.Columns["Price"]!.Width = 111;
         grid.Columns["CasePrice"]!.Width = 115;
@@ -345,7 +349,7 @@ internal sealed class ProductListForm : Form
     }
 }
 
-internal sealed class NumberEntryForm : Form
+internal sealed class NumberEntryForm : PosForm
 {
     private static readonly CultureInfo InputCulture = CultureInfo.InvariantCulture;
     private readonly TextBox input = new() { Dock = DockStyle.Fill, MaxLength = 13 };

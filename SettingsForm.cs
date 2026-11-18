@@ -2,7 +2,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class SettingsForm : Form
+internal sealed class SettingsForm : PosForm
 {
     public bool RestartForUpdate { get; private set; }
     public bool HistoryReset { get; private set; }

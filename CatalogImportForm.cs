@@ -4,12 +4,12 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class CatalogImportForm : Form
+internal sealed class CatalogImportForm : PosForm
 {
     private readonly RegisterData data;
     private readonly TextBox recognized = new()
     {
-        Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Vertical, MaxLength = 150000,
+        Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Both, WordWrap = false, MaxLength = 150000,
         AccessibleName = "Recognized text"
     };
     private readonly DataGridView review = new()

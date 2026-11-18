@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class RecordsForm : Form
+internal sealed class RecordsForm : PosForm
 {
     private const int PageSize = 200;
     private readonly RegisterData data;
@@ -155,7 +155,7 @@ internal sealed class RecordsForm : Form
     private void ViewSale(string saleId, DataRow sale)
     {
         (DateOnly start, DateOnly end) = Dates();
-        using var details = new Form
+        using var details = new PosForm
         {
             Text = $"Sale Items - {saleId}", ClientSize = new Size(970, 410),
             StartPosition = FormStartPosition.CenterParent, ShowInTaskbar = false, Font = Font

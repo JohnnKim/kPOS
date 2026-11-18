@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Kpos;
 
-internal sealed class UpdateDownloadForm : Form
+internal sealed class UpdateDownloadForm : PosForm
 {
     private readonly RegisterFolders folders;
     private readonly Label summary = PosView.Label("", 12, FontStyle.Bold);

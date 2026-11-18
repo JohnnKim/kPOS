@@ -2,6 +2,7 @@ namespace Kpos;
 
 internal static class PosView
 {
+    public const float CompactScale = 0.85f;
     public static readonly Color Canvas = Color.FromArgb(234, 240, 247);
     public static readonly Color Ink = Color.FromArgb(18, 35, 56);
     public static readonly Color Muted = Color.FromArgb(68, 88, 113);
@@ -13,7 +14,7 @@ internal static class PosView
     public static readonly Color Error = Color.FromArgb(157, 34, 38);
 
     public static Font Text(float size, FontStyle style = FontStyle.Regular) =>
-        new(SystemFonts.MessageBoxFont!.FontFamily, size, style);
+        new(SystemFonts.MessageBoxFont!.FontFamily, Math.Max(8.5f, size * CompactScale), style);
 
     public static Label Label(string text, float size, FontStyle style = FontStyle.Regular, Color? color = null) =>
         new() { Text = text, AutoSize = true, Font = Text(size, style), ForeColor = color ?? Ink };
@@ -79,12 +80,12 @@ internal static class PosView
             using Graphics graphics = label.CreateGraphics();
             int width = TextRenderer.MeasureText(graphics, label.Text, fullSize, Size.Empty,
                 TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;
-            float pointSize = width <= label.ClientSize.Width ? size
-                : Math.Max(8, (float)Math.Floor(size * (label.ClientSize.Width - 4) / width));
+            float pointSize = width <= label.ClientSize.Width ? fullSize.Size
+                : Math.Max(8, (float)Math.Floor(fullSize.Size * (label.ClientSize.Width - 4) / width));
             if (Math.Abs(label.Font.Size - pointSize) < 0.1f)
                 return;
             Font? previous = fitted;
-            fitted = pointSize == size ? null : Text(pointSize, FontStyle.Bold);
+            fitted = pointSize == fullSize.Size ? null : new Font(fullSize.FontFamily, pointSize, FontStyle.Bold);
             label.Font = fitted ?? fullSize;
             previous?.Dispose();
         }

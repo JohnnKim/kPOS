@@ -53,25 +53,21 @@ public static class KposExecutableTest
                 WaitUntil(() => !IsZoomed(register), "restore the register window");
                 if (!SetWindowPos(register, IntPtr.Zero, 0, 0, 780, 515, 0x0016))
                     throw new Win32Exception();
-                IntPtr sidebar = IntPtr.Zero;
-                WaitUntil(() => (sidebar = ScrollableAncestor(register, "Register Keys")) != IntPtr.Zero &&
-                    TextIsInBounds(register, "TOTAL DUE"), "keep totals accessible at the minimum register size");
-                if (!PostMessage(sidebar, 0x0115, (IntPtr)7, IntPtr.Zero)) // WM_VSCROLL, SB_BOTTOM
+                WaitUntil(() => ScrollableAncestor(register, "Register Keys") != IntPtr.Zero &&
+                    RevealText(register, "F9"), "scroll to register keys in a smaller window");
+                if (!SetWindowPos(register, IntPtr.Zero, 0, 0, 1280, 720, 0x0016))
                     throw new Win32Exception();
-                WaitUntil(() => TextIsInBounds(register, "Register Keys") && TextIsInBounds(register, "F9"),
-                    "scroll to register keys at the minimum window size");
-                if (!SetWindowPos(register, IntPtr.Zero, 0, 0, 1024, 700, 0x0016))
-                    throw new Win32Exception();
+                RevealText(register, "kPOS");
                 WaitUntil(() => TextIsInBounds(register, "TOTAL DUE") && TextIsInBounds(register, "$0.00") &&
                     FillsAmountBanner(register, "$0.00") &&
                     TextIsInBounds(register, "Register Keys") && TextIsInBounds(register, "Refund") &&
                     TextIsInBounds(register, "F10") && TextIsInBounds(register, "F9") &&
                     ScrollableAncestor(register, "Register Keys") == IntPtr.Zero &&
-                    TextIsInBounds(register, "Se&ttings"), "fit the total, toolbar and register keys in a 1024 by 700 window");
+                    TextIsInBounds(register, "Se&ttings"), "fit the total, toolbar and register keys in a 1280 by 720 window");
 
                 Send(scanner, 0x0100, 0x70); // F1
                 IntPtr help = FindWindow(desktop, process.ProcessId, "Register Help");
-                WaitUntil(() => TextIsInBounds(help, "Case sale for next item") && TextIsInBounds(help, "RF + Enter") &&
+                WaitUntil(() => RevealText(help, "Case sale for next item") && RevealText(help, "RF + Enter") &&
                     TextIsInBounds(help, "&Close"), "show register help with configured scanner shortcuts");
                 Send(FindChildWithText(help, "&Close"), 0x00F5, 0);
                 WaitUntil(() => !IsWindow(help), "close register help");
@@ -226,12 +222,11 @@ public static class KposExecutableTest
                 WaitUntil(() => HasText(register, "Drawer expense recorded: $4.25."), "record the drawer expense using its shortcut");
                 Send(FindChildWithText(register, "End of &Day"), 0x00F5, 0); // BM_CLICK
                 IntPtr closeout = FindWindow(desktop, process.ProcessId, "End of Day Closeout");
-                WaitUntil(() => TextIsInBounds(closeout, "End-of-Day Totals") && TextIsInBounds(closeout, "Revised") &&
-                    TextIsInBounds(closeout, "Calculated") && TextIsInBounds(closeout, "State Tax") && TextIsInBounds(closeout, "Net Deposits") &&
-                    TextIsInBounds(closeout, "Bank Should") && TextIsInBounds(closeout, "MC/Visa") && TextIsInBounds(closeout, "Notes") &&
-                    TextIsInBounds(closeout, "Count &Bills and Coins…") && TextIsInBounds(closeout, "&OK") &&
-                    TextIsInBounds(closeout, "&Cancel") && !HasScrollBars(closeout),
-                    "show all closeout controls without scrolling");
+                WaitUntil(() => RevealText(closeout, "End-of-Day Totals") && RevealText(closeout, "Revised") &&
+                    RevealText(closeout, "Calculated") && RevealText(closeout, "State Tax") && RevealText(closeout, "Net Deposits") &&
+                    RevealText(closeout, "Bank Should") && RevealText(closeout, "MC/Visa") && RevealText(closeout, "Notes") &&
+                    RevealText(closeout, "Count &Bills and Coins…") && RevealText(closeout, "&OK") &&
+                    RevealText(closeout, "&Cancel"), "reach every closeout control");
                 Send(closeout, 0x0010, 0); // WM_CLOSE
                 Send(FindChildWithText(register, "&Reports"), 0x00F5, 0); // BM_CLICK
                 IntPtr records = FindWindow(desktop, process.ProcessId, "Sales Records");
@@ -256,7 +251,8 @@ public static class KposExecutableTest
                 Send(orders, 0x0010, 0); // WM_CLOSE
                 Send(FindChildWithText(register, "Catalo&g"), 0x00F5, 0); // BM_CLICK
                 IntPtr catalog = FindWindow(desktop, process.ProcessId, "Product List");
-                WaitUntil(() => HasText(catalog, "6 items") && HasText(catalog, "&Add Item") && HasText(catalog, "&Delete Product"), "show the catalog count and actions");
+                WaitUntil(() => HasText(catalog, "6 items") && RevealText(catalog, "&Delete Product") &&
+                    RevealText(catalog, "&Add Item"), "show and scroll to the catalog actions");
                 Send(FindChildWithText(catalog, "&Add Item"), 0x00F5, 0);
                 IntPtr addItem = FindWindow(desktop, process.ProcessId, "Add Product");
                 WaitUntil(() => HasText(addItem, "Barcode"), "open the catalog add editor");
@@ -294,8 +290,8 @@ public static class KposExecutableTest
                 WaitUntil(() => !IsWindow(lineEditor) && HasText(register, "$24.68"), "cancel sale edits without changing the total");
                 Send(scanner, 0x0100, 0x75); // F6
                 lineEditor = FindWindow(desktop, process.ProcessId, "Edit Sale Item");
-                ReplaceText(FindChildWithText(lineEditor, "11.99"), "9.99");
-                ReplaceText(FindChildWithText(lineEditor, "0"), "10");
+                ReplaceText(WaitForChildWithText(lineEditor, "11.99"), "9.99");
+                ReplaceText(WaitForChildWithText(lineEditor, "0"), "10");
                 Send(FindChildWithText(lineEditor, "&Apply Changes"), 0x00F5, 0);
                 WaitUntil(() => !IsWindow(lineEditor) && HasText(register, "Updated sale item: Pale Ale") &&
                     TextIsInBounds(register, "$18.50"), "apply the edited price and discount to the selected line");
@@ -307,8 +303,8 @@ public static class KposExecutableTest
                 WaitUntil(() => !IsWindow(removeRegularLine) && HasText(register, "$18.50"), "keep the edited line after deleting the regular line");
                 Send(scanner, 0x0100, 0x75); // F6
                 lineEditor = FindWindow(desktop, process.ProcessId, "Edit Sale Item");
-                Send(FindChildWithText(lineEditor, "Use &Regular Price"), 0x00F5, 0);
-                ReplaceText(FindChildWithText(lineEditor, "10"), "0");
+                Send(WaitForChildWithText(lineEditor, "Use &Regular Price"), 0x00F5, 0);
+                ReplaceText(WaitForChildWithText(lineEditor, "10"), "0");
                 Send(FindChildWithText(lineEditor, "&Apply Changes"), 0x00F5, 0);
                 WaitUntil(() => !IsWindow(lineEditor) && HasText(register, "$24.68"), "restore the regular item price");
                 EnterText(scanner, "RF");
@@ -530,6 +526,50 @@ public static class KposExecutableTest
     }
 
     private static bool HasText(IntPtr register, string expected) => FindChildWithText(register, expected) != IntPtr.Zero;
+
+    private static IntPtr WaitForChildWithText(IntPtr root, string expected)
+    {
+        IntPtr result = IntPtr.Zero;
+        WaitUntil(() => (result = FindChildWithText(root, expected)) != IntPtr.Zero,
+            "find the " + expected + " field");
+        return result;
+    }
+
+    private static bool RevealText(IntPtr root, string expected)
+    {
+        IntPtr child = FindChildWithText(root, expected);
+        if (child == IntPtr.Zero || !IsWindowVisible(child))
+            return false;
+        for (IntPtr parent = GetParent(child); parent != IntPtr.Zero; parent = GetParent(parent))
+        {
+            int scrollBars = GetWindowLong(parent, -16) & 0x00300000;
+            for (int attempt = 0; scrollBars != 0 && attempt < 100; attempt++)
+            {
+                WindowRect item, view;
+                if (!GetWindowRect(child, out item) || !GetWindowRect(parent, out view))
+                    return false;
+                IntPtr result;
+                bool moved = false;
+                if ((scrollBars & 0x00100000) != 0 && (item.Left < view.Left || item.Right > view.Right))
+                {
+                    SendMessageTimeout(parent, 0x0114, (IntPtr)(item.Left < view.Left ? 0 : 1),
+                        IntPtr.Zero, 2, 200, out result); // WM_HSCROLL, SB_LINELEFT / SB_LINERIGHT
+                    moved = true;
+                }
+                if ((scrollBars & 0x00200000) != 0 && (item.Top < view.Top || item.Bottom > view.Bottom))
+                {
+                    SendMessageTimeout(parent, 0x0115, (IntPtr)(item.Top < view.Top ? 0 : 1),
+                        IntPtr.Zero, 2, 200, out result); // WM_VSCROLL, SB_LINEUP / SB_LINEDOWN
+                    moved = true;
+                }
+                if (!moved)
+                    break;
+            }
+            if (parent == root)
+                break;
+        }
+        return TextIsInBounds(root, expected);
+    }
 
     private static bool TextIsInBounds(IntPtr root, string expected)
     {

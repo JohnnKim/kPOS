@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class OrderForm : Form
+internal sealed class OrderForm : PosForm
 {
     private readonly RegisterData data;
     private readonly DateOnly businessDay;

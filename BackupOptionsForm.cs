@@ -2,7 +2,7 @@ using System.IO.Compression;
 
 namespace Kpos;
 
-internal sealed class BackupOptionsForm : Form
+internal sealed class BackupOptionsForm : PosForm
 {
     private readonly CheckBox database = Choice("Full register &database (restorable)", isChecked: true);
     private readonly CheckBox archives = Choice("Previously saved end of day &archives");
@@ -55,7 +55,7 @@ internal sealed class BackupOptionsForm : Form
         layout.Controls.Add(source, 0, 1);
 
         var csv = new GroupBox { Text = "CSV reports", Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(10) };
-        var reportGrid = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 7 };
+        var reportGrid = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 8 };
         reportGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         reportGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         (RecordReport Report, string Name)[] types =
@@ -80,15 +80,15 @@ internal sealed class BackupOptionsForm : Form
             foreach (CheckBox box in reports.Values)
                 box.Checked = select;
         };
-        reportGrid.Controls.Add(all, 0, 4);
-        reportGrid.Controls.Add(dateLimit, 1, 4);
+        reportGrid.Controls.Add(all, 0, 5);
+        reportGrid.Controls.Add(dateLimit, 1, 5);
 
         var dates = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false };
         dates.Controls.AddRange([LabelFor("&From"), from, LabelFor("Thro&ugh"), through]);
-        reportGrid.Controls.Add(dates, 0, 5);
+        reportGrid.Controls.Add(dates, 0, 6);
         reportGrid.SetColumnSpan(dates, 2);
         var dateNote = PosView.Label("The catalog and database always contain all dates.", 10, color: PosView.Muted);
-        reportGrid.Controls.Add(dateNote, 0, 6);
+        reportGrid.Controls.Add(dateNote, 0, 7);
         reportGrid.SetColumnSpan(dateNote, 2);
         csv.Controls.Add(reportGrid);
         layout.Controls.Add(csv, 0, 2);

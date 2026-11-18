@@ -1,6 +1,6 @@
 namespace Kpos;
 
-internal sealed class CashCountForm : Form
+internal sealed class CashCountForm : PosForm
 {
     public decimal Counted { get; private set; }
 

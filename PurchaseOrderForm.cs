@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class PurchaseOrderForm : Form
+internal sealed class PurchaseOrderForm : PosForm
 {
     private readonly RegisterData data;
     private readonly IReadOnlyList<OrderItem> draft;
@@ -58,8 +58,8 @@ internal sealed class PurchaseOrderForm : Form
         var addVendor = PosView.Button("&New Distributor", size: 10);
         list.Controls.Add(addVendor, 0, 2);
         layout.Controls.Add(PosView.Frame(list, new Padding(8)), 0, 1);
-        layout.Controls.Add(PosView.Frame(business.Layout("Business / Ship To"), new Padding(8)), 1, 1);
-        layout.Controls.Add(PosView.Frame(vendor.Layout("Distributor Details"), new Padding(8)), 2, 1);
+        layout.Controls.Add(PosView.Frame(PosView.Scroll(business.Layout("Business / Ship To")), new Padding(8)), 1, 1);
+        layout.Controls.Add(PosView.Frame(PosView.Scroll(vendor.Layout("Distributor Details")), new Padding(8)), 2, 1);
 
         var options = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         options.Controls.AddRange([Caption("Order number"), number, Caption("Requested delivery"), delivery, Caption("Notes"), notes]);
@@ -232,7 +232,8 @@ internal sealed class ContactFields(string nameLabel, string addressLabel, strin
 {
     private readonly TextBox[] fields = Enumerable.Range(0, 6).Select(i => new TextBox
     {
-        Dock = DockStyle.Fill, MaxLength = i == 4 ? 450 : 110, Multiline = i == 4, Height = i == 4 ? 59 : 26
+        Dock = DockStyle.Fill, MaxLength = i == 4 ? 450 : 110, Multiline = i == 4, Height = i == 4 ? 59 : 26,
+        ScrollBars = i == 4 ? ScrollBars.Both : ScrollBars.None, WordWrap = false
     }).ToArray();
 
     public void Set(OrderContact info)
@@ -249,6 +250,7 @@ internal sealed class ContactFields(string nameLabel, string addressLabel, strin
     {
         string[] labels = [nameLabel, "Contact person", "Phone", "Email", addressLabel, accountLabel];
         var layout = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1 };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.Controls.Add(PosView.Label(title, 14, FontStyle.Bold));
         for (int i = 0; i < fields.Length; i++)
         {

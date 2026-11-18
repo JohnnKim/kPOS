@@ -60,7 +60,7 @@ internal sealed partial class RegisterData
     }
 }
 
-internal sealed class TrainingResetForm : Form
+internal sealed class TrainingResetForm : PosForm
 {
     private readonly DateTimePicker day = new() { Width = 130, Format = DateTimePickerFormat.Short, AccessibleName = "Business date" };
     private readonly TextBox confirmation = new() { Width = 160, AccessibleName = "Type the business date", MaxLength = 10 };

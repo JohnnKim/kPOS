@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed class RegisterForm : Form
+internal sealed class RegisterForm : PosForm
 {
     private readonly RegisterData data;
     private readonly RegisterFolders folders;
@@ -80,7 +80,7 @@ internal sealed class RegisterForm : Form
         AutoScaleMode = AutoScaleMode.Dpi;
         Text = "kPOS - Sales Entry (Training)";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(1280, 780);
+        ClientSize = new Size(1280, 740);
         MinimumSize = new Size(780, 515);
         if (data.StartMaximized)
             WindowState = FormWindowState.Maximized;
