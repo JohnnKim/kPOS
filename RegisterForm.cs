@@ -342,7 +342,7 @@ internal sealed class RegisterForm : Form
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         for (int row = 0; row < (tilesToShow.Length + 1) / 2; row++)
-            tiles.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            tiles.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
         for (int i = 0; i < tilesToShow.Length; i++)
         {
             var tile = new TableLayoutPanel
@@ -350,17 +350,19 @@ internal sealed class RegisterForm : Form
                 Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1,
                 BackColor = PosView.Light, Margin = new Padding(2, 1, 2, 1)
             };
-            tile.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tile.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56));
             tile.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            tile.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             var key = PosView.Label(tilesToShow[i].Key, 10, FontStyle.Bold, Color.White);
+            key.AutoSize = false;
             key.Dock = DockStyle.Fill;
             key.TextAlign = ContentAlignment.MiddleCenter;
             key.BackColor = PosView.Navy;
             key.Margin = new Padding(0);
-            key.Padding = new Padding(5, 2, 5, 2);
-            key.MinimumSize = new Size(34, 0);
             var action = PosView.Label(tilesToShow[i].Action, 10);
-            action.Anchor = AnchorStyles.Left;
+            action.Dock = DockStyle.Fill;
+            action.TextAlign = ContentAlignment.MiddleLeft;
+            action.Margin = new Padding(5, 0, 3, 0);
             tile.Controls.Add(key, 0, 0);
             tile.Controls.Add(action, 1, 0);
             tiles.Controls.Add(tile, i % 2, i / 2);
