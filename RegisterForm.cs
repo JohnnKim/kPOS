@@ -49,7 +49,7 @@ internal sealed class RegisterForm : PosForm
     private readonly System.Windows.Forms.Timer legalAgeTimer = new() { Interval = 30000 };
     private readonly Label discounts = CreateAmountLabel();
     private readonly Label tax = CreateAmountLabel();
-    private readonly Label totalDue = PosView.BannerAmount("", 43);
+    private readonly Label totalDue = PosView.BannerAmount("", 58);
     private readonly Label totalCaption = PosView.Label("TOTAL DUE", 14, FontStyle.Bold, Color.White);
     private readonly Panel totalBanner = new()
     {
@@ -60,6 +60,7 @@ internal sealed class RegisterForm : PosForm
     private readonly Label lastChange = CreateAmountLabel();
     private bool nextItemIsCase;
     private bool exporting;
+    public string? RequestedDirectory { get; private set; }
 
     public RegisterForm(RegisterData data, RegisterFolders folders)
     {
@@ -93,8 +94,8 @@ internal sealed class RegisterForm : PosForm
             Dock = DockStyle.Fill, Padding = new Padding(17, 11, 17, 14),
             ColumnCount = 2, RowCount = 4
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -174,7 +175,12 @@ internal sealed class RegisterForm : PosForm
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        if (e.CloseReason == CloseReason.UserClosing && sale.Lines.Count > 0)
+        if (exporting)
+        {
+            status.Text = "Wait for the export to finish before closing kPOS.";
+            e.Cancel = true;
+        }
+        else if (e.CloseReason == CloseReason.UserClosing && sale.Lines.Count > 0)
             e.Cancel = !Confirm("Exit Sales Entry and discard the current sale?", "Exit Sales Entry");
         base.OnFormClosing(e);
     }
@@ -239,12 +245,17 @@ internal sealed class RegisterForm : PosForm
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var title = PosView.Label("kPOS", 20, FontStyle.Bold, Color.White);
+        var title = PosView.Label("kPOS", 26, FontStyle.Bold, Color.White);
         title.Anchor = AnchorStyles.Left;
-        legalAge.Font = PosView.Text(14, FontStyle.Bold);
+        legalAge.Font = PosView.Text(18, FontStyle.Bold);
         legalAge.ForeColor = Color.White;
         legalAge.Anchor = AnchorStyles.Right;
-        header.Controls.Add(title, 0, 0);
+        var identity = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, BackColor = PosView.Navy };
+        var version = PosView.Label($"v{ReleaseVersion.RunningVersion}", 9, color: Color.LightGray);
+        version.Anchor = AnchorStyles.Bottom;
+        version.Margin = new Padding(8, 16, 0, 0);
+        identity.Controls.AddRange([title, version]);
+        header.Controls.Add(identity, 0, 0);
         header.Controls.Add(legalAge, 1, 0);
         return header;
     }
@@ -346,12 +357,12 @@ internal sealed class RegisterForm : PosForm
         var section = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 2 };
         section.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         section.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        section.Controls.Add(PosView.Label("Register Keys", 11, FontStyle.Bold), 0, 0);
+        section.Controls.Add(PosView.Label("Register Keys", 14, FontStyle.Bold), 0, 0);
         var tiles = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         for (int row = 0; row < (tilesToShow.Length + 1) / 2; row++)
-            tiles.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+            tiles.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
         for (int i = 0; i < tilesToShow.Length; i++)
         {
             var tile = new TableLayoutPanel
@@ -359,16 +370,16 @@ internal sealed class RegisterForm : PosForm
                 Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1,
                 BackColor = PosView.Light, Margin = new Padding(2, 1, 2, 1)
             };
-            tile.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56));
+            tile.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
             tile.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             tile.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            var key = PosView.Label(tilesToShow[i].Key, 10, FontStyle.Bold, Color.White);
+            var key = PosView.Label(tilesToShow[i].Key, 12, FontStyle.Bold, Color.White);
             key.AutoSize = false;
             key.Dock = DockStyle.Fill;
             key.TextAlign = ContentAlignment.MiddleCenter;
             key.BackColor = PosView.Navy;
             key.Margin = new Padding(0);
-            var action = PosView.Label(tilesToShow[i].Action, 10);
+            var action = PosView.Label(tilesToShow[i].Action, 12);
             action.Dock = DockStyle.Fill;
             action.TextAlign = ContentAlignment.MiddleLeft;
             action.Margin = new Padding(5, 0, 3, 0);
@@ -810,7 +821,7 @@ internal sealed class RegisterForm : PosForm
 
     private void ViewSettings()
     {
-        using var dialog = new SettingsForm(data, folders, registerIdle: sale.Lines.Count == 0 && !exporting);
+        using var dialog = new SettingsForm(data, folders, registerIdle: sale.Lines.Count == 0 && !exporting && !OwnedForms.OfType<HomeHostForm>().Any());
         DialogResult result = dialog.ShowDialog(this);
         if (dialog.HistoryReset)
         {
@@ -821,6 +832,12 @@ internal sealed class RegisterForm : PosForm
             return;
         if (dialog.RestartForUpdate)
         {
+            Close();
+            return;
+        }
+        if (dialog.RequestedDirectory is string destination)
+        {
+            RequestedDirectory = destination;
             Close();
             return;
         }

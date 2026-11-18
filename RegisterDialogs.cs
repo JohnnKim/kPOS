@@ -93,7 +93,7 @@ internal sealed class ProductListForm : PosForm
                     ReloadProducts();
                     int index = Array.IndexOf(matches, added);
                     if (index >= 0)
-                        grid.CurrentCell = grid.Rows[index].Cells[0];
+                        grid.CurrentCell = grid.Rows[index].Cells["Description"];
                 }
             };
             footer.Controls.Add(create);
@@ -179,6 +179,10 @@ internal sealed class ProductListForm : PosForm
         grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
         grid.Columns["Code"]!.Width = 112;
         grid.Columns["Barcode"]!.Width = 136;
+        grid.Columns["Code"]!.Visible = false;
+        grid.Columns["Barcode"]!.Visible = false;
+        if (grid.Columns["OnHand"] is DataGridViewColumn onHand)
+            onHand.DisplayIndex = 3;
         grid.Columns["Description"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
         grid.Columns["Description"]!.MinimumWidth = 200;
         grid.Columns["Description"]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
@@ -273,7 +277,7 @@ internal sealed class ProductListForm : PosForm
 
         grid.RowCount = matches.Length;
         if (matches.Length > 0)
-            grid.CurrentCell = grid.Rows[0].Cells[0];
+            grid.CurrentCell = grid.Rows[0].Cells["Description"];
         grid.Invalidate();
         grid.ResetScrollPosition();
         matchCount.Text = tooShort ? $"{products.Count:N0} items · Type 2 characters"

@@ -153,7 +153,7 @@ internal static class UpdateInstaller
         using var child = Process.Start(start) ?? throw new Win32Exception("The kPOS process could not start.");
     }
 
-    private static bool WaitForExit(int id, long started, int milliseconds)
+    internal static bool WaitForExit(int id, long started, int milliseconds)
     {
         try
         {

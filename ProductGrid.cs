@@ -80,7 +80,8 @@ internal sealed class ProductGrid : DataGridView, IMessageFilter
         if (IsHandleCreated && RowCount > 0 && DisplayedRowCount(false) > 0)
         {
             FirstDisplayedScrollingRowIndex = 0;
-            FirstDisplayedScrollingColumnIndex = 0;
+            FirstDisplayedScrollingColumnIndex = Columns.Cast<DataGridViewColumn>()
+                .Where(column => column.Visible && !column.Frozen).OrderBy(column => column.DisplayIndex).First().Index;
         }
         HorizontalScrollingOffset = 0;
     }
@@ -92,7 +93,10 @@ internal sealed class ProductGrid : DataGridView, IMessageFilter
             return false;
 
         int delta = (short)(value >> 16);
-        bool horizontal = message == HorizontalWheelMessage || (value & 0x0004) != 0; // MK_SHIFT
+        bool overHorizontalBar = Controls.OfType<HScrollBar>().Any(bar => bar.Visible &&
+            bar.ClientRectangle.Contains(bar.PointToClient(Cursor.Position)));
+        bool horizontal = message == HorizontalWheelMessage || (value & 0x0004) != 0 || overHorizontalBar ||
+            Controls.OfType<HScrollBar>().Any(bar => bar.Visible) && !Controls.OfType<VScrollBar>().Any(bar => bar.Visible);
         if (horizontal)
         {
             int direction = message == HorizontalWheelMessage ? delta : -delta;

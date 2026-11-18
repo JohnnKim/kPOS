@@ -45,7 +45,7 @@ internal sealed class ProductEditorForm : PosForm
         barcodeInput.Text = barcode;
         barcodeInput.ReadOnly = barcode.Length > 0;
         AddField(barcodeInput.ReadOnly ? "Scanned barcode" : "Barcode", barcodeInput, 0);
-        AddField("Item code", code, 1);
+        AddField("Item code (optional)", code, 1);
         AddField("Product name", description, 2);
         AddField("Size / pack", size, 3);
         AddField("Unit price ($)", unitPrice, 4);
@@ -70,7 +70,7 @@ internal sealed class ProductEditorForm : PosForm
         AcceptButton = saveButton;
         CancelButton = cancel;
 
-        code.Text = existing?.Code ?? barcode;
+        code.Text = existing is not null && existing.Code != existing.Barcode ? existing.Code : "";
         description.Text = existing?.Description ?? "";
         size.Text = existing?.Size ?? "";
         unitPrice.Text = existing?.UnitPrice.ToString("F2", CultureInfo.InvariantCulture) ?? "";
@@ -105,8 +105,6 @@ internal sealed class ProductEditorForm : PosForm
         {
             if (string.IsNullOrWhiteSpace(barcodeInput.Text))
                 ShowProblem("Enter a barcode.", barcodeInput);
-            else if (string.IsNullOrWhiteSpace(code.Text))
-                ShowProblem("Enter an item code.", code);
             else if (string.IsNullOrWhiteSpace(description.Text))
                 ShowProblem("Enter a product name.", description);
             else if (!Sale.TryParseMoney(unitPrice.Text, out decimal unit))
@@ -131,7 +129,8 @@ internal sealed class ProductEditorForm : PosForm
                 }
 
                 var product = new Product(
-                    code.Text.Trim(), barcodeInput.Text.Trim(), description.Text.Trim(), size.Text.Trim(),
+                    string.IsNullOrWhiteSpace(code.Text) ? barcodeInput.Text.Trim() : code.Text.Trim(),
+                    barcodeInput.Text.Trim(), description.Text.Trim(), size.Text.Trim(),
                     unit, units, price, taxable.Checked);
                 string? problem;
                 try

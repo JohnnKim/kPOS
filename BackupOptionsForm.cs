@@ -40,7 +40,7 @@ internal sealed class BackupOptionsForm : PosForm
         BackColor = PosView.Canvas;
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, Padding = new Padding(14), ColumnCount = 1, RowCount = 5, AutoScroll = true
+            Dock = DockStyle.Top, Padding = new Padding(14), ColumnCount = 1, RowCount = 5, AutoSize = true
         };
         for (int i = 0; i < layout.RowCount; i++)
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));

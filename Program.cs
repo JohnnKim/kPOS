@@ -4,6 +4,17 @@ namespace Kpos;
 
 internal static class Program
 {
+    internal static string? InstallationExecutable
+    {
+        get
+        {
+#if KPOS_SINGLE_FILE
+            return Environment.ProcessPath;
+#else
+            return null;
+#endif
+        }
+    }
     [STAThread]
     private static void Main(string[] args)
     {
@@ -27,23 +38,54 @@ internal static class Program
                 UpdateInstaller.CleanAfterExit(args[3], processId, started);
         }
 
-        string settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "kPOS", "installation-folder.txt");
+        string? overridePath = Environment.GetEnvironmentVariable("KPOS_DATA_DIRECTORY");
+        string settings = args.Contains("--setup") && !string.IsNullOrWhiteSpace(overridePath)
+            ? Path.Combine(overridePath, "installation-folder.txt") : RegisterInstallation.SettingsPath;
+        if (args.Length == 5 && args[0] == "--open-installed" && int.TryParse(args[1], out int parent) && parent > 0 &&
+            long.TryParse(args[2], out long parentStarted) && parentStarted > 0)
+        {
+            try
+            {
+                if (!UpdateInstaller.WaitForExit(parent, parentStarted, 30000))
+                    throw new IOException("The previous kPOS process is still closing. Open the installed copy again after it exits.");
+                overridePath = args[3];
+                settings = args[4];
+            }
+            catch (Exception error) when (error is IOException or System.ComponentModel.Win32Exception)
+            { MessageBox.Show(error.Message, "kPOS could not reopen"); return; }
+        }
+        if (args.Contains("--setup"))
+        {
+            using var setup = new InstallationForm(settings, InstallationExecutable, initialDirectory: overridePath);
+            if (setup.ShowDialog() != DialogResult.OK) return;
+            overridePath = setup.InstalledFolders!.Root;
+            try { if (RegisterInstallation.StartInstalledIfDifferent(setup.InstalledFolders, settings)) return; }
+            catch (Exception error) when (error is IOException or System.ComponentModel.Win32Exception)
+            { MessageBox.Show(error.Message, "Open kPOS from " + setup.InstalledFolders.Root); return; }
+        }
+        RunRegister(settings, overridePath);
+    }
+
+    private static void RunRegister(string settings, string? overridePath)
+    {
         RegisterData? data = null;
         RegisterFolders? folders = null;
+        RegisterSession? session = null;
         string? previousExecutable = null;
-        try
+        while (true)
         {
-            string? overridePath = Environment.GetEnvironmentVariable("KPOS_DATA_DIRECTORY");
-            folders = RegisterFolders.Choose(settings, overridePath, out bool install);
-            if (folders is null)
-                return;
+            try
+            {
+                bool installed = false;
+                if (folders is null) folders = RegisterFolders.Choose(settings, overridePath, out installed);
+                if (folders is null)
+                    return;
+                if (installed && RegisterInstallation.StartInstalledIfDifferent(folders, settings)) return;
 
-            folders.Create();
-            if (install)
-                folders.Install(settings);
+                folders.Create();
+                session = RegisterSession.Open(folders);
 
-            folders.BackUpBeforeSchemaUpgrade();
+                folders.BackUpBeforeSchemaUpgrade();
 #if KPOS_SINGLE_FILE
             if (Environment.ProcessPath is string executable)
             {
@@ -60,37 +102,57 @@ internal static class Program
                     MessageBox.Show(
                         $"The kPOS application file could not be installed or updated. {help}\n\n{folders.Root}\n{error.Message}",
                         "kPOS installation failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    session.Dispose();
                     return;
                 }
             }
 #endif
 
-            data = new RegisterData(folders.Database);
-            if (install)
-                folders.Remember(settings);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or SqliteException or InvalidDataException)
-        {
-            string details = error.Message;
-            if (data is null && previousExecutable is not null)
+                data = new RegisterData(folders.Database);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or SqliteException or InvalidDataException or System.ComponentModel.Win32Exception)
             {
-                try
+                string details = error.Message;
+                if (data is null && previousExecutable is not null)
                 {
-                    folders!.RestoreExecutable(previousExecutable);
+                    try
+                    {
+                        folders!.RestoreExecutable(previousExecutable);
+                    }
+                    catch (Exception restoreError) when (restoreError is IOException or UnauthorizedAccessException)
+                    {
+                        details += $"\nThe previous executable is at {previousExecutable}. {restoreError.Message}";
+                    }
                 }
-                catch (Exception restoreError) when (restoreError is IOException or UnauthorizedAccessException)
+                data?.Dispose();
+                session?.Dispose();
+                MessageBox.Show(
+                    $"The register could not open its data folder.\n\n{folders?.Root}\n{details}",
+                    "kPOS could not start", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            using (session)
+            {
+                string? destination;
+                using (data)
+                using (var register = new RegisterForm(data, folders))
                 {
-                    details += $"\nThe previous executable is at {previousExecutable}. {restoreError.Message}";
+                    Application.Run(register);
+                    destination = register.RequestedDirectory;
+                }
+                data = null;
+                previousExecutable = null;
+                if (destination is null) return;
+                using var move = new DirectoryMoveForm(folders, destination, settings);
+                if (move.ShowDialog() == DialogResult.OK && move.Destination is RegisterFolders moved)
+                {
+                    folders = moved;
+                    try { if (RegisterInstallation.StartInstalledIfDifferent(moved, settings)) return; }
+                    catch (Exception error) when (error is IOException or System.ComponentModel.Win32Exception)
+                    { MessageBox.Show(error.Message, "Open kPOS from " + moved.Root); return; }
                 }
             }
-            data?.Dispose();
-            MessageBox.Show(
-                $"The register could not open its data folder.\n\n{folders?.Root}\n{details}",
-                "kPOS could not start", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
         }
-
-        using (data)
-            Application.Run(new RegisterForm(data, folders));
     }
 }

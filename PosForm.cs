@@ -12,14 +12,22 @@ internal class PosForm : Form
 
     public PosForm()
     {
+        HorizontalWheelRouter.Install();
+        DoubleBuffered = true;
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = PosView.Text(11);
     }
 
-    protected override void OnLoad(EventArgs e)
+    protected override void SetVisibleCore(bool value)
     {
-        base.OnLoad(e);
+        if (value && !prepared)
+            PrepareLayout();
+        base.SetVisibleCore(value);
+    }
+
+    private void PrepareLayout()
+    {
         if (prepared)
             return;
         prepared = true;
@@ -39,13 +47,14 @@ internal class PosForm : Form
         AutoScroll = false;
         Size minimum = MinimumSize;
         MinimumSize = Size.Empty;
-        SuspendLayout();
+        PosView.SuspendLayoutTree(this);
         Scale(new SizeF(PosView.CompactScale, PosView.CompactScale));
         if (!ScrollWholeWindow)
         {
             MinimumSize = new Size((int)Math.Round(minimum.Width * PosView.CompactScale),
                 (int)Math.Round(minimum.Height * PosView.CompactScale));
-            ResumeLayout(true);
+            PosView.ResumeLayoutTree(this);
+            PerformLayout();
             FitWorkingArea();
             WindowState = state;
             return;
@@ -58,13 +67,23 @@ internal class PosForm : Form
         foreach (Control control in body)
         {
             canvas.Controls.Add(control);
-            control.Layout += (_, _) => UpdateCanvas();
         }
         viewport.Controls.Add(canvas);
         Controls.Add(viewport);
         viewport.BringToFront();
         viewport.ClientSizeChanged += (_, _) => UpdateCanvas();
-        ResumeLayout(true);
+        PosView.ResumeLayoutTree(this);
+        // The old parent was suspended before its controls moved to the canvas.
+        canvas.ResumeLayout(false);
+        PerformLayout();
+        // Measure intrinsic content once. Re-measuring nested AutoSize tables on every
+        // Layout event caused repeated full-tree layout while windows were opening.
+        foreach (Control control in body.Where(control => control is not (TextBoxBase or DataGridView or ListControl)))
+        {
+            Size preferred = control.GetPreferredSize(new Size(minimumCanvas.Width, 0));
+            minimumCanvas = new Size(Math.Max(minimumCanvas.Width, preferred.Width),
+                Math.Max(minimumCanvas.Height, preferred.Height + 4));
+        }
         FitContent();
         WindowState = state;
     }
@@ -77,13 +96,21 @@ internal class PosForm : Form
 
         e.Control.Scale(new SizeF(PosView.CompactScale, PosView.CompactScale));
         canvas.Controls.Add(e.Control);
-        e.Control.Layout += (_, _) => UpdateCanvas();
         UpdateCanvas();
     }
 
     protected override void OnShown(EventArgs e)
     {
-        FitContent();
+        if (canvas is not null)
+        {
+            int height = canvas.Controls.Cast<Control>().Where(control => control.AutoSize)
+                .Select(control => control.Bottom + control.Margin.Bottom + 4).DefaultIfEmpty(0).Max();
+            if (height > minimumCanvas.Height)
+            {
+                minimumCanvas.Height = height;
+                FitContent();
+            }
+        }
         base.OnShown(e);
     }
 
@@ -108,7 +135,7 @@ internal class PosForm : Form
         if (WindowState != FormWindowState.Normal)
             return;
 
-        Rectangle work = Screen.FromControl(this).WorkingArea;
+        Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
         Size = new Size(Math.Min(Width, work.Width), Math.Min(Height, work.Height));
         Location = new Point(Math.Clamp(Left, work.Left, work.Right - Width),
             Math.Clamp(Top, work.Top, work.Bottom - Height));
@@ -125,7 +152,7 @@ internal class PosForm : Form
             return;
         }
 
-        Rectangle work = Screen.FromControl(this).WorkingArea;
+        Rectangle work = Screen.FromRectangle(Bounds).WorkingArea;
         int width = ClientSize.Width;
         if (canvas.Width <= width + SystemInformation.VerticalScrollBarWidth * 2)
             width = canvas.Width;
@@ -144,18 +171,11 @@ internal class PosForm : Form
         updatingLayout = true;
         try
         {
-            Size required = minimumCanvas;
-            foreach (Control control in canvas.Controls)
-            {
-                if (control is TextBoxBase or DataGridView or ListControl)
-                    continue;
-                Size preferred = control.GetPreferredSize(new Size(minimumCanvas.Width, 0));
-                required.Width = Math.Max(required.Width, preferred.Width);
-                required.Height = Math.Max(required.Height, preferred.Height);
-            }
             // Keep the existing arrangement on a scrollable surface when the window becomes smaller.
-            canvas.Size = new Size(Math.Max(required.Width, viewport.ClientSize.Width),
-                Math.Max(required.Height, viewport.ClientSize.Height));
+            Size size = new(Math.Max(minimumCanvas.Width, viewport.ClientSize.Width),
+                Math.Max(minimumCanvas.Height, viewport.ClientSize.Height));
+            if (canvas.Size != size)
+                canvas.Size = size;
         }
         finally
         {

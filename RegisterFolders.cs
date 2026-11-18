@@ -32,29 +32,19 @@ internal sealed class RegisterFolders(string root)
                 "Locate kPOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
-        using var picker = new FolderBrowserDialog
-        {
-            Description = "Choose a folder for kPOS and its records",
-            UseDescriptionForTitle = true,
-            InitialDirectory = Path.GetDirectoryName(settings)!
-        };
-        Directory.CreateDirectory(picker.InitialDirectory);
-        if (picker.ShowDialog() != DialogResult.OK)
-            return null;
-
-        var folders = new RegisterFolders(picker.SelectedPath);
-        if (File.Exists(settings) && !File.Exists(folders.Database))
-            throw new FileNotFoundException("The chosen folder does not contain an existing kPOS database.", folders.Database);
-
-        install = true;
-        return folders;
+        using var setup = new InstallationForm(settings, Program.InstallationExecutable, locate: File.Exists(settings));
+        install = setup.ShowDialog() == DialogResult.OK;
+        return install ? setup.InstalledFolders : null;
     }
 
     public void Install(string settings)
     {
         string legacy = Path.Combine(Path.GetDirectoryName(settings)!, "register.db");
         if (!File.Exists(Database) && File.Exists(legacy))
+        {
+            using var guard = new FileStream(legacy, FileMode.Open, FileAccess.Read, FileShare.Read);
             RegisterData.CopyDatabase(legacy, Database);
+        }
     }
 
     public void BackUpBeforeSchemaUpgrade()
@@ -126,6 +116,7 @@ internal sealed class RegisterFolders(string root)
 
     public void Remember(string settings)
     {
+        Directory.CreateDirectory(Path.GetDirectoryName(settings)!);
         string temporary = settings + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {

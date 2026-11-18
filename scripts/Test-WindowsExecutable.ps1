@@ -253,7 +253,7 @@ public static class KposExecutableTest
                 IntPtr catalog = FindWindow(desktop, process.ProcessId, "Product List");
                 WaitUntil(() => HasText(catalog, "6 items") && RevealText(catalog, "&Delete Product") &&
                     RevealText(catalog, "&Add Item"), "show and scroll to the catalog actions");
-                if (!SetWindowPos(catalog, IntPtr.Zero, 0, 0, 800, 360, 0x0016))
+                if (!SetWindowPos(catalog, IntPtr.Zero, 0, 0, 620, 360, 0x0016))
                     throw new Win32Exception();
                 IntPtr horizontalBar = FindTableScrollBar(catalog, horizontal: true);
                 IntPtr verticalBar = FindTableScrollBar(catalog, horizontal: false);
@@ -374,7 +374,7 @@ public static class KposExecutableTest
         }
     }
 
-    public static void RunHome(string executable)
+    public static void RunHome(string executable, bool setup = false)
     {
         string desktopName = "kPOS-home-test-" + Guid.NewGuid().ToString("N");
         IntPtr desktop = CreateDesktop(desktopName, null, IntPtr.Zero, 0, 0x1ff, IntPtr.Zero);
@@ -382,16 +382,46 @@ public static class KposExecutableTest
         try
         {
             var startup = new StartupInfo { Size = Marshal.SizeOf(typeof(StartupInfo)), Desktop = desktopName };
-            var command = new StringBuilder("\"" + executable + "\" --home");
+            var command = new StringBuilder("\"" + executable + (setup ? "\" --setup" : "\" --home"));
             ProcessInfo process;
             if (!CreateProcess(executable, command, IntPtr.Zero, IntPtr.Zero, false, 0, IntPtr.Zero,
                 Path.GetDirectoryName(executable), ref startup, out process)) throw new Win32Exception();
             try
             {
-                IntPtr home = FindWindow(desktop, process.ProcessId, "kPOS — Home Terminal");
-                WaitUntil(() => HasText(home, "Connect / Refresh") && HasText(home, "Request Order") &&
-                    HasText(home, "Certificate SHA256"), "start the independent home terminal without register setup");
-                Send(home, 0x0010, 0);
+                IntPtr home;
+                if (setup)
+                {
+                    IntPtr installer = FindWindow(desktop, process.ProcessId, "kPOS Setup");
+                    WaitUntil(() => ContainsText(installer, "Welcome to kPOS"), "explain the installation before choosing a folder");
+                    Send(WaitForChildWithText(installer, "&Next"), 0x00F5, 0);
+                    WaitUntil(() => HasText(installer, Environment.GetEnvironmentVariable("KPOS_DATA_DIRECTORY")), "show the selected installation folder");
+                    Send(WaitForChildWithText(installer, "&Install"), 0x00F5, 0);
+                    WaitUntil(() => ContainsText(installer, "kPOS is ready."), "finish the guided installation");
+                    Send(WaitForChildWithText(installer, "&Finish"), 0x00F5, 0);
+                    home = FindWindow(desktop, 0, "kPOS - Sales Entry (Training)");
+                    WaitUntil(() => HasText(home, "Ready to scan"), "open the register after setup");
+                }
+                else
+                {
+                    home = FindWindow(desktop, process.ProcessId, "kPOS — Home Terminal");
+                    WaitUntil(() => HasText(home, "Connect / Refresh") && HasText(home, "Request Order") &&
+                        HasText(home, "Certificate SHA256"), "start the independent home terminal without register setup");
+                }
+                if (setup)
+                {
+                    string installed = Path.Combine(Environment.GetEnvironmentVariable("KPOS_DATA_DIRECTORY"), "kPOS.exe");
+                    uint childId;
+                    GetWindowThreadProcessId(home, out childId);
+                    using (var installedProcess = Process.GetProcessById((int)childId))
+                    {
+                        if (!string.Equals(installedProcess.MainModule.FileName, installed, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException("Setup did not open the installed application.");
+                        Send(home, 0x0010, 0);
+                        if (!installedProcess.WaitForExit(5000))
+                            throw new InvalidOperationException("The installed application did not close cleanly.");
+                    }
+                }
+                else Send(home, 0x0010, 0);
                 uint exit;
                 if (WaitForSingleObject(process.Process, 5000) != 0 ||
                     !GetExitCodeProcess(process.Process, out exit) || exit != 0)
@@ -583,6 +613,20 @@ public static class KposExecutableTest
     }
 
     private static bool HasText(IntPtr register, string expected) => FindChildWithText(register, expected) != IntPtr.Zero;
+
+    private static bool ContainsText(IntPtr root, string expected)
+    {
+        bool found = false;
+        EnumChildWindows(root, (window, _) =>
+        {
+            var text = new StringBuilder(2048);
+            IntPtr result;
+            SendMessageTimeout(window, 0x000d, (IntPtr)text.Capacity, text, 2, 200, out result);
+            found = text.ToString().Contains(expected);
+            return !found;
+        }, IntPtr.Zero);
+        return found;
+    }
 
     private static IntPtr WaitForChildWithText(IntPtr root, string expected)
     {
@@ -827,6 +871,7 @@ try {
     if (Test-Path -LiteralPath (Join-Path $smokeData.FullName 'Database')) {
         throw 'The home terminal must not create a register database.'
     }
+    if (-not $PreviousExecutable) { [KposExecutableTest]::RunHome($source, $true) }
     $installed = Join-Path $smokeData.FullName 'kPOS.exe'
     $previous = "$installed.previous"
     if ($PreviousExecutable) {
@@ -872,6 +917,8 @@ finally {
             Remove-Item -LiteralPath $path -Force
         }
     }
+    $setupPointer = Join-Path $smokeData.FullName 'installation-folder.txt'
+    if (Test-Path -LiteralPath $setupPointer) { Remove-Item -LiteralPath $setupPointer }
     foreach ($name in 'register.db', 'register.db-journal', 'register.db-wal', 'register.db-shm') {
         $path = Join-Path $smokeData.FullName "Database/$name"
         if (Test-Path -LiteralPath $path -PathType Leaf) {

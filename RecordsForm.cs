@@ -210,7 +210,7 @@ internal sealed class RecordsForm : PosForm
             await Task.Run(() =>
             {
                 Directory.CreateDirectory(directory);
-                using var records = new RegisterData(databasePath);
+                using var records = RegisterData.OpenHomeConnection(databasePath);
                 records.ArchiveDay(day, destination);
             });
             if (!IsDisposed)

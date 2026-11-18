@@ -6,6 +6,7 @@ internal sealed class SettingsForm : PosForm
 {
     public bool RestartForUpdate { get; private set; }
     public bool HistoryReset { get; private set; }
+    public string? RequestedDirectory { get; private set; }
 
     public SettingsForm(RegisterData data, RegisterFolders folders, bool registerIdle = true)
     {
@@ -63,7 +64,28 @@ internal sealed class SettingsForm : PosForm
         AddTab("Tax", ("Sales tax rate (%)", rate));
         var path = new TextBox { ReadOnly = true, Text = folders.Root, Dock = DockStyle.Top,
             AccessibleName = "Installation and records folder" };
-        AddTab("Data", (null, PosView.Label("Installation and records folder", 11)), (null, path));
+        var changeDirectory = PosView.Button("Change Directory", size: 11);
+        changeDirectory.Enabled = registerIdle;
+        changeDirectory.Click += (_, _) =>
+        {
+            using var picker = new FolderBrowserDialog { Description = "Choose a new, empty folder for kPOS and all records",
+                UseDescriptionForTitle = true, InitialDirectory = Path.GetDirectoryName(folders.Root)! };
+            if (picker.ShowDialog(this) != DialogResult.OK) return;
+            try
+            {
+                RegisterInstallation.ValidateDestination(folders, picker.SelectedPath);
+                if (MessageBox.Show(this, $"Copy kPOS, the database, and all records to:\n{picker.SelectedPath}\n\nkPOS will reopen in the new folder. The original folder will be kept.",
+                    "Change Directory", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes) return;
+                data.SaveSettings(rate.Value, (int)duration.Value, requireCount.Checked, maximize.Checked,
+                    CurrentKeys(), showKeys.Checked, showChange.Checked);
+                RequestedDirectory = picker.SelectedPath;
+                DialogResult = DialogResult.OK;
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or SqliteException)
+            { MessageBox.Show(this, error.Message, "Directory Could Not Be Changed", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        };
+        AddTab("Data", (null, PosView.Label("Installation and records folder", 11)), (null, path), (null, changeDirectory),
+            (null, IdleMessage("Finish the sale or export and close home-host windows before changing the directory.")));
         var updates = PosView.Button("Check for Updates…", size: 11);
         updates.Enabled = registerIdle;
         updates.Click += (_, _) =>
@@ -152,6 +174,8 @@ internal sealed class SettingsForm : PosForm
             for (int row = 0; row < rows.Length; row++)
             {
                 var (caption, input) = rows[row];
+                if (input is TextBoxBase or UpDownBase && input.Dock == DockStyle.None)
+                    input.MinimumSize = new Size(input.Width, input.MinimumSize.Height);
                 fields.RowStyles.Add(new RowStyle(SizeType.AutoSize));
                 input.Margin = new Padding(3, 4, 3, 4);
                 if (input.Dock == DockStyle.None)

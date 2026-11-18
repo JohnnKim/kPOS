@@ -2,6 +2,18 @@ namespace Kpos;
 
 internal static class PosView
 {
+    internal static void SuspendLayoutTree(Control root)
+    {
+        root.SuspendLayout();
+        foreach (Control child in root.Controls) SuspendLayoutTree(child);
+    }
+
+    internal static void ResumeLayoutTree(Control root)
+    {
+        foreach (Control child in root.Controls) ResumeLayoutTree(child);
+        root.ResumeLayout(root is UpDownBase);
+    }
+
     public const float CompactScale = 0.85f;
     public static readonly Color Canvas = Color.FromArgb(234, 240, 247);
     public static readonly Color Ink = Color.FromArgb(18, 35, 56);
@@ -70,12 +82,13 @@ internal static class PosView
         label.SizeChanged += (_, _) => Fit();
         label.TextChanged += (_, _) => Fit();
         label.DpiChangedAfterParent += (_, _) => Fit();
+        label.HandleCreated += (_, _) => Fit();
         label.Disposed += (_, _) => { fitted?.Dispose(); fullSize.Dispose(); };
         return label;
 
         void Fit()
         {
-            if (label.ClientSize.Width < 1 || label.Text.Length == 0)
+            if (!label.IsHandleCreated || label.ClientSize.Width < 1 || label.Text.Length == 0)
                 return;
             using Graphics graphics = label.CreateGraphics();
             int width = TextRenderer.MeasureText(graphics, label.Text, fullSize, Size.Empty,

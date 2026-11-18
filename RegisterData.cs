@@ -126,6 +126,8 @@ internal sealed partial class RegisterData : IDisposable
 
     private string? SaveProductInTransaction(Product product, Product? original, SqliteTransaction transaction)
     {
+        if (string.IsNullOrWhiteSpace(product.Code))
+            product = product with { Code = product.Barcode };
         if (original is not null && product.Barcode != original.Barcode)
             return "The scanned barcode stays fixed when editing a product.";
 

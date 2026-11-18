@@ -60,6 +60,7 @@ internal sealed class CloseoutForm : PosForm
             AutoSize = true, Dock = DockStyle.Top, ColumnCount = 2, Padding = new Padding(8)
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54));
+        layout.SuspendLayout();
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46));
         for (int row = 0; row < 5; row++)
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -145,14 +146,6 @@ internal sealed class CloseoutForm : PosForm
         Wide(actions, 4);
 
         Controls.Add(layout);
-        Load += (_, _) =>
-        {
-            int frameHeight = Height - ClientSize.Height;
-            int availableHeight = Screen.FromControl(this).WorkingArea.Height - frameHeight;
-            int contentHeight = layout.GetPreferredSize(new Size(ClientSize.Width, 0)).Height;
-            ClientSize = new Size(ClientSize.Width, Math.Min(contentHeight, availableHeight));
-            MinimumSize = new Size(LogicalToDeviceUnits(700), Height);
-        };
         AcceptButton = closeDay;
         CancelButton = dismiss;
         date.ValueChanged += (_, _) => LoadDay();
@@ -166,6 +159,7 @@ internal sealed class CloseoutForm : PosForm
                 fields[Field.Closing].Text = AmountText(dialog.Counted);
         };
         LoadDay();
+        PosView.ResumeLayoutTree(layout);
         ResumeLayout();
 
         void Wide(Control control, int row)
@@ -419,6 +413,7 @@ internal sealed class CloseoutForm : PosForm
     private static TableLayoutPanel Section(int columns)
     {
         var section = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = columns };
+        section.SuspendLayout();
         section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         section.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, columns == 2 ? 142 : 118));
         if (columns == 3)
@@ -426,20 +421,23 @@ internal sealed class CloseoutForm : PosForm
         return section;
     }
 
-    private static TableLayoutPanel Column() => new() { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1 };
+    private static TableLayoutPanel Column()
+    {
+        var column = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 1 };
+        column.SuspendLayout();
+        return column;
+    }
 
     private static void AddSection(TableLayoutPanel column, Control content)
     {
-        var frame = new TableLayoutPanel
-        {
-            ColumnCount = 1, Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            BackColor = Color.White, CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
-            Padding = new Padding(6, 3, 6, 3), Margin = new Padding(3, 2, 3, 2)
-        };
-        content.Dock = DockStyle.Fill;
-        frame.Controls.Add(content, 0, 0);
+        content.Dock = DockStyle.Top;
+        content.BackColor = Color.White;
+        content.Padding = new Padding(6, 3, 6, 3);
+        content.Margin = new Padding(3, 2, 3, 2);
+        content.Paint += (_, e) => e.Graphics.DrawRectangle(Pens.LightGray, 0, 0,
+            Math.Max(0, content.Width - 1), Math.Max(0, content.Height - 1));
         column.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        column.Controls.Add(frame, 0, column.RowCount++);
+        column.Controls.Add(content, 0, column.RowCount++);
     }
 
     private static Label ValueLabel(string text = "")
