@@ -6,6 +6,9 @@ internal class PosForm : Form
     private Panel? canvas;
     private Size minimumCanvas;
     private bool updatingLayout;
+    private bool prepared;
+
+    protected virtual bool ScrollWholeWindow => true;
 
     public PosForm()
     {
@@ -17,8 +20,9 @@ internal class PosForm : Form
     protected override void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
-        if (viewport is not null)
+        if (prepared)
             return;
+        prepared = true;
 
         FormWindowState state = WindowState;
         WindowState = FormWindowState.Normal;
@@ -33,9 +37,19 @@ internal class PosForm : Form
         AutoSize = false;
         ClientSize = natural;
         AutoScroll = false;
+        Size minimum = MinimumSize;
         MinimumSize = Size.Empty;
         SuspendLayout();
         Scale(new SizeF(PosView.CompactScale, PosView.CompactScale));
+        if (!ScrollWholeWindow)
+        {
+            MinimumSize = new Size((int)Math.Round(minimum.Width * PosView.CompactScale),
+                (int)Math.Round(minimum.Height * PosView.CompactScale));
+            ResumeLayout(true);
+            FitWorkingArea();
+            WindowState = state;
+            return;
+        }
         var body = Controls.Cast<Control>().Where(control => control is not MenuStrip).ToArray();
         int menuHeight = Controls.OfType<MenuStrip>().Sum(menu => menu.Height);
         minimumCanvas = new Size(ClientSize.Width, Math.Max(1, ClientSize.Height - menuHeight));
@@ -103,8 +117,13 @@ internal class PosForm : Form
     private void FitContent()
     {
         UpdateCanvas();
-        if (canvas is null || WindowState != FormWindowState.Normal)
+        if (WindowState != FormWindowState.Normal)
             return;
+        if (canvas is null)
+        {
+            FitWorkingArea();
+            return;
+        }
 
         Rectangle work = Screen.FromControl(this).WorkingArea;
         int width = ClientSize.Width;

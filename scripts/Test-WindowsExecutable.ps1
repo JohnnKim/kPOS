@@ -253,6 +253,29 @@ public static class KposExecutableTest
                 IntPtr catalog = FindWindow(desktop, process.ProcessId, "Product List");
                 WaitUntil(() => HasText(catalog, "6 items") && RevealText(catalog, "&Delete Product") &&
                     RevealText(catalog, "&Add Item"), "show and scroll to the catalog actions");
+                if (!SetWindowPos(catalog, IntPtr.Zero, 0, 0, 800, 360, 0x0016))
+                    throw new Win32Exception();
+                IntPtr horizontalBar = FindTableScrollBar(catalog, horizontal: true);
+                IntPtr verticalBar = FindTableScrollBar(catalog, horizontal: false);
+                IntPtr productTable = GetParent(horizontalBar);
+                WaitUntil(() => ScrollPosition(horizontalBar) == 0 && ScrollPosition(verticalBar) == 0,
+                    "open the product table at the top left");
+                Send(productTable, 0x0100, 0x27); // Right
+                WaitUntil(() => ScrollPosition(horizontalBar) > 0, "scroll product columns with the Right arrow");
+                Send(productTable, 0x0100, 0x25); // Left
+                WaitUntil(() => ScrollPosition(horizontalBar) == 0, "scroll product columns with the Left arrow");
+                WindowRect productBounds;
+                GetWindowRect(productTable, out productBounds);
+                int pointer = (((productBounds.Top + productBounds.Bottom) / 2) << 16) |
+                    (((productBounds.Left + productBounds.Right) / 2) & 0xffff);
+                if (!PostMessage(FindTextBox(catalog), 0x020E, (IntPtr)(30 << 16), (IntPtr)pointer))
+                    throw new Win32Exception();
+                WaitUntil(() => ScrollPosition(horizontalBar) > 0, "route fine touchpad scrolling from search to the product table");
+                if (!PostMessage(FindTextBox(catalog), 0x020A, (IntPtr)(-120 << 16), (IntPtr)pointer))
+                    throw new Win32Exception();
+                WaitUntil(() => ScrollPosition(verticalBar) > 0 && TextIsInBounds(catalog, "Search &by") &&
+                    TextIsInBounds(catalog, "&Add Item") && TextIsInBounds(catalog, "Close"),
+                    "scroll product rows while keeping search and actions visible");
                 Send(FindChildWithText(catalog, "&Add Item"), 0x00F5, 0);
                 IntPtr addItem = FindWindow(desktop, process.ProcessId, "Add Product");
                 WaitUntil(() => HasText(addItem, "Barcode"), "open the catalog add editor");
@@ -533,6 +556,33 @@ public static class KposExecutableTest
         WaitUntil(() => (result = FindChildWithText(root, expected)) != IntPtr.Zero,
             "find the " + expected + " field");
         return result;
+    }
+
+    private static IntPtr FindTableScrollBar(IntPtr root, bool horizontal)
+    {
+        IntPtr result = IntPtr.Zero;
+        WaitUntil(() =>
+        {
+            EnumChildWindows(root, (window, _) =>
+            {
+                var name = new StringBuilder(128);
+                GetClassName(window, name, name.Capacity);
+                bool verticalStyle = (GetWindowLong(window, -16) & 1) != 0; // SBS_VERT
+                if (name.ToString().IndexOf("SCROLLBAR", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    verticalStyle != horizontal && IsWindowVisible(window))
+                    result = window;
+                return result == IntPtr.Zero;
+            }, IntPtr.Zero);
+            return result != IntPtr.Zero;
+        }, "find the product table's " + (horizontal ? "horizontal" : "vertical") + " scrollbar");
+        return result;
+    }
+
+    private static int ScrollPosition(IntPtr scrollbar)
+    {
+        IntPtr result;
+        SendMessageTimeout(scrollbar, 0x00E1, IntPtr.Zero, IntPtr.Zero, 2, 200, out result); // SBM_GETPOS
+        return (int)result;
     }
 
     private static bool RevealText(IntPtr root, string expected)

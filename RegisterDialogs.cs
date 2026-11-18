@@ -5,6 +5,8 @@ namespace Kpos;
 
 internal sealed class ProductListForm : PosForm
 {
+    protected override bool ScrollWholeWindow => false;
+
     private IReadOnlyList<Product> products;
     private Product[] matches = [];
     private IReadOnlyDictionary<string, long?> stock = new Dictionary<string, long?>();
@@ -19,7 +21,7 @@ internal sealed class ProductListForm : PosForm
     private readonly Label matchCount = PosView.Label("", 11, color: PosView.Muted);
     private readonly Button add = PosView.Button("Add as &Code", size: 11);
     private readonly Button select = PosView.Button("&Add to Sale", primary: true, size: 11);
-    private readonly DataGridView grid = new()
+    private readonly ProductGrid grid = new()
     {
         Dock = DockStyle.Fill, ReadOnly = true, VirtualMode = true, AccessibleName = "Matching products",
         AllowUserToAddRows = false, AllowUserToDeleteRows = false, AllowUserToResizeRows = false,
@@ -48,6 +50,7 @@ internal sealed class ProductListForm : PosForm
         BackColor = PosView.Canvas;
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(15), ColumnCount = 1, RowCount = 3 };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -74,12 +77,10 @@ internal sealed class ProductListForm : PosForm
         layout.Controls.Add(PosView.Frame(filters, new Padding(8, 0, 8, 0)), 0, 0);
         layout.Controls.Add(PosView.Frame(grid, Padding.Empty), 0, 1);
 
-        var footer = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1 };
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
         matchCount.Anchor = AnchorStyles.Left;
-        footer.Controls.Add(matchCount, 0, 0);
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
+        matchCount.Margin = new Padding(3, 10, 9, 3);
+        footer.Controls.Add(matchCount);
         if (data is not null)
         {
             var create = PosView.Button("&Add Item", primary: true, size: 10);
@@ -95,13 +96,13 @@ internal sealed class ProductListForm : PosForm
                         grid.CurrentCell = grid.Rows[index].Cells[0];
                 }
             };
-            actions.Controls.Add(create);
+            footer.Controls.Add(create);
             var edit = PosView.Button("&Edit Product", size: 10);
             edit.Click += (_, _) => OpenSelectedProduct();
-            actions.Controls.Add(edit);
+            footer.Controls.Add(edit);
             var history = PosView.Button("Item &History", size: 10);
             history.Click += (_, _) => ShowItemHistory();
-            actions.Controls.Add(history);
+            footer.Controls.Add(history);
             var image = PosView.Button("&Import Image", size: 10);
             image.Click += (_, _) =>
             {
@@ -109,12 +110,12 @@ internal sealed class ProductListForm : PosForm
                 if (import.ShowDialog(this) == DialogResult.OK)
                     ReloadProducts();
             };
-            actions.Controls.Add(image);
+            footer.Controls.Add(image);
             delete.Click += (_, _) => SetDeleted();
-            actions.Controls.Add(delete);
+            footer.Controls.Add(delete);
             deleted.Anchor = AnchorStyles.Left;
             deleted.Margin = new Padding(6, 12, 3, 3);
-            actions.Controls.Add(deleted);
+            footer.Controls.Add(deleted);
             deleted.CheckedChanged += (_, _) =>
             {
                 delete.Text = deleted.Checked ? "&Restore Product" : "&Delete Product";
@@ -132,18 +133,17 @@ internal sealed class ProductListForm : PosForm
                 UnrecognizedCode = search.Text.Trim();
                 DialogResult = DialogResult.OK;
             };
-            actions.Controls.Add(add);
+            footer.Controls.Add(add);
         }
         var close = PosView.Button("Close", size: 11);
         close.DialogResult = DialogResult.Cancel;
-        actions.Controls.Add(close);
+        footer.Controls.Add(close);
         if (selectItem)
         {
             select.Click += (_, _) => OpenSelectedProduct();
-            actions.Controls.Add(select);
+            footer.Controls.Add(select);
         }
         CancelButton = close;
-        footer.Controls.Add(actions, 1, 0);
         layout.Controls.Add(footer, 0, 2);
         Controls.Add(layout);
 
@@ -218,6 +218,12 @@ internal sealed class ProductListForm : PosForm
         {
             search.Focus();
             search.SelectAll();
+            grid.ResetScrollPosition();
+        };
+        VisibleChanged += (_, _) =>
+        {
+            if (Visible)
+                grid.ResetScrollPosition();
         };
         Filter();
 
@@ -239,10 +245,9 @@ internal sealed class ProductListForm : PosForm
             return true;
         }
 
-        if (search.Focused && grid.CurrentRow is DataGridViewRow current && keys is Keys.Up or Keys.Down)
+        if (search.Focused && grid.CurrentRow is not null && keys is Keys.Up or Keys.Down)
         {
-            int row = Math.Clamp(current.Index + (keys == Keys.Up ? -1 : 1), 0, grid.RowCount - 1);
-            grid.CurrentCell = grid.Rows[row].Cells[0];
+            grid.MoveSelection(keys == Keys.Up ? -1 : 1);
             return true;
         }
 
@@ -266,6 +271,7 @@ internal sealed class ProductListForm : PosForm
         if (matches.Length > 0)
             grid.CurrentCell = grid.Rows[0].Cells[0];
         grid.Invalidate();
+        grid.ResetScrollPosition();
         matchCount.Text = tooShort ? $"{products.Count:N0} items · Type 2 characters"
             : query.Length == 0 ? $"{products.Count:N0} items"
             : $"{matches.Length:N0} of {products.Count:N0} items";
