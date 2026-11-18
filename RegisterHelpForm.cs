@@ -29,7 +29,7 @@ internal sealed class RegisterHelpForm : Form
         AddSection("Function keys", 0,
         [
             ("F1", "Register help"), ("F2", "Exit"), ("F3", "Item lookup"),
-            ("F4", "Void sale"), ("F5", "Delete selected line"), ("F6", "Edit quantity"),
+            ("F4", "Void sale"), ("F5", "Delete selected line"), ("F6", "Edit quantity, price, discount"),
             ("F7", "Line discount"), ("F9", "Checkout"), ("F10", "Case sale for next item")
         ]);
         AddSection("In the scanner field", 1,

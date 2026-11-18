@@ -186,7 +186,7 @@ internal sealed class RegisterForm : Form
         AddCommand(saleMenu, "&Finish Sale", Keys.F9, FinishSale);
         AddCommand(saleMenu, "&Case Sale", Keys.F10, ArmCaseSale);
         saleMenu.DropDownItems.Add(new ToolStripSeparator());
-        AddCommand(saleMenu, "Edit &Quantity", Keys.F6, EditQuantity);
+        AddCommand(saleMenu, "&Edit Selected Item…", Keys.F6, EditLine);
         AddCommand(saleMenu, "Line &Discount", Keys.F7, DiscountLine);
         AddCommand(saleMenu, "De&lete Line", Keys.F5, DeleteLine);
         AddCommand(saleMenu, "&Void Sale", Keys.F4, VoidSale);
@@ -332,7 +332,7 @@ internal sealed class RegisterForm : Form
             ("F7", "Discount"), ("F10", "Case"),
             keys.Expense.Length > 0 ? (keys.Expense, "Expense") : ("Ctrl+E", "Closeout"),
             keys.Refund.Length > 0 ? (keys.Refund, "Refund") : ("Ctrl+R", "Reports"),
-            ("F1", "Help"), ("F9", "Checkout")
+            ("F6", "Edit item"), ("F9", "Checkout")
         ];
         var section = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 2 };
         section.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -589,6 +589,24 @@ internal sealed class RegisterForm : Form
             status.Text = $"Quantity for {line.Product.Description}: {quantity}";
             RefreshTicket(index);
         }
+    }
+
+    private void EditLine()
+    {
+        if (ticket.CurrentRow is not DataGridViewRow row)
+        {
+            status.Text = "Select a line on the current sale to edit it.";
+            return;
+        }
+
+        int index = row.Index;
+        using var dialog = new SaleLineEditorForm(sale.Lines[index]);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+            return;
+
+        sale.EditLine(index, dialog.Quantity, dialog.Price, dialog.DiscountRate);
+        status.Text = $"Updated sale item: {sale.Lines[index].Product.Description}";
+        RefreshTicket(index);
     }
 
     private void DiscountLine()

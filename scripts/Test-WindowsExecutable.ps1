@@ -277,6 +277,40 @@ public static class KposExecutableTest
                 EnterText(scanner, "101");
                 EnterText(scanner, "101");
                 WaitUntil(() => HasText(register, "$24.68"), "ring two units on one line");
+                Send(scanner, 0x0100, 0x75); // F6
+                IntPtr lineEditor = FindWindow(desktop, process.ProcessId, "Edit Sale Item");
+                WaitUntil(() => TextIsInBounds(lineEditor, "Quantity") && TextIsInBounds(lineEditor, "Unit price ($)") &&
+                    TextIsInBounds(lineEditor, "Discount (%)") && TextIsInBounds(lineEditor, "&Apply Changes") &&
+                    TextIsInBounds(lineEditor, "&Cancel") && !HasScrollBars(lineEditor), "show all sale item edit controls");
+                IntPtr priceInput = FindChildWithText(lineEditor, "11.99");
+                IntPtr discountInput = FindChildWithText(lineEditor, "0");
+                ReplaceText(priceInput, "9.999");
+                WaitUntil(() => HasText(lineEditor, "Enter a price from $0.00 to $999,999.99.") &&
+                    !IsWindowEnabled(FindChildWithText(lineEditor, "&Apply Changes")), "reject prices with fractional cents");
+                ReplaceText(priceInput, "9.99");
+                ReplaceText(discountInput, "10");
+                WaitUntil(() => HasText(lineEditor, "Line total  $17.98"), "preview quantity, edited price and discount");
+                Send(FindChildWithText(lineEditor, "&Cancel"), 0x00F5, 0);
+                WaitUntil(() => !IsWindow(lineEditor) && HasText(register, "$24.68"), "cancel sale edits without changing the total");
+                Send(scanner, 0x0100, 0x75); // F6
+                lineEditor = FindWindow(desktop, process.ProcessId, "Edit Sale Item");
+                ReplaceText(FindChildWithText(lineEditor, "11.99"), "9.99");
+                ReplaceText(FindChildWithText(lineEditor, "0"), "10");
+                Send(FindChildWithText(lineEditor, "&Apply Changes"), 0x00F5, 0);
+                WaitUntil(() => !IsWindow(lineEditor) && HasText(register, "Updated sale item: Pale Ale") &&
+                    TextIsInBounds(register, "$18.50"), "apply the edited price and discount to the selected line");
+                EnterText(scanner, "101");
+                WaitUntil(() => HasText(register, "$30.84"), "use the regular price for a subsequent scan");
+                Send(scanner, 0x0100, 0x74); // F5
+                IntPtr removeRegularLine = FindWindow(desktop, process.ProcessId, "Void Product");
+                Send(removeRegularLine, 0x0111, 6); // Yes
+                WaitUntil(() => !IsWindow(removeRegularLine) && HasText(register, "$18.50"), "keep the edited line after deleting the regular line");
+                Send(scanner, 0x0100, 0x75); // F6
+                lineEditor = FindWindow(desktop, process.ProcessId, "Edit Sale Item");
+                Send(FindChildWithText(lineEditor, "Use &Regular Price"), 0x00F5, 0);
+                ReplaceText(FindChildWithText(lineEditor, "10"), "0");
+                Send(FindChildWithText(lineEditor, "&Apply Changes"), 0x00F5, 0);
+                WaitUntil(() => !IsWindow(lineEditor) && HasText(register, "$24.68"), "restore the regular item price");
                 EnterText(scanner, "RF");
                 WaitUntil(() => HasText(register, "Return: Pale Ale (Qty -1)") &&
                     HasText(register, "REFUND DUE") && HasText(register, "$12.34"), "return one unit from the selected line");
@@ -472,6 +506,15 @@ public static class KposExecutableTest
             Send(input, 0x0102, character); // WM_CHAR
         if (submit)
             Send(input, 0x0100, 0x0d); // Enter
+    }
+
+    private static void ReplaceText(IntPtr input, string text)
+    {
+        if (input == IntPtr.Zero)
+            throw new InvalidOperationException("The field to replace was not found.");
+        IntPtr result;
+        SendMessageTimeout(input, 0x00b1, IntPtr.Zero, (IntPtr)(-1), 2, 200, out result); // EM_SETSEL
+        EnterText(input, text, submit: false);
     }
 
     private static void WaitUntil(Func<bool> condition, string operation)
@@ -689,7 +732,7 @@ try {
     }
 
     $scenario = if ($UpdateArchive) { 'one-click upgrade and restart' } elseif ($PreviousExecutable) { 'upgrade' } else { 'first installation' }
-    Write-Output "Packaged kPOS passed $scenario, register layout, F1 help, settings, barcode entry, item lookup, quantity, age display, lottery and misc entries, count confirmation, payment, change display, product deletion prompts, sales records, refunds, closeout, and ordering."
+    Write-Output "Packaged kPOS passed $scenario, register layout, F1 help, settings, barcode entry, item lookup, quantity, sale item editing, age display, lottery and misc entries, count confirmation, payment, change display, product deletion prompts, sales records, refunds, closeout, and ordering."
 }
 finally {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $previousData)

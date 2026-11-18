@@ -29,10 +29,11 @@ internal sealed record Product(
 internal enum SaleLineKind { Product, Lottery, Misc }
 
 internal sealed record SaleLine(Product Product, bool IsCase, int Quantity = 1, decimal DiscountRate = 0,
-    SaleLineKind Kind = SaleLineKind.Product)
+    SaleLineKind Kind = SaleLineKind.Product, decimal? PriceOverride = null)
 {
     public const int MaximumQuantity = 9999;
-    public decimal Price => IsCase ? Product.CasePrice : Product.UnitPrice;
+    public decimal RegularPrice => IsCase ? Product.CasePrice : Product.UnitPrice;
+    public decimal Price => PriceOverride ?? RegularPrice;
     public decimal Gross => Price * Quantity;
     public decimal Discount => decimal.Round(Gross * DiscountRate / 100, 2, MidpointRounding.AwayFromZero);
     public decimal Extended => Gross - Discount;
@@ -66,7 +67,7 @@ internal sealed class Sale
     {
         int existing = lines.FindLastIndex(line =>
             line.Product == product && line.IsCase == isCase &&
-            line.DiscountRate == 0 && line.Quantity is > 0 and < SaleLine.MaximumQuantity);
+            line.DiscountRate == 0 && line.PriceOverride is null && line.Quantity is > 0 and < SaleLine.MaximumQuantity);
         if (existing >= 0)
         {
             SaleLine line = lines[existing];
@@ -96,6 +97,26 @@ internal sealed class Sale
         lines[index] = lines[index] with { Quantity = quantity };
 
     public void RefundLine(int index) => SetQuantity(index, -1);
+
+    public void EditLine(int index, int quantity, decimal price, decimal discountRate)
+    {
+        SaleLine line = lines[index];
+        if (quantity is < 1 or > SaleLine.MaximumQuantity)
+            throw new ArgumentOutOfRangeException(nameof(quantity));
+        if (price is < 0 or > 999999.99m || decimal.Round(price, 2) != price)
+            throw new ArgumentOutOfRangeException(nameof(price));
+        if (discountRate is < 0 or > 100 || decimal.Round(discountRate, 2) != discountRate)
+            throw new ArgumentOutOfRangeException(nameof(discountRate));
+        if (line.Kind == SaleLineKind.Lottery && (price != line.Price || discountRate != 0))
+            throw new InvalidOperationException("Lottery entries use the amount from the lottery terminal.");
+
+        lines[index] = line with
+        {
+            Quantity = quantity * Math.Sign(line.Quantity),
+            PriceOverride = price == line.RegularPrice ? null : price,
+            DiscountRate = discountRate
+        };
+    }
 
     public void SetDiscount(int index, decimal rate)
     {
