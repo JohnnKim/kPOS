@@ -109,6 +109,7 @@ public sealed class WindowLayoutTests
             window.Opacity = 0;
             window.ShowInTaskbar = false;
             window.WindowState = FormWindowState.Normal;
+            window.Size = new Size(Math.Min(window.Width, width - 24), Math.Min(window.Height, height - 72));
             window.Show();
             Application.DoEvents();
             window.Size = new Size(Math.Min(window.Width, width - 24), Math.Min(window.Height, height - 72));

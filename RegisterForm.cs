@@ -112,6 +112,7 @@ internal sealed class RegisterForm : PosForm
         layout.Controls.Add(CreateScanArea(), 0, 3);
 
         var side = new TableLayoutPanel { ColumnCount = 1, RowCount = 2 };
+        side.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         side.Controls.Add(CreateTotals(), 0, 0);
@@ -300,7 +301,7 @@ internal sealed class RegisterForm : PosForm
         area.Controls.Add(scanPrompt, 0, 0);
         area.Controls.Add(scanCode, 0, 1);
         area.Controls.Add(status, 0, 2);
-        var frame = PosView.Frame(area, new Padding(10, 6, 10, 4), fitContent: true);
+        var frame = PosView.Frame(area, new Padding(10, 6, 10, 4), fitContent: true, stretchWidth: true);
         frame.Margin = new Padding(3, 7, 7, 3);
         return frame;
     }
@@ -331,7 +332,7 @@ internal sealed class RegisterForm : PosForm
         AddTotal(PosView.Label("Discounts", 12, color: PosView.Muted), discounts, 3);
         AddTotal(PosView.Label("Sales tax", 12, color: PosView.Muted), tax, 4);
         AddTotal(lastChangeCaption, lastChange, 5);
-        return PosView.Frame(totals, new Padding(8), fitContent: true);
+        return PosView.Frame(totals, new Padding(8), fitContent: true, stretchWidth: true);
 
         void AddTotal(Label caption, Label amount, int row)
         {
@@ -356,6 +357,7 @@ internal sealed class RegisterForm : PosForm
             ("F6", "Edit item"), ("F9", "Checkout")
         ];
         var section = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 2 };
+        section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         section.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         section.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         section.Controls.Add(PosView.Label("Register Keys", 14, FontStyle.Bold), 0, 0);
@@ -389,7 +391,7 @@ internal sealed class RegisterForm : PosForm
             tiles.Controls.Add(tile, i % 2, i / 2);
         }
         section.Controls.Add(tiles, 0, 1);
-        var frame = PosView.Frame(section, new Padding(6, 4, 6, 4), fitContent: true);
+        var frame = PosView.Frame(section, new Padding(6, 4, 6, 4), fitContent: true, stretchWidth: true);
         frame.Dock = DockStyle.Top;
         return frame;
     }

@@ -50,15 +50,28 @@ internal static class PosView
         return button;
     }
 
-    public static Panel Frame(Control content, Padding padding, Color? edge = null, bool fitContent = false)
+    public static Panel Frame(Control content, Padding padding, Color? edge = null, bool fitContent = false, bool stretchWidth = false)
     {
-        var frame = new Panel { Dock = DockStyle.Fill, BackColor = edge ?? Line, Padding = new Padding(1),
-            AutoSize = fitContent, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+        Panel frame = stretchWidth ? new WidthFittingPanel() : new Panel();
+        frame.Dock = DockStyle.Fill;
+        frame.BackColor = edge ?? Line;
+        frame.Padding = new Padding(1);
+        frame.AutoSize = fitContent;
+        frame.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         var inside = new Panel { Dock = DockStyle.Fill, BackColor = Color.White, Padding = padding,
             AutoSize = fitContent, AutoSizeMode = AutoSizeMode.GrowAndShrink };
         inside.Controls.Add(content);
         frame.Controls.Add(inside);
         return frame;
+    }
+
+    private sealed class WidthFittingPanel : Panel
+    {
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            Size preferred = base.GetPreferredSize(proposedSize);
+            return new Size(0, preferred.Height);
+        }
     }
 
     public static Panel Scroll(Control content)
