@@ -140,6 +140,7 @@ public sealed class CloseoutTests
                     ALTER TABLE register_settings DROP COLUMN show_register_keys;
                     ALTER TABLE register_settings DROP COLUMN show_last_change;
                     DROP TABLE order_draft;
+                    DROP TABLE home_order_requests;
                     DROP TABLE inventory_receipts;
                     DROP TABLE inventory_counts;
                     ALTER TABLE products DROP COLUMN archived;

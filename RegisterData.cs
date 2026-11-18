@@ -11,13 +11,13 @@ internal sealed partial class RegisterData : IDisposable
 
     public RegisterData(string databasePath) : this(databasePath, readOnly: false) { }
 
-    private RegisterData(string databasePath, bool readOnly)
+    private RegisterData(string databasePath, bool readOnly, bool initialize = true)
     {
         DatabasePath = databasePath;
         connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
-            Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWriteCreate,
+            Mode = readOnly ? SqliteOpenMode.ReadOnly : initialize ? SqliteOpenMode.ReadWriteCreate : SqliteOpenMode.ReadWrite,
             DefaultTimeout = 5,
             ForeignKeys = true,
             Pooling = false
@@ -27,7 +27,7 @@ internal sealed partial class RegisterData : IDisposable
         {
             connection.Open();
             connection.CreateCollation("ITEM_CODE", StringComparer.OrdinalIgnoreCase.Compare);
-            if (!readOnly)
+            if (!readOnly && initialize)
                 Initialize();
         }
         catch
@@ -271,6 +271,9 @@ internal sealed partial class RegisterData : IDisposable
                 """, transaction);
             display.ExecuteNonQuery();
         }
+
+        if (currentVersion < 11)
+            CreateHomeOrders(transaction);
 
         transaction.Commit();
     }

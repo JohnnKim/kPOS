@@ -1,0 +1,184 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Security.Authentication;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
+
+namespace Kpos;
+
+internal sealed record HomeStock(string Barcode, string Code, string Description, string Size,
+    long? OnHand, long Sold, string Supplier);
+internal sealed record HomeSnapshot(DateOnly BusinessDate, DateTimeOffset CheckedAt, DaySales Sales,
+    HomeStock[] Items, int ItemCount, int Page);
+
+internal sealed class HomeTerminalHost : IAsyncDisposable
+{
+    private readonly WebApplication app;
+    private readonly X509Certificate2 certificate;
+    public string Url { get; }
+    public string Token { get; }
+    public string Fingerprint => certificate.GetCertHashString(HashAlgorithmName.SHA256);
+
+    private HomeTerminalHost(WebApplication app, X509Certificate2 certificate, string url, string token)
+    {
+        this.app = app;
+        this.certificate = certificate;
+        Url = url;
+        Token = token;
+    }
+
+    internal static bool IsPrivateAddress(IPAddress ip)
+    {
+        if (IPAddress.IsLoopback(ip)) return true;
+        byte[] b = ip.GetAddressBytes();
+        return b.Length == 4 && (b[0] == 10 || b[0] == 192 && b[1] == 168 ||
+            b[0] == 172 && b[1] is >= 16 and <= 31 || b[0] == 100 && b[1] is >= 64 and <= 127);
+    }
+
+    public static async Task<HomeTerminalHost> StartAsync(string databasePath, IPAddress address, int port,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsPrivateAddress(address) || port is < 1024 or > 65535)
+            throw new ArgumentException("Choose a loopback, local network, or private VPN IPv4 address and port 1024–65535.");
+        using (var check = RegisterData.OpenHomeConnection(databasePath))
+            _ = check.ReadHomeOrders();
+        using RSA rsa = RSA.Create(2048);
+        var request = new CertificateRequest("CN=kPOS Home Terminal", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var names = new SubjectAlternativeNameBuilder();
+        names.AddIpAddress(address);
+        request.CertificateExtensions.Add(names.Build());
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+            new OidCollection { new("1.3.6.1.5.5.7.3.1") }, true));
+        using X509Certificate2 generated = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(30));
+        // Own an independent private key after RSA and the certificate request leave this scope.
+        X509Certificate2 certificate = X509CertificateLoader.LoadPkcs12(generated.Export(X509ContentType.Pfx), null,
+            X509KeyStorageFlags.UserKeySet);
+        string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        byte[] expectedToken = System.Text.Encoding.ASCII.GetBytes("Bearer " + token);
+        var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { Args = [], ContentRootPath = AppContext.BaseDirectory });
+        builder.Logging.ClearProviders();
+        builder.WebHost.ConfigureKestrel(options =>
+        {
+            options.AddServerHeader = false;
+            options.Limits.MaxRequestBodySize = 4096;
+            options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10);
+            options.Limits.MaxConcurrentConnections = 16;
+            options.Listen(address, port, listen =>
+            {
+                listen.Protocols = HttpProtocols.Http1;
+                listen.UseHttps(certificate, https => https.SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13);
+            });
+        });
+        WebApplication app = builder.Build();
+        app.Use(async (context, next) =>
+        {
+            context.Response.Headers.CacheControl = "no-store";
+            byte[] supplied = System.Text.Encoding.ASCII.GetBytes(context.Request.Headers.Authorization.ToString());
+            if (!CryptographicOperations.FixedTimeEquals(expectedToken, supplied))
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+            try { await next(context); }
+            catch (Exception error) when (error is SqliteException or IOException)
+            {
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            }
+        });
+        app.MapGet("/api/v1/overview", (string? search, int? page) =>
+        {
+            int index = page ?? 0;
+            if (index is < 0 or > 100000 || search?.Length > 100)
+                return Results.BadRequest();
+            using var data = RegisterData.OpenHomeConnection(databasePath);
+            DateOnly day = data.CurrentBusinessDate();
+            string query = search?.Trim() ?? "";
+            OrderItem[] items = data.ReadOrderItems(day, day, day).Where(item =>
+                item.Product.Description.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                item.Product.Barcode.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                item.Product.Code.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+            HomeStock[] stock = items.Skip(index * 100).Take(100).Select(item => new HomeStock(item.Product.Barcode,
+                item.Product.Code, item.Product.Description, item.Product.Size, item.OnHand, item.Sold, item.DistributorName)).ToArray();
+            return Results.Ok(new HomeSnapshot(day, DateTimeOffset.UtcNow, data.GetDaySales(day), stock, items.Length, index));
+        });
+        app.MapPost("/api/v1/order-requests", (HomeOrderRequest order) =>
+        {
+            using var data = RegisterData.OpenHomeConnection(databasePath, readOnly: false);
+            try { return Results.Ok(data.SubmitHomeOrder(order)); }
+            catch (ArgumentException error) { return Results.BadRequest(error.Message); }
+            catch (InvalidOperationException error) { return Results.Conflict(error.Message); }
+        });
+        try
+        {
+            await app.StartAsync(cancellationToken).ConfigureAwait(false);
+            return new(app, certificate, $"https://{(address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? $"[{address}]" : address)}:{port}/", token);
+        }
+        catch
+        {
+            await app.DisposeAsync().ConfigureAwait(false);
+            certificate.Dispose();
+            throw;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await app.StopAsync(timeout.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            await app.DisposeAsync().ConfigureAwait(false);
+            certificate.Dispose();
+        }
+    }
+}
+
+internal sealed class HomeTerminalClient : IDisposable
+{
+    private readonly HttpClient http;
+
+    public HomeTerminalClient(string url, string token, string fingerprint)
+    {
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out Uri? uri) || uri.Scheme != "https" ||
+            uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 || uri.AbsolutePath != "/")
+            throw new ArgumentException("Enter the HTTPS address shown by the store host.");
+        byte[] pin;
+        try { pin = Convert.FromHexString(fingerprint.Replace(" ", "").Replace(":", "").Trim()); }
+        catch (FormatException) { throw new ArgumentException("The certificate fingerprint must contain 64 hexadecimal characters."); }
+        if (pin.Length != 32 || token.Trim().Length != 64 || !token.Trim().All(Uri.IsHexDigit))
+            throw new ArgumentException("Copy the full certificate fingerprint and access key from the store host.");
+        var handler = new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false };
+        handler.ServerCertificateCustomValidationCallback = (_, certificate, _, _) => certificate is not null &&
+            certificate.NotBefore.ToUniversalTime() <= DateTime.UtcNow && certificate.NotAfter.ToUniversalTime() >= DateTime.UtcNow &&
+            CryptographicOperations.FixedTimeEquals(pin, certificate.GetCertHash(HashAlgorithmName.SHA256));
+        http = new HttpClient(handler) { BaseAddress = uri, Timeout = TimeSpan.FromSeconds(12) };
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
+    }
+
+    public async Task<HomeSnapshot> OverviewAsync(string search, int page, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await http.GetAsync($"api/v1/overview?search={Uri.EscapeDataString(search)}&page={page}", cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<HomeSnapshot>(cancellationToken).ConfigureAwait(false) ?? throw new IOException("The store returned an empty response.");
+    }
+
+    public async Task<HomeOrderReceipt> SendAsync(HomeOrderRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await http.PostAsJsonAsync("api/v1/order-requests", request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<HomeOrderReceipt>(cancellationToken).ConfigureAwait(false) ?? throw new IOException("The store returned an empty response.");
+    }
+
+    public void Dispose() => http.Dispose();
+}

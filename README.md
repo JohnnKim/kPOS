@@ -1,6 +1,9 @@
 # kPOS
 Independent liquor store POS system
 
+The preview.23 home-terminal foundation, setup instructions, Windows 10 validation limits, client questions,
+and hardware/connection options are in [Home-Terminal.md](docs/Home-Terminal.md).
+
 ## kPOS – Product / Development Report
 
 November 13th 2026

@@ -203,6 +203,8 @@ internal sealed class RegisterForm : PosForm
         AddCommand(reports, "&Orders…", Keys.Control | Keys.O, ViewOrders);
         AddCommand(reports, "Export &Backup…", Keys.Control | Keys.B, ExportBackup);
         AddCommand(reports, "Check for &Updates…", Keys.Control | Keys.U, CheckForUpdates);
+        AddCommand(reports, "Home Terminal &Host…", Keys.Control | Keys.Shift | Keys.H, ViewHomeHost);
+        AddCommand(reports, "&Connect to Store…", Keys.Control | Keys.Shift | Keys.J, () => new HomeTerminalForm().Show(this));
 #if KPOS_UPDATE_FIXTURE
         shortcuts.Add(Keys.F12, CheckForUpdates);
 #endif
@@ -210,6 +212,13 @@ internal sealed class RegisterForm : PosForm
         AddCommand(help, "&Register Help", Keys.F1, ViewRegisterHelp);
         menu.Items.AddRange([saleMenu, lists, reports, help]);
         return menu;
+    }
+
+    private void ViewHomeHost()
+    {
+        HomeHostForm? existing = OwnedForms.OfType<HomeHostForm>().FirstOrDefault();
+        if (existing is not null) existing.Activate();
+        else new HomeHostForm(data).Show(this);
     }
 
     private ToolStripMenuItem AddCommand(ToolStripMenuItem menu, string name, Keys key, Action command)

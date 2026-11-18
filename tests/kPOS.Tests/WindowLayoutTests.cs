@@ -91,6 +91,8 @@ public sealed class WindowLayoutTests
             () => new StockEntryForm(data, product, day),
             () => new BackupOptionsForm(),
             () => new SettingsForm(data, folders),
+            () => new HomeHostForm(data),
+            () => new HomeTerminalForm(),
             () => new RegisterHelpForm(data.ReadRegisterKeys()),
             () => new TrainingResetForm(data, folders),
             () => new SaleReceiptForm("Item with a long receipt description " + new string('x', 160))

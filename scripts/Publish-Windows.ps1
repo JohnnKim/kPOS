@@ -29,6 +29,9 @@ try {
     }
 
     $archive = Join-Path $staging.FullName $zipName
+    $launcher = Join-Path $PSScriptRoot '../Start-Home-Terminal.cmd'
+    $guide = Join-Path $PSScriptRoot '../docs/Home-Terminal.md'
+    # Existing installed versions require a ZIP containing only kPOS.exe.
     Compress-Archive -LiteralPath (Join-Path $publish 'kPOS.exe') -DestinationPath $archive
     $extracted = Join-Path $staging.FullName 'extracted'
     Expand-Archive -LiteralPath $archive -DestinationPath $extracted
@@ -51,6 +54,7 @@ try {
     $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
     Set-Content -LiteralPath $checksum -Encoding ascii -Value "$hash  $zipName"
     Move-Item -LiteralPath $archive, $checksum -Destination $destination.FullName
+    Copy-Item -LiteralPath $launcher, $guide -Destination $destination.FullName
     Write-Output "Built and verified $zipName"
 }
 finally {

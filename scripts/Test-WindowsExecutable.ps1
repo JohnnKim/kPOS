@@ -374,6 +374,40 @@ public static class KposExecutableTest
         }
     }
 
+    public static void RunHome(string executable)
+    {
+        string desktopName = "kPOS-home-test-" + Guid.NewGuid().ToString("N");
+        IntPtr desktop = CreateDesktop(desktopName, null, IntPtr.Zero, 0, 0x1ff, IntPtr.Zero);
+        if (desktop == IntPtr.Zero) throw new Win32Exception();
+        try
+        {
+            var startup = new StartupInfo { Size = Marshal.SizeOf(typeof(StartupInfo)), Desktop = desktopName };
+            var command = new StringBuilder("\"" + executable + "\" --home");
+            ProcessInfo process;
+            if (!CreateProcess(executable, command, IntPtr.Zero, IntPtr.Zero, false, 0, IntPtr.Zero,
+                Path.GetDirectoryName(executable), ref startup, out process)) throw new Win32Exception();
+            try
+            {
+                IntPtr home = FindWindow(desktop, process.ProcessId, "kPOS — Home Terminal");
+                WaitUntil(() => HasText(home, "Connect / Refresh") && HasText(home, "Request Order") &&
+                    HasText(home, "Certificate SHA256"), "start the independent home terminal without register setup");
+                Send(home, 0x0010, 0);
+                uint exit;
+                if (WaitForSingleObject(process.Process, 5000) != 0 ||
+                    !GetExitCodeProcess(process.Process, out exit) || exit != 0)
+                    throw new InvalidOperationException("The home terminal did not close cleanly.");
+            }
+            finally
+            {
+                if (WaitForSingleObject(process.Process, 0) != 0)
+                { TerminateProcess(process.Process, 1); WaitForSingleObject(process.Process, 5000); }
+                CloseHandle(process.Thread);
+                CloseHandle(process.Process);
+            }
+        }
+        finally { CloseDesktop(desktop); }
+    }
+
     private static void UpdateThroughRegister(IntPtr desktop, ProcessInfo process, IntPtr scanner)
     {
         Send(scanner, 0x0100, 0x7b); // F12 opens the updater in the test build.
@@ -789,6 +823,10 @@ $smokeData = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPa
 try {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $smokeData.FullName)
     $source = (Resolve-Path -LiteralPath $Executable).ProviderPath
+    [KposExecutableTest]::RunHome($source)
+    if (Test-Path -LiteralPath (Join-Path $smokeData.FullName 'Database')) {
+        throw 'The home terminal must not create a register database.'
+    }
     $installed = Join-Path $smokeData.FullName 'kPOS.exe'
     $previous = "$installed.previous"
     if ($PreviousExecutable) {

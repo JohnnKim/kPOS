@@ -9,6 +9,12 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
+        if (args.Length == 1 && args[0] == "--home")
+        {
+            Application.Run(new HomeTerminalForm());
+            return;
+        }
+
         if (args.Length == 4 && int.TryParse(args[1], out int processId) && processId > 0 &&
             long.TryParse(args[2], out long started) && started > 0)
         {
