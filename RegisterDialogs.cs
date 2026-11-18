@@ -81,7 +81,7 @@ internal sealed class ProductListForm : PosForm
         matchCount.Anchor = AnchorStyles.Left;
         matchCount.Margin = new Padding(3, 10, 9, 3);
         footer.Controls.Add(matchCount);
-        if (data is not null)
+        if (data is not null && !selectItem)
         {
             var create = PosView.Button("&Add Item", primary: true, size: 10);
             create.Click += (_, _) =>
@@ -154,10 +154,14 @@ internal sealed class ProductListForm : PosForm
         grid.Columns.Add("Size", "Size / Pack");
         grid.Columns.Add("Price", "Unit Price");
         grid.Columns.Add("CasePrice", "Case Price");
-        if (data is not null && !selectItem)
+        if (data is not null)
         {
             grid.Columns.Add("OnHand", "On Hand");
-            grid.Columns["OnHand"]!.Width = 94;
+            grid.Columns["OnHand"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
+            grid.Columns["OnHand"]!.MinimumWidth = 112;
+            grid.Columns["OnHand"]!.ToolTipText = "Selling units on hand, based on saved stock counts, deliveries, sales and returns.";
+            if (selectItem)
+                grid.Columns["OnHand"]!.DisplayIndex = 3;
             PosView.AmountColumn(grid, "OnHand", 12);
             grid.CellFormatting += (_, e) =>
             {
@@ -202,7 +206,7 @@ internal sealed class ProductListForm : PosForm
             {
                 0 => item.Code, 1 => item.Barcode, 2 => item.Description, 3 => item.Size,
                 4 => item.UnitPrice, 5 when item.HasCasePrice => item.CasePrice,
-                6 => stock.GetValueOrDefault(item.Barcode) is long units ? units : "—",
+                6 => stock.GetValueOrDefault(item.Barcode) is long units ? units : "Not counted",
                 _ => null
             };
         };
@@ -287,7 +291,7 @@ internal sealed class ProductListForm : PosForm
 
     private void LoadStock()
     {
-        if (data is null || selectItem)
+        if (data is null)
             return;
         DateOnly today = data.CurrentBusinessDate();
         stock = data.ReadOrderItems(today, today, today).ToDictionary(item => item.Product.Barcode, item => item.OnHand,

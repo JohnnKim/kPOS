@@ -526,7 +526,8 @@ internal sealed class RegisterForm : PosForm
 
     private void LookupItem(string query, bool allowAddCode)
     {
-        using var dialog = new ProductListForm(data.ListProducts(), selectItem: true, query, allowAddCode: allowAddCode);
+        using var dialog = new ProductListForm(data.ListProducts(), selectItem: true, query,
+            data: data, folders: folders, allowAddCode: allowAddCode);
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
 

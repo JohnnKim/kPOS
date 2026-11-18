@@ -46,6 +46,11 @@ May need a sample report for reference
 Operating Setup
 Register and hardware details, tax settings, drawer procedures, and examples of receipts and reports
 
+Client requirements for a later POS update
+Check store sales and place orders remotely from home.
+Support at least three in-store sales terminals connected through the store router, sharing sales and inventory.
+Prioritize the POS upgrade ahead of the internet storefront.
+
 Quick rundown of operational takeover:
 Confirm the scope and collect data, observe and note normal shifts, a closeout, order, delivery cycle. Gather legacy export data, sample reports, and hardware details. Identify workflows and gather critical operational data.
 Rehearse migration, build the import and map/validate fields, and load a copy of the catalog and available history. Compare results with legacy records and test with the full catalog.
