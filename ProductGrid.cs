@@ -30,12 +30,12 @@ internal sealed class ProductGrid : DataGridView, IMessageFilter
         if (!ClientRectangle.Contains(PointToClient(point)))
             return false;
 
-        return HandleWheel(message.Msg, message.WParam);
+        return HandleWheel(message.Msg, message.WParam,message.LParam);
     }
 
     protected override void WndProc(ref Message message)
     {
-        if (message.Msg is WheelMessage or HorizontalWheelMessage && HandleWheel(message.Msg, message.WParam))
+        if (message.Msg is WheelMessage or HorizontalWheelMessage && HandleWheel(message.Msg, message.WParam,message.LParam))
         {
             message.Result = IntPtr.Zero;
             return;
@@ -86,15 +86,16 @@ internal sealed class ProductGrid : DataGridView, IMessageFilter
         if (IsHandleCreated) HorizontalScrollingOffset = 0;
     }
 
-    private bool HandleWheel(int message, IntPtr parameters)
+    private bool HandleWheel(int message, IntPtr parameters,IntPtr position)
     {
         long value = parameters.ToInt64();
         if ((value & 0x0008) != 0) // MK_CONTROL, including touchpad pinch gestures
             return false;
 
         int delta = (short)(value >> 16);
+        long coordinates=position.ToInt64();var wheelPoint=new Point((short)coordinates,(short)(coordinates>>16));
         bool overHorizontalBar = Controls.OfType<HScrollBar>().Any(bar => bar.Visible &&
-            bar.ClientRectangle.Contains(bar.PointToClient(Cursor.Position)));
+            bar.ClientRectangle.Contains(bar.PointToClient(wheelPoint)));
         bool horizontal = message == HorizontalWheelMessage || (value & 0x0004) != 0 || overHorizontalBar ||
             Controls.OfType<HScrollBar>().Any(bar => bar.Visible) && !Controls.OfType<VScrollBar>().Any(bar => bar.Visible);
         if (horizontal)
