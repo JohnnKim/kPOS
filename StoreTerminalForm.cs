@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Data;
 using System.Text;
 using System.Text.Json;
 
@@ -18,12 +19,16 @@ internal sealed class StoreTerminalForm : PosForm
     private readonly Label due = PosView.BannerAmount("$0.00", 40);
     private readonly Label caption = PosView.Label("TOTAL DUE", 14, FontStyle.Bold, Color.White);
     private readonly Label last = PosView.Label("", 12, FontStyle.Bold);
+    private readonly TaxBreakdownView taxDetails = new();
     private readonly DataGridView grid = HomeTerminalView.Grid();
     private readonly List<Button> actions = [];
     private readonly Queue<(string Code, bool Case)> scans = new();
     private readonly CancellationTokenSource closing = new();
     private readonly System.Windows.Forms.Timer pulse = new() { Interval = 15000 };
     private readonly string profilePath;
+    private HardwareSettings hardware = new();
+    private string HardwareDirectory => profilePath + ".hardware";
+    private RegisterKeys KeysProfile => info?.Keys ?? new("Q", "L", "M", "S", true);
     private string PendingPath => profilePath + ".pending.json";
     private FileStream? lease;
     private StoreTerminalProfile? profile;
@@ -55,13 +60,14 @@ internal sealed class StoreTerminalForm : PosForm
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(this.profilePath))!);
             lease = new FileStream(this.profilePath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
             pending = TerminalRecovery.Read<PendingStoreCheckout>(PendingPath);
+            hardware = TerminalRecovery.Read<HardwareSettings>(this.profilePath + ".hardware.json") ?? new();
             profile = TerminalRecovery.Read<StoreTerminalProfile>(this.profilePath) ?? new(pending?.Quote.TerminalId ?? Guid.NewGuid(), Environment.MachineName);
             if(profile.Id == Guid.Empty || pending is not null && (pending.Quote.TerminalId != profile.Id || pending.Commit.TerminalId != profile.Id || pending.Quote.Id != pending.Commit.QuoteId))
                 throw new InvalidDataException("Terminal recovery details do not match this station. Keep the files for recovery.");
             terminalName.Text = profile.Name;
             TerminalRecovery.Write(this.profilePath, profile);
             if(pending is not null)
-            { sale = Sale.FromLines(pending.Quote.Lines); saleId = pending.Quote.SaleId; url.Text = pending.StoreUrl; feedback.Text = "Unconfirmed checkout restored. Connect to the original store, then Retry Confirmation. Do not take payment again."; }
+            { sale = Sale.FromLines(pending.Quote.Lines, pending.Quote.TaxExempt); saleId = pending.Quote.SaleId; url.Text = pending.StoreUrl; feedback.Text = "Unconfirmed checkout restored. Connect to the original store, then Retry Confirmation. Do not take payment again."; }
         }
         catch(Exception error) when(error is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
         { profileFailed = true; feedback.Text = "This terminal is already open or its recovery files cannot be read. " + error.Message; }
@@ -81,8 +87,10 @@ internal sealed class StoreTerminalForm : PosForm
         var setupToggle = PosView.Button("Connection Setup", size: 11); setupToggle.Click += (_, _) => setup.Visible = !setup.Visible;
         grid.AutoGenerateColumns = false; grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
         grid.AccessibleName = "Shared store sale";
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Item", HeaderText = "Current Sale", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 220 });
-        foreach(var pair in new[] { ("Qty", 60), ("Unit Price", 110), ("Discount", 90), ("Amount", 110) }) grid.Columns.Add(new DataGridViewTextBoxColumn { Name = pair.Item1, HeaderText = pair.Item1, Width = pair.Item2 });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Line", HeaderText = "#", Width = 38, MinimumWidth = 38 });
+        grid.Columns["Line"]!.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Item", HeaderText = "Current Sale", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 180 });
+        foreach(var pair in new[] { ("Size", 90), ("Qty", 50), ("Unit Price", 100), ("Discount", 80), ("Amount", 100) }) grid.Columns.Add(new DataGridViewTextBoxColumn { Name = pair.Item1, HeaderText = pair.Item1, Width = pair.Item2 });
         var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 68)); body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32)); body.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         body.Controls.Add(grid, 0, 0);
@@ -90,15 +98,22 @@ internal sealed class StoreTerminalForm : PosForm
         var banner = HomeTerminalView.Layout(); banner.BackColor = PosView.Navy; banner.AutoSize = true; banner.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         HomeTerminalView.Row(banner, caption); HomeTerminalView.Row(banner, due);
         HomeTerminalView.Row(summary, banner);
+        HomeTerminalView.Row(summary, taxDetails);
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(Action("Checkout · F9", CheckoutAsync, true), Action("Retry Confirmation", CheckoutAsync)));
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(Action("Quantity · Q", QuantityAsync), Action("Refund · RF", RefundAsync), Action("Delete · F5", DeleteAsync)));
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(Action("Item Lookup · F3", LookupAsync), Action("Refresh Prices", RefreshPricesAsync), Action("Void Sale · F4", VoidAsync)));
         HomeTerminalView.Row(summary, cases);
         HomeTerminalView.Row(summary, last);
         var receipt = PosView.Button("Last Receipt", size: 11); receipt.Click += (_, _) => ShowReceipt(); HomeTerminalView.Row(summary, receipt);
+        var printerSettings = PosView.Button("Printer / Drawer", size: 11); printerSettings.Click += (_, _) => ShowHardwareSettings();
+        HomeTerminalView.Row(summary, printerSettings);
         body.Controls.Add(PosView.Scroll(summary), 1, 0);
         var layout = HomeTerminalView.Layout();
-        HomeTerminalView.Row(layout, PosView.Label("kPOS · Store Terminal", 22, FontStyle.Bold));
+        var heading = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2 };
+        heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); heading.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        heading.Controls.Add(PosView.Label("kPOS · Store Terminal", 22, FontStyle.Bold), 0, 0);
+        heading.Controls.Add(new RegisterClock { ForeColor = PosView.Ink, Anchor = AnchorStyles.Right }, 1, 0);
+        HomeTerminalView.Row(layout, heading);
         HomeTerminalView.Row(layout, PosView.Label("Checkout station · connects to Host Terminal in the store", 11));
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(connection, setupToggle, paste, connect, disconnect));
         HomeTerminalView.Row(layout, setup);
@@ -114,8 +129,7 @@ internal sealed class StoreTerminalForm : PosForm
             e.SuppressKeyPress = true;
             string code = scanner.Text.Trim(); scanner.Clear();
             if(code.Length == 0 || !Ready || pending is not null) return;
-            if(code.Equals("RF", StringComparison.OrdinalIgnoreCase)) { await RunAsync(RefundAsync); return; }
-            if(code.Equals("Q", StringComparison.OrdinalIgnoreCase)) { await RunAsync(QuantityAsync); return; }
+            if(KeysProfile.ActionFor(code) is string command && TypedAction(command) is Func<Task> action) { await RunAsync(action); return; }
             if(scans.Count >= 100) { feedback.Text = "Wait for queued scans to finish."; return; }
             scans.Enqueue((code, cases.Checked));
             if(!working) await RunAsync(DrainScansAsync);
@@ -171,7 +185,10 @@ internal sealed class StoreTerminalForm : PosForm
         {
         while(scans.TryDequeue(out var scan))
         {
-            Product product = await client!.StoreProductAsync(scan.Code, closing.Token);
+            Product product;
+            try { product = await client!.StoreProductAsync(scan.Code, closing.Token); }
+            catch(HttpRequestException error) when(error.StatusCode == System.Net.HttpStatusCode.NotFound && scan.Code.Any(char.IsLetter))
+            { await LookupAsync(scan.Code); continue; }
             if(scan.Case && !product.HasCasePrice) throw new InvalidOperationException("This item has no case price.");
             int row = sale.Add(product, scan.Case); Render(row); feedback.Text = product.Description;
         }
@@ -185,13 +202,14 @@ internal sealed class StoreTerminalForm : PosForm
         await HeartbeatAsync();
         var products = new Dictionary<string, Product>();
         foreach(string code in sale.Lines.Select(line => line.Product.Barcode).Distinct()) products[code] = await client!.StoreProductAsync(code, closing.Token);
-        sale = Sale.FromLines(sale.Lines.Select(line => line with { Product = products[line.Product.Barcode], PriceOverride = null }));
+        sale = Sale.FromLines(sale.Lines.Select(line => line with { Product = products[line.Product.Barcode], PriceOverride = null }), sale.TaxExempt);
         feedback.Text = "Current store prices loaded. Review the total.";
     }
-    private async Task LookupAsync()
+    private Task LookupAsync() => LookupAsync("");
+    private async Task LookupAsync(string search)
     {
         RequireEditable();
-        using var window = new StoreLookupForm(client!);
+        using var window = new StoreLookupForm(client!, search);
         if(window.ShowDialog(this) == DialogResult.OK && window.SelectedProduct is Product product)
         { sale.Add(product, cases.Checked && product.HasCasePrice); feedback.Text = product.Description; }
         await Task.CompletedTask;
@@ -199,8 +217,8 @@ internal sealed class StoreTerminalForm : PosForm
     private Task QuantityAsync()
     {
         RequireEditable(); int row = SelectedRow();
-        using var window = new NumberEntryForm("Quantity", "Selling packs", Math.Abs(sale.Lines[row].Quantity), 1, 9999, 0, value => value.ToString("0"));
-        if(window.ShowDialog(this) == DialogResult.OK) sale.SetQuantity(row, (int)window.Value * Math.Sign(sale.Lines[row].Quantity));
+        using var window = new NumberEntryForm("Quantity", "Selling packs", sale.Lines[row].Quantity, -100, 100, 0, value => value.ToString("0"));
+        if(window.ShowDialog(this) == DialogResult.OK) sale.SetQuantity(row, (int)window.Value);
         return Task.CompletedTask;
     }
     private Task RefundAsync() { RequireEditable(); sale.RefundLine(SelectedRow()); return Task.CompletedTask; }
@@ -218,12 +236,13 @@ internal sealed class StoreTerminalForm : PosForm
         if(!Ready) throw new InvalidOperationException("Connect to Host Terminal first.");
         if(scans.Count > 0) await DrainScansAsync();
         StoreQuote quote = pending?.Quote ?? await client!.QuoteAsync(new(profile!.Id, saleId,
-            sale.Lines.Select(line => new StoreLine(line.Product.Barcode, line.IsCase, line.Quantity, line.DiscountRate)).ToArray(), sale.GetTotals(info!.TaxRate)), closing.Token);
+            sale.Lines.Select(line => new StoreLine(line.Product.Barcode, line.IsCase, line.Quantity, line.DiscountRate, line.TaxExempt)).ToArray(), sale.GetTotals(info!.Taxes ?? new(info.TaxRate)), sale.TaxExempt), closing.Token);
         using var payment = new StorePaymentForm(quote, pending?.Commit, CommitAsync, CancelAsync);
         payment.ShowDialog(this);
         if(payment.Receipt is StoreReceipt receipt)
         {
-            lastReceipt = receipt; lastLines = quote.Lines;
+            lastReceipt = receipt; lastLines = quote.Lines.Select(line => line with { TaxExempt = line.TaxExempt || quote.TaxExempt }).ToArray();
+            _ = CompleteHardwareAsync(receipt, quote.Lines.Select(line => line with { TaxExempt = line.TaxExempt || quote.TaxExempt }).ToArray());
             sale.Clear(); saleId = Guid.NewGuid();
             last.Text = receipt.Totals.Total < 0 ? $"Refund recorded: {Sale.Money(-receipt.Totals.Total)}" : $"Change due: {Sale.Money(receipt.Change)}";
             feedback.Text = "Recorded at the store. Ready for the next sale.";
@@ -273,9 +292,21 @@ internal sealed class StoreTerminalForm : PosForm
     {
         int row = selected >= 0 ? selected : grid.CurrentRow?.Index ?? -1;
         grid.Rows.Clear();
-        foreach(var line in sale.Lines) grid.Rows.Add(line.Product.Description + (line.IsCase ? $" · Case of {line.Product.UnitsPerCase}" : ""), line.Quantity, Sale.Money(line.Price), Sale.Money(line.Discount), Sale.Money(line.Extended));
+        foreach(var line in sale.Lines)
+        {
+            bool exempt = sale.TaxExempt || line.TaxExempt;
+            int index = grid.Rows.Add(grid.Rows.Count + 1, line.Product.Description + (line.IsCase ? $" · Case of {line.Product.UnitsPerCase}" : "") +
+                (line.Quantity < 0 ? " · RETURN" : "") + (exempt ? " · TAX VOID" : ""), line.Product.Size, line.Quantity, Sale.Money(line.Price), Sale.Money(line.Discount), Sale.Money(line.Extended));
+            if(line.Quantity < 0 || exempt)
+            {
+                var style = grid.Rows[index].DefaultCellStyle; style.ForeColor = line.Quantity < 0 ? PosView.Error : Color.Teal;
+                style.BackColor = exempt ? Color.FromArgb(225, 245, 243) : Color.FromArgb(255, 237, 237);
+                style.SelectionBackColor = line.Quantity < 0 ? PosView.Error : Color.Teal; style.SelectionForeColor = Color.White;
+            }
+        }
         if(row >= 0 && row < grid.Rows.Count) grid.CurrentCell = grid.Rows[row].Cells[0];
-        SaleTotals totals = pending?.Quote.Totals ?? sale.GetTotals(info?.TaxRate ?? 0);
+        SaleTotals totals = pending?.Quote.Totals ?? sale.GetTotals(info?.Taxes ?? new(info?.TaxRate ?? 0));
+        taxDetails.SetTotals(totals);
         due.Text = Sale.Money(Math.Abs(totals.Total)); caption.Text = totals.Total < 0 ? "REFUND DUE" : "TOTAL DUE";
         due.Parent!.BackColor = totals.Total < 0 ? PosView.Refund : PosView.Navy;
         store.Text = info is null ? "Connect this checkout station to the store host." : $"Store: {info.StoreName} · {info.BusinessDate:yyyy-MM-dd} · {profile?.Name} · Tax {Sale.Rate(info.TaxRate)}";
@@ -297,13 +328,68 @@ internal sealed class StoreTerminalForm : PosForm
     private void ShowReceipt()
     {
         if(lastReceipt is null) return;
-        var text = new StringBuilder().AppendLine("kPOS · Store Receipt").AppendLine(lastReceipt.Terminal).AppendLine(lastReceipt.RecordedAt.ToString("g"));
-        foreach(var line in lastLines) text.AppendLine($"{line.Quantity} × {line.Product.Description}  {Sale.Money(line.Extended)}");
-        text.AppendLine($"Tax {Sale.Money(lastReceipt.Totals.Tax)}").AppendLine($"Total {Sale.Money(lastReceipt.Totals.Total)}")
-            .AppendLine($"{lastReceipt.Payment.Method} {Sale.Money(lastReceipt.Payment.Received)}").AppendLine($"Change {Sale.Money(lastReceipt.Change)}")
-            .AppendLine(lastReceipt.SaleId.ToString());
-        using var receipt = new SaleReceiptForm(text.ToString()); receipt.ShowDialog(this);
+        using var receipt = new SaleReceiptForm(StoreReceiptText(lastReceipt, lastLines), hardware, HardwareDirectory); receipt.ShowDialog(this);
     }
+    private static string StoreReceiptText(StoreReceipt receipt, SaleLine[] lines)
+    {
+        var text = new StringBuilder().AppendLine("kPOS RECEIPT").AppendLine(receipt.Terminal).AppendLine(receipt.RecordedAt.ToString("yyyy-MM-dd HH:mm:ss"));
+        foreach(var line in lines) text.AppendLine($"{line.Quantity} x {line.Product.Description} {line.Product.Size} {(line.IsCase ? "CASE" : "")}  {Sale.Money(line.Extended)}" +
+            (line.Quantity < 0 ? " RETURN" : "") + (line.TaxExempt ? " TAX VOID" : ""));
+        if(receipt.Totals.TaxDetails is TaxBreakdown detail) foreach(var row in detail.Rows()) text.AppendLine($"{row.Name} ({Sale.Rate(row.Rate)}) {Sale.Money(row.Amount)}");
+        return text.AppendLine($"Sales tax {Sale.Money(receipt.Totals.Tax)}").AppendLine($"Total {Sale.Money(receipt.Totals.Total)}")
+            .AppendLine($"{receipt.Payment.Method} {Sale.Money(receipt.Payment.Received)}").AppendLine($"Change {Sale.Money(receipt.Change)}")
+            .AppendLine(receipt.SaleId.ToString("N")).ToString();
+    }
+    private async Task CompleteHardwareAsync(StoreReceipt receipt, SaleLine[] lines)
+    {
+        try { await ReceiptHardware.AfterSaleAsync(hardware, HardwareDirectory, receipt.SaleId, StoreReceiptText(receipt, lines), receipt.Payment.Method); }
+        catch(Exception error) when(error is not OutOfMemoryException) { if(!IsDisposed) feedback.Text = "Payment saved. Hardware request failed: " + error.Message; }
+    }
+    private Task ToggleTaxAsync(bool selected)
+    { RequireEditable(); if(selected) sale.ToggleLineTax(SelectedRow()); else sale.TaxExempt = !sale.TaxExempt; return Task.CompletedTask; }
+    private Task DiscountAsync()
+    {
+        RequireEditable(); int row = SelectedRow();
+        using var window = new NumberEntryForm("Discount", "Discount (%)", sale.Lines[row].DiscountRate, 0, 100, 2, _ => "");
+        if(window.ShowDialog(this) == DialogResult.OK) sale.SetDiscount(row, window.Value); return Task.CompletedTask;
+    }
+    private Task CaseAsync() { RequireEditable(); cases.Checked = !cases.Checked; return Task.CompletedTask; }
+    private Task ShowHardwareAsync() { ShowHardwareSettings(); return Task.CompletedTask; }
+    private void ShowHardwareSettings()
+    {
+        using var window = new PosForm { Text = "This Terminal — Printer / Drawer", ClientSize = new Size(690, 610), ShowInTaskbar = false, StartPosition = FormStartPosition.CenterParent };
+        var panel = new HardwareSettingsPanel(hardware, HardwareDirectory);
+        var save = PosView.Button("Save", true, 11); var cancel = PosView.Button("Cancel", size: 11); cancel.DialogResult = DialogResult.Cancel;
+        var footer = HomeTerminalView.Actions(save, cancel); footer.Dock = DockStyle.Bottom;
+        window.Controls.Add(PosView.Scroll(panel)); window.Controls.Add(footer); window.CancelButton = cancel; window.AcceptButton = save;
+        save.Click += (_, _) =>
+        {
+            try { panel.Value.Validate(); TerminalRecovery.Write(profilePath + ".hardware.json", panel.Value); hardware = panel.Value; window.DialogResult = DialogResult.OK; }
+            catch(Exception error) when(error is ArgumentException or IOException or UnauthorizedAccessException) { MessageBox.Show(window, error.Message, "Printer Settings"); }
+        };
+        window.ShowDialog(this);
+    }
+    private async Task DrawerAsync()
+    {
+        try { string result = await ReceiptHardware.SendAsync(hardware, HardwareDirectory, null, true, "Manual drawer opening"); if(!IsDisposed) feedback.Text = result; }
+        catch(Exception error) when(error is not OutOfMemoryException) { if(!IsDisposed) feedback.Text = "Drawer request failed: " + error.Message; }
+    }
+    private Task TransactionsAsync()
+    {
+        if(!Ready) throw new InvalidOperationException("Connect to the store first.");
+        var source = client!;
+        using var window = new TransactionsForm(info!.BusinessDate, day => source.FullReportAsync(RecordReport.Sales, day, token: closing.Token),
+            async row => SaleReceiptForm.Format(row, await source.FullReportAsync(RecordReport.SaleLines,
+                DateOnly.Parse((string)row["Business date"], CultureInfo.InvariantCulture), (string)row["Sale ID"], closing.Token)), hardware, HardwareDirectory);
+        window.ShowDialog(this); return Task.CompletedTask;
+    }
+    private Func<Task>? TypedAction(string action) => action switch
+    {
+        "Refund" => RefundAsync, "Quantity" => QuantityAsync, "Receipts" => TransactionsAsync, "Open drawer" => DrawerAsync,
+        "Tax exempt sale" => () => ToggleTaxAsync(false), "Tax exempt line" => () => ToggleTaxAsync(true), "Item lookup" => LookupAsync,
+        "Checkout" => CheckoutAsync, "Discount" => DiscountAsync, "Case sale" => CaseAsync, "Delete line" => DeleteAsync,
+        "Void sale" => VoidAsync, "Settings" => ShowHardwareAsync, _ => null
+    };
     private async Task DisconnectAsync()
     {
         var leaving = client; client = null; info = null; scans.Clear(); connection.Text = "● Off"; connection.ForeColor = PosView.Muted; feedback.Text = "Disconnected. The current sale stays here.";
@@ -312,7 +398,9 @@ internal sealed class StoreTerminalForm : PosForm
     }
     protected override bool ProcessCmdKey(ref Message message, Keys keys)
     {
-        Func<Task>? action = keys switch { Keys.F9 => CheckoutAsync, Keys.F3 => LookupAsync, Keys.F5 => DeleteAsync, Keys.F4 => VoidAsync, _ => null };
+        Func<Task>? action = keys switch { Keys.F9 => CheckoutAsync, Keys.F3 => LookupAsync, Keys.F5 => DeleteAsync, Keys.F4 => VoidAsync, Keys.F6 or (Keys.Control | Keys.Q) => QuantityAsync, Keys.F7 => DiscountAsync, Keys.F11 or (Keys.Control | Keys.P) => TransactionsAsync, (Keys.Control | Keys.Shift | Keys.X) => () => ToggleTaxAsync(false), (Keys.Control | Keys.Alt | Keys.X) => () => ToggleTaxAsync(true), (Keys.Control | Keys.Shift | Keys.C) => DrawerAsync, (Keys.Control | Keys.Oemcomma) => ShowHardwareAsync, (Keys.Control | Keys.Shift | Keys.R) => RefundAsync, _ => null };
+        if(keys == Keys.F12) { scanner.Focus(); return true; }
+        if(scanner.Focused && keys is Keys.Up or Keys.Down && grid.Rows.Count > 0) { int next = Math.Clamp((grid.CurrentRow?.Index ?? 0) + (keys == Keys.Up ? -1 : 1), 0, grid.Rows.Count - 1); grid.CurrentCell = grid.Rows[next].Cells[0]; return true; }
         if(keys == Keys.F10 && !working && pending is null) { cases.Checked = !cases.Checked; return true; }
         if(action is not null) { _ = RunAsync(action); return true; }
         return base.ProcessCmdKey(ref message, keys);
@@ -341,9 +429,10 @@ internal sealed class StoreLookupForm : PosForm
     private int page;
     private bool loading;
     internal Product? SelectedProduct { get; private set; }
-    internal StoreLookupForm(HomeTerminalClient client)
+    internal StoreLookupForm(HomeTerminalClient client, string initialSearch = "")
     {
-        Text = "Store Terminal — Item Lookup"; ClientSize = new Size(850, 490); ShowInTaskbar = false; StartPosition = FormStartPosition.CenterParent;
+        Text = "Store Terminal — Item Lookup"; ClientSize = new Size(1400, 760); ShowInTaskbar = false; StartPosition = FormStartPosition.CenterParent;
+        search.Text = initialSearch;
         var layout = HomeTerminalView.Layout();
         var find = PosView.Button("Search", size: 11);
         var previous = PosView.Button("Previous", size: 11);
@@ -368,8 +457,10 @@ internal sealed class StoreLookupForm : PosForm
                 if(IsDisposed) return;
                 grid.DataSource = result.Items;
                 grid.Enabled = true;
-                foreach(DataGridViewColumn column in grid.Columns) column.Visible = column.Name is "Description" or "OnHand" or "Size" or "UnitPrice";
-                if(grid.Columns["OnHand"] is DataGridViewColumn stock) { stock.DisplayIndex = 1; stock.HeaderText = "On hand"; stock.DefaultCellStyle.NullValue = "Not counted"; }
+                foreach(DataGridViewColumn column in grid.Columns) column.Visible = column.Name is "Barcode" or "Brand" or "Description" or "OnHand" or "Size" or "UnitPrice" or "Supplier";
+                if(grid.Columns["OnHand"] is DataGridViewColumn stock) { stock.DisplayIndex = 5; stock.HeaderText = "Qty"; stock.DefaultCellStyle.NullValue = "Not counted"; }
+                foreach(var (columnName, index, width) in new[] { ("Barcode",0,155), ("Brand",1,140), ("Description",2,240), ("Size",3,125), ("UnitPrice",4,95), ("OnHand",5,105), ("Supplier",6,190) })
+                    if(grid.Columns[columnName] is DataGridViewColumn column) { column.DisplayIndex = index; column.Width = width; column.HeaderText = columnName == "Supplier" ? "Vendor" : columnName == "UnitPrice" ? "Price" : column.HeaderText; }
                 if(grid.Columns["Description"] is DataGridViewColumn name) { name.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; name.MinimumWidth = 200; }
                 if(grid.Columns["UnitPrice"] is DataGridViewColumn price) price.DefaultCellStyle.Format = "C2";
                 next.Enabled = (page+1)*100 < result.ItemCount; previous.Enabled = page > 0;

@@ -15,7 +15,7 @@ namespace Kpos;
 
 internal sealed record HomeStock(string Barcode, string Code, string Description, string Size,
     long? OnHand, long Sold, string Supplier, decimal UnitPrice = 0, int UnitsPerCase = 0, decimal CasePrice = 0, bool Taxable = true,
-    long Draft = 0);
+    long Draft = 0, string Brand = "");
 internal sealed record HomeSnapshot(DateOnly BusinessDate, DateTimeOffset CheckedAt, DaySales Sales,
     HomeStock[] Items, int ItemCount, int Page);
 
@@ -117,9 +117,10 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
                 item.Product.Barcode.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 item.Product.Code.Contains(query, StringComparison.OrdinalIgnoreCase)).Where(item => stock switch
                 { "empty" => item.OnHand <= 0, "low" => item.OnHand is <= 5, "uncounted" => item.OnHand is null, _ => true }).ToArray();
+            var catalogDetails = data.ReadCatalogDetails();
             HomeStock[] stockRows = items.Skip(index * 100).Take(100).Select(item => new HomeStock(item.Product.Barcode,
                 item.Product.Code, item.Product.Description, item.Product.Size, item.OnHand, item.Sold, item.DistributorName,
-                item.Product.UnitPrice, item.Product.UnitsPerCase, item.Product.CasePrice, item.Product.IsTaxable, item.Draft)).ToArray();
+                item.Product.UnitPrice, item.Product.UnitsPerCase, item.Product.CasePrice, item.Product.IsTaxable, item.Draft, (catalogDetails.GetValueOrDefault(item.Product.Barcode) ?? new()).Brand)).ToArray();
             return Results.Ok(new HomeSnapshot(day, DateTimeOffset.UtcNow, data.GetDaySales(day), stockRows, items.Length, index));
         });
         app.MapPost("/api/v1/order-requests", (HomeOrderRequest order) =>

@@ -26,7 +26,7 @@ public sealed class SaleLineEditTests
         Assert.AreEqual(2, sale.Lines[regular].Quantity);
 
         sale.RefundLine(edited);
-        sale.EditLine(edited, 3, 8m, 5m);
+        sale.EditLine(edited, -3, 8m, 5m);
         Assert.AreEqual(-3, sale.Lines[edited].Quantity);
         Assert.AreEqual(-1.20m, sale.Lines[edited].Discount);
         Assert.AreEqual(-22.80m, sale.Lines[edited].Extended);

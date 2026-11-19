@@ -36,7 +36,7 @@ internal sealed class SettingsForm : PosForm
         var tabs = new TabControl { Dock = DockStyle.Fill };
         var rate = new NumericUpDown
         {
-            Minimum = 0, Maximum = 100, DecimalPlaces = 4, Increment = 0.1m, Value = data.TaxRate, Width = 110
+            Minimum = 0, Maximum = 100, DecimalPlaces = 4, Increment = 0.1m, Value = data.ReadTaxes().Base, Width = 110
         };
         var duration = new NumericUpDown
         {
@@ -52,16 +52,31 @@ internal sealed class SettingsForm : PosForm
         var quantityKey = Shortcut(keys.Quantity);
         var lotteryKey = Shortcut(keys.Lottery);
         var miscKey = Shortcut(keys.Misc);
-        var refundKey = Shortcut(keys.Refund, length: 2);
+        var refundKey = Shortcut(keys.Refund);
         var expenseKey = Shortcut(keys.Expense);
         var stockKey = Shortcut(keys.Stock);
         var autoScan = Option("Submit fast barcode scans without Enter", keys.AutoScan);
-        AddTab("Shortcuts",
-            (null, PosView.Label("Type sale shortcuts in the scanner field and press Enter.", 11, color: PosView.Muted)),
-            ("Quantity", quantityKey), ("Lottery", lotteryKey), ("Misc", miscKey),
-            ("Refund (two letters or blank)", refundKey), ("Drawer expense (letter or blank)", expenseKey),
-            ("Stock in Orders (Alt + letter)", stockKey), (null, autoScan));
-        AddTab("Tax", ("Sales tax rate (%)", rate));
+        var extraKeys = RegisterKeys.DefaultExtras().Keys.ToDictionary(action => action, action => Shortcut(keys[action]));
+        var shortcutRows = new List<(string? Label, Control Input)>
+        {
+            (null, PosView.Label("Type a shortcut and press Enter. Leave it blank to search products instead.", 10, color: PosView.Muted)),
+            ("Quantity", quantityKey), ("Lottery", lotteryKey), ("Misc", miscKey), ("Refund", refundKey),
+            ("Drawer expense", expenseKey), ("Stock in Orders (F6)", stockKey)
+        };
+        shortcutRows.AddRange(extraKeys.Select(pair => ((string?)pair.Key, (Control)pair.Value)));
+        shortcutRows.Add((null, autoScan)); AddTab("Shortcuts", shortcutRows.ToArray());
+        TaxSettings originalTaxes = data.ReadTaxes();
+        var state = TaxRate(originalTaxes.State); var county = TaxRate(originalTaxes.County); var city = TaxRate(originalTaxes.City);
+        var district = TaxRate(originalTaxes.District); var other = TaxRate(originalTaxes.Other); var miscBase = TaxRate(originalTaxes.MiscBase ?? originalTaxes.Base);
+        var overrideMisc = Option("Use a separate Misc base tax", originalTaxes.MiscBase.HasValue);
+        miscBase.Enabled = overrideMisc.Checked; overrideMisc.CheckedChanged += (_, _) => miscBase.Enabled = overrideMisc.Checked;
+        TaxSettings CurrentTaxes() => new(rate.Value, state.Value, county.Value, city.Value, district.Value, other.Value, overrideMisc.Checked ? miscBase.Value : null);
+        AddTab("Tax", (null, PosView.Label("Base plus add-on rates form one sales tax. Misc base replaces the base rate for Misc items.", 10, color: PosView.Muted)),
+            ("Base tax (%)", rate), ("State add-on (%)", state), ("County add-on (%)", county), ("City add-on (%)", city),
+            ("District add-on (%)", district), ("Other add-on (%)", other), (null, overrideMisc), ("Misc base tax (%)", miscBase));
+        var hardware = new HardwareSettingsPanel(data.ReadHardware(), Path.Combine(folders.Root, "Records", "Hardware"));
+        var hardwareTab = new TabPage("Printer / Drawer") { BackColor = Color.White };
+        hardwareTab.Controls.Add(PosView.Scroll(hardware)); tabs.TabPages.Add(hardwareTab);
         var path = new TextBox { ReadOnly = true, Text = folders.Root, Dock = DockStyle.Top,
             AccessibleName = "Installation and records folder" };
         var changeDirectory = PosView.Button("Change Directory", size: 11);
@@ -77,7 +92,7 @@ internal sealed class SettingsForm : PosForm
                 if (MessageBox.Show(this, $"Copy kPOS, the database, and all records to:\n{picker.SelectedPath}\n\nkPOS will reopen in the new folder. The original folder will be kept.",
                     "Change Directory", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes) return;
                 data.SaveSettings(rate.Value, (int)duration.Value, requireCount.Checked, maximize.Checked,
-                    CurrentKeys(), showKeys.Checked, showChange.Checked);
+                    CurrentKeys(), showKeys.Checked, showChange.Checked, CurrentTaxes(), hardware.Value);
                 RequestedDirectory = picker.SelectedPath;
                 DialogResult = DialogResult.OK;
             }
@@ -90,9 +105,9 @@ internal sealed class SettingsForm : PosForm
         updates.Enabled = registerIdle;
         updates.Click += (_, _) =>
         {
-            if (rate.Value != data.TaxRate || duration.Value != data.ChangeSeconds ||
+            if (CurrentTaxes() != data.ReadTaxes() || hardware.Value != data.ReadHardware() || duration.Value != data.ChangeSeconds ||
                 requireCount.Checked != data.RequireItemCount || maximize.Checked != data.StartMaximized ||
-                showKeys.Checked != data.ShowRegisterKeys || showChange.Checked != data.ShowLastChange || CurrentKeys() != keys)
+                showKeys.Checked != data.ShowRegisterKeys || showChange.Checked != data.ShowLastChange || !CurrentKeys().SaleCommands.SequenceEqual(keys.SaleCommands) || CurrentKeys().Stock != keys.Stock || CurrentKeys().AutoScan != keys.AutoScan)
             {
                 MessageBox.Show(this, "Save your settings before installing an update.", "kPOS Updates");
                 return;
@@ -136,7 +151,7 @@ internal sealed class SettingsForm : PosForm
             try
             {
                 data.SaveSettings(rate.Value, (int)duration.Value, requireCount.Checked, maximize.Checked,
-                    CurrentKeys(), showKeys.Checked, showChange.Checked);
+                    CurrentKeys(), showKeys.Checked, showChange.Checked, CurrentTaxes(), hardware.Value);
                 DialogResult = DialogResult.OK;
             }
             catch (Exception error) when (error is SqliteException or ArgumentException)
@@ -147,7 +162,7 @@ internal sealed class SettingsForm : PosForm
         ResumeLayout();
 
         RegisterKeys CurrentKeys() => new(quantityKey.Text, lotteryKey.Text, miscKey.Text,
-            stockKey.Text, autoScan.Checked, refundKey.Text, expenseKey.Text);
+            stockKey.Text, autoScan.Checked, refundKey.Text, expenseKey.Text, extraKeys.ToDictionary(pair => pair.Key, pair => pair.Value.Text));
 
         Label IdleMessage(string text)
         {
@@ -159,8 +174,10 @@ internal sealed class SettingsForm : PosForm
         static CheckBox Option(string text, bool selected) =>
             new() { Text = text, AutoSize = true, Checked = selected, ForeColor = PosView.Ink };
 
-        static TextBox Shortcut(string value, int length = 1) =>
-            new() { Text = value, Width = 72, MaxLength = length, CharacterCasing = CharacterCasing.Upper };
+        static TextBox Shortcut(string value, int length = 16) =>
+            new() { Text = value, Width = 170, MaxLength = length, CharacterCasing = CharacterCasing.Upper };
+
+        static NumericUpDown TaxRate(decimal value) => new() { Minimum = 0, Maximum = 100, DecimalPlaces = 4, Increment = 0.1m, Value = value, Width = 110 };
 
         void AddTab(string name, params (string? Label, Control Input)[] rows)
         {

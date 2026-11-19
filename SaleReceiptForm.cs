@@ -3,12 +3,13 @@ using System.Data;
 using System.Drawing.Printing;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 
 namespace Kpos;
 
 internal sealed class SaleReceiptForm : PosForm
 {
-    public SaleReceiptForm(string receipt)
+    public SaleReceiptForm(string receipt, HardwareSettings? hardware = null, string? directory = null)
     {
         Text = "Receipt Copy";
         ClientSize = new Size(565, 610);
@@ -28,7 +29,17 @@ internal sealed class SaleReceiptForm : PosForm
         var print = PosView.Button("&Print Receipt", primary: true, size: 11);
         var close = PosView.Button("Close", size: 11);
         close.DialogResult = DialogResult.Cancel;
-        print.Click += (_, _) => PrintReceipt(receipt);
+        var feedback = PosView.Label("", 10, color: PosView.Muted); feedback.MaximumSize = new Size(480, 0);
+        print.Click += async (_, _) =>
+        {
+            if(hardware is null) { PrintReceipt(receipt); return; }
+            print.Enabled = false;
+            try { string result = await ReceiptHardware.SendAsync(hardware, directory!, receipt, false, "kPOS receipt copy"); if(!IsDisposed) feedback.Text = result; }
+            catch(Exception error) when(error is not OutOfMemoryException) { if(!IsDisposed) feedback.Text = "Print failed: " + error.Message; }
+            finally { if(!IsDisposed) print.Enabled = true; }
+        };
+        preview.KeyDown += (_, e) => { if(e.Control && e.KeyCode == Keys.P) { e.SuppressKeyPress = true; print.PerformClick(); } };
+        actions.WrapContents = true; actions.Controls.Add(feedback);
         actions.Controls.AddRange([print, close]);
         Controls.Add(preview);
         Controls.Add(actions);
@@ -40,7 +51,7 @@ internal sealed class SaleReceiptForm : PosForm
         var text = new StringBuilder();
         var time = DateTimeOffset.Parse((string)sale["Sold at"], CultureInfo.InvariantCulture);
         text.AppendLine("kPOS RECEIPT COPY")
-            .AppendLine($"{sale["Entry"]}  {time:g}")
+            .AppendLine($"{sale["Entry"]}  {time:yyyy-MM-dd HH:mm:ss}")
             .AppendLine($"Receipt ID {sale["Sale ID"]}")
             .AppendLine();
 
@@ -55,6 +66,8 @@ internal sealed class SaleReceiptForm : PosForm
 
             text.AppendLine(item)
                 .AppendLine($"  {line["Quantity"]} × {Money(line, "Unit price")}    {Money(line, "Net sales")}");
+            if(Convert.ToInt64(line["Quantity"], CultureInfo.InvariantCulture) < 0) text.AppendLine("  RETURN");
+            if(lines.Columns.Contains("Tax void") && Convert.ToInt64(line["Tax void"], CultureInfo.InvariantCulture) != 0) text.AppendLine("  TAX VOID");
             if (Amount(line, "Discount") != 0)
                 text.AppendLine($"  Discount {Money(line, "Discount")}");
         }
@@ -62,8 +75,10 @@ internal sealed class SaleReceiptForm : PosForm
         text.AppendLine()
             .AppendLine($"Subtotal   {Money(sale, "Subtotal")}")
             .AppendLine($"Discounts  {Money(sale, "Discounts")}")
-            .AppendLine($"Sales tax  {Money(sale, "Tax")}")
-            .AppendLine($"Total      {Money(sale, "Total")}");
+            .AppendLine($"Sales tax  {Money(sale, "Tax")}");
+        if(sale.Table.Columns.Contains("Tax detail") && sale["Tax detail"] is string json && JsonSerializer.Deserialize<TaxBreakdown>(json) is TaxBreakdown detail)
+            foreach(var row in detail.Rows()) text.AppendLine($"  {row.Name} ({Sale.Rate(row.Rate)}) {Sale.Money(row.Amount)}");
+        text.AppendLine($"Total      {Money(sale, "Total")}");
         decimal total = Amount(sale, "Total");
         if (total < 0)
             text.AppendLine($"{sale["Payment"]} refund  {Sale.Money(-Amount(sale, "Received"))}");

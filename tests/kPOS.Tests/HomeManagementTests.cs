@@ -121,7 +121,7 @@ public sealed class HomeManagementTests
         using(var sql = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = store.Path, Pooling = false }.ToString()))
         {
             sql.Open(); sql.CreateCollation("ITEM_CODE", StringComparer.OrdinalIgnoreCase.Compare);
-            using var command = sql.CreateCommand(); command.CommandText = "DROP TABLE product_details; DROP TABLE terminal_sales; DROP TABLE terminal_quotes; DROP TABLE store_identity; PRAGMA user_version=11;"; command.ExecuteNonQuery();
+            using var command = sql.CreateCommand(); command.CommandText = "DROP TABLE product_details; DROP TABLE terminal_sales; DROP TABLE terminal_quotes; DROP TABLE store_identity; ALTER TABLE register_settings DROP COLUMN taxes_json; ALTER TABLE register_settings DROP COLUMN hardware_json; ALTER TABLE register_settings DROP COLUMN shortcuts_json; ALTER TABLE sales DROP COLUMN tax_exempt; ALTER TABLE sales DROP COLUMN taxes_json; ALTER TABLE sales DROP COLUMN tax_details_json; ALTER TABLE sale_lines DROP COLUMN tax_void; PRAGMA user_version=11;"; command.ExecuteNonQuery();
         }
         using(var upgraded = new RegisterData(store.Path))
         {

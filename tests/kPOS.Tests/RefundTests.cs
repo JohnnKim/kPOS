@@ -17,14 +17,14 @@ public sealed class RefundTests
 
         sale.RefundLine(selected);
         sale.RefundLine(selected);
-        Assert.AreEqual(-1, sale.Lines[selected].Quantity);
+        Assert.AreEqual(-2, sale.Lines[selected].Quantity);
         Assert.AreEqual(1, sale.Lines[wine].Quantity);
-        Assert.AreEqual(2L, sale.ItemCount);
-        Assert.AreEqual(6.17m, sale.GetTotals(2.9m).Total);
+        Assert.AreEqual(3L, sale.ItemCount);
+        Assert.AreEqual(-6.16m, sale.GetTotals(2.9m).Total);
 
         int next = sale.Add(beer, isCase: false);
         Assert.AreNotEqual(selected, next);
-        Assert.AreEqual(-1, sale.Lines[selected].Quantity);
+        Assert.AreEqual(-2, sale.Lines[selected].Quantity);
         Assert.AreEqual(1, sale.Lines[next].Quantity);
     }
 

@@ -45,10 +45,10 @@ public sealed class RegisterTests
         Assert.AreEqual(Product.TrainingCatalog.Count, grid.RowCount);
         search.Text = "cider";
         Assert.AreEqual(1, grid.RowCount);
-        Assert.AreEqual("102", grid.Rows[0].Cells["Code"].Value);
+        Assert.AreEqual("000000000102", grid.Rows[0].Cells["Barcode"].Value);
         search.Text = "000000000201";
         Assert.AreEqual(1, grid.RowCount);
-        Assert.AreEqual("201", grid.Rows[0].Cells["Code"].Value);
+        Assert.AreEqual("000000000201", grid.Rows[0].Cells["Barcode"].Value);
         var field = Find<ComboBox>(catalog);
         field.SelectedIndex = 1; // Name
         Assert.AreEqual(0, grid.RowCount);
@@ -57,7 +57,7 @@ public sealed class RegisterTests
         field.SelectedIndex = 2; // Item code
         Assert.AreEqual(0, grid.RowCount);
         search.Text = "201";
-        Assert.AreEqual("201", grid.Rows[0].Cells["Code"].Value);
+        Assert.AreEqual("000000000201", grid.Rows[0].Cells["Barcode"].Value);
         field.SelectedIndex = 4; // Size
         search.Text = "750";
         Assert.IsTrue(grid.RowCount > 0);

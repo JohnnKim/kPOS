@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
 namespace Kpos;
@@ -46,7 +47,9 @@ internal sealed partial class RegisterData : IDisposable
         }
         set
         {
-            using var command = Command("UPDATE register_settings SET tax_rate = $rate WHERE id = 1");
+            using var command = Command("UPDATE register_settings SET tax_rate = $rate, taxes_json=$taxes WHERE id = 1");
+            new TaxSettings(value).Validate();
+            command.Parameters.AddWithValue("$taxes", JsonSerializer.Serialize(new TaxSettings(value)));
             command.Parameters.AddWithValue("$rate", decimal.ToInt64(value * 10000));
             command.ExecuteNonQuery();
         }
@@ -64,10 +67,15 @@ internal sealed partial class RegisterData : IDisposable
     }
 
     public void SaveSettings(decimal taxRate, int changeSeconds, bool requireItemCount = true, bool startMaximized = true,
-        RegisterKeys? keys = null, bool? showRegisterKeys = null, bool? showLastChange = null)
+        RegisterKeys? keys = null, bool? showRegisterKeys = null, bool? showLastChange = null, TaxSettings? taxes = null, HardwareSettings? hardware = null)
     {
         using var transaction = connection.BeginTransaction(deferred: false);
         keys ??= ReadRegisterKeys(transaction);
+        TaxSettings savedTaxes = ReadTaxes(transaction);
+        taxes ??= taxRate == savedTaxes.SalesRate ? savedTaxes : new TaxSettings(taxRate);
+        taxes.Validate();
+        hardware ??= ReadHardware(transaction);
+        hardware.Validate();
         if ((keys.Validate() ?? CheckShortcutConflict(keys, transaction)) is string problem)
             throw new ArgumentException(problem, nameof(keys));
 
@@ -75,11 +83,14 @@ internal sealed partial class RegisterData : IDisposable
             UPDATE register_settings SET tax_rate = $rate, change_seconds = $seconds,
                 require_item_count = $count, start_maximized = $maximized, quantity_key = $quantity,
                 lottery_key = $lottery, misc_key = $misc, stock_key = $stock, auto_scan = $auto,
-                refund_key = $refund, expense_key = $expense,
+                refund_key = $refund, expense_key = $expense, taxes_json=$taxes, shortcuts_json=$keys, hardware_json=$hardware,
                 show_register_keys = COALESCE($show_keys, show_register_keys),
                 show_last_change = COALESCE($show_change, show_last_change) WHERE id = 1
             """, transaction);
-        command.Parameters.AddWithValue("$rate", decimal.ToInt64(taxRate * 10000));
+        command.Parameters.AddWithValue("$rate", decimal.ToInt64(taxes.SalesRate * 10000));
+        command.Parameters.AddWithValue("$taxes", JsonSerializer.Serialize(taxes));
+        command.Parameters.AddWithValue("$keys", JsonSerializer.Serialize(keys.Extra ?? RegisterKeys.DefaultExtras()));
+        command.Parameters.AddWithValue("$hardware", JsonSerializer.Serialize(hardware));
         command.Parameters.AddWithValue("$seconds", changeSeconds);
         command.Parameters.AddWithValue("$count", requireItemCount);
         command.Parameters.AddWithValue("$maximized", startMaximized);
@@ -131,7 +142,7 @@ internal sealed partial class RegisterData : IDisposable
         if (original is not null && product.Barcode != original.Barcode)
             return "The scanned barcode stays fixed when editing a product.";
 
-        if (product.Code.Length <= 2 || product.Barcode.Length <= 2)
+        if (product.Code.Length > 0 || product.Barcode.Length > 0)
         {
             RegisterKeys keys = ReadRegisterKeys(transaction);
             if (keys.IsSaleShortcut(product.Code) || keys.IsSaleShortcut(product.Barcode))
@@ -172,7 +183,7 @@ internal sealed partial class RegisterData : IDisposable
             using var existing = Command("SELECT code, barcode FROM products WHERE barcode = $barcode AND archived = 1", transaction);
             existing.Parameters.AddWithValue("$barcode", barcode);
             using var reader = existing.ExecuteReader();
-            if (reader.Read() && (reader.GetString(0).Length <= 2 || reader.GetString(1).Length <= 2))
+            if (reader.Read())
             {
                 string code = reader.GetString(0);
                 string itemBarcode = reader.GetString(1);
@@ -280,6 +291,8 @@ internal sealed partial class RegisterData : IDisposable
             CreateCatalogDetails(transaction);
         if (currentVersion < 13)
             CreateStoreTerminals(transaction);
+        if (currentVersion < 14)
+            AddWorkstationFeatures(transaction);
 
         transaction.Commit();
     }

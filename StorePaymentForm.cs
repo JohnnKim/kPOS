@@ -22,7 +22,7 @@ internal sealed class StorePaymentForm : PosForm
         Func<Task<StoreReceipt?>> cancelAtStore)
     {
         Text = pending is null ? "Store Terminal — Checkout" : "Store Terminal — Confirm Checkout";
-        ClientSize = new Size(650, 450); StartPosition = FormStartPosition.CenterParent; ShowInTaskbar = false;
+        ClientSize = new Size(850, 690); StartPosition = FormStartPosition.CenterParent; ShowInTaskbar = false;
         BackColor = PosView.Canvas; status.MaximumSize = new Size(580, 0);
         fixedCommit = pending;
         if(pending is not null) status.Text = "Unconfirmed checkout. Retry without taking payment again.";
@@ -35,11 +35,24 @@ internal sealed class StorePaymentForm : PosForm
         var amount = PosView.Label(Sale.Money(Math.Abs(quote.Totals.Total)), 34, FontStyle.Bold);
         HomeTerminalView.Row(layout, amount);
         HomeTerminalView.Row(layout, PosView.Label($"{Sale.FromLines(quote.Lines).ItemCount:N0} items · {quote.TerminalName}", 12));
+        var items = HomeTerminalView.Grid(); PosView.Grid(items, 11, 32);
+        items.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+        items.Dock = DockStyle.Top; items.Height = 42 + Math.Clamp(quote.Lines.Length, 1, 5) * 32;
+        items.AccessibleName = "Checkout items";
+        foreach(var (name, width) in new[] { ("#", 38), ("Item", 240), ("Size", 100), ("Qty", 60), ("Amount", 110) })
+            items.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = name, Width = width, AutoSizeMode = name == "Item" ? DataGridViewAutoSizeColumnMode.Fill : DataGridViewAutoSizeColumnMode.None });
+        foreach(var line in quote.Lines) items.Rows.Add(items.Rows.Count + 1, line.Product.Description, line.Product.Size, line.Quantity, Sale.Money(line.Extended));
+        HomeTerminalView.Row(layout, items);
+        var tax = PosView.Label($"Sales tax   {Sale.Money(quote.Totals.Tax)}", 12, FontStyle.Bold);
+        HomeTerminalView.Row(layout, tax);
+        var taxDetails = new TaxBreakdownView(); taxDetails.SetTotals(quote.Totals);
+        HomeTerminalView.Row(layout, taxDetails);
         var fields = HomeTerminalView.Fields(("Confirm item count", count), (pending?.Payment.Method == PaymentMethod.Card ? "Card amount" : "Cash received", received));
         HomeTerminalView.Row(layout, fields);
         HomeTerminalView.Row(layout, status);
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(cash, card, retry, cancel, back));
         Controls.Add(layout);
+        taxDetails.SetTotals(quote.Totals);
         back.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
         cash.Click += async (_, _) => await SubmitAsync(PaymentMethod.Cash);
         card.Click += async (_, _) => await SubmitAsync(PaymentMethod.Card);

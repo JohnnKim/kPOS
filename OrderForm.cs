@@ -10,6 +10,7 @@ internal sealed class OrderForm : PosForm
     private readonly RadioButton week = new() { Text = "7 days", Checked = true, AutoSize = true };
     private readonly RadioButton month = new() { Text = "30 days", AutoSize = true };
     private readonly Keys stockShortcut;
+    private readonly string stockCommand;
     private readonly DateTimePicker through = new() { Width = 132, Format = DateTimePickerFormat.Short, AccessibleName = "Sales through" };
     private readonly NumericUpDown coverage = new() { Minimum = 1, Maximum = 365, Value = 7, Width = 64, AccessibleName = "Days to cover" };
     private readonly TextBox search = new() { Width = 218, AccessibleName = "Find item", PlaceholderText = "Name, code, or barcode" };
@@ -40,9 +41,9 @@ internal sealed class OrderForm : PosForm
     {
         this.data = data;
         businessDay = data.CurrentBusinessDate();
-        string stockKey = data.ReadRegisterKeys().Stock;
-        stockShortcut = Keys.A + (stockKey[0] - 'A');
-        inventory.Text = $"&Stock… (Alt+{stockKey})";
+        string stockKey = stockCommand = data.ReadRegisterKeys().Stock;
+        stockShortcut = stockKey.Length == 1 ? Keys.A + (stockKey[0] - 'A') : Keys.None;
+        inventory.Text = stockKey.Length == 1 ? $"&Stock… (Alt+{stockKey})" : "&Stock… (F6)";
         Text = "Orders";
         ClientSize = new Size(1190, 680);
         MinimumSize = new Size(915, 490);
@@ -87,7 +88,7 @@ internal sealed class OrderForm : PosForm
         through.ValueChanged += (_, _) => Reload();
         coverage.ValueChanged += (_, _) => Filter();
         sort.SelectedIndexChanged += (_, _) => Filter();
-        search.TextChanged += (_, _) => Filter();
+        search.TextChanged += (_, _) => { if(stockCommand.Length == 0 || !stockCommand.StartsWith(search.Text, StringComparison.OrdinalIgnoreCase) || search.Text.Length == 0) Filter(); };
         draftOnly.CheckedChanged += (_, _) => Filter();
         inventory.Click += (_, _) => EditStock();
         details.Click += (_, _) => ViewItem();
@@ -247,7 +248,8 @@ internal sealed class OrderForm : PosForm
 
     protected override bool ProcessCmdKey(ref Message message, Keys keys)
     {
-        if (keys == (Keys.Alt | stockShortcut))
+        if(keys == Keys.Enter && search.Focused && stockCommand.Length > 0 && search.Text.Equals(stockCommand, StringComparison.OrdinalIgnoreCase)) { EditStock(); search.Clear(); return true; }
+        if (keys == Keys.F6 || (stockShortcut != Keys.None && keys == (Keys.Alt | stockShortcut)))
         {
             EditStock();
             return true;

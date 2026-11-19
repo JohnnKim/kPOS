@@ -5,10 +5,10 @@ using Microsoft.Data.Sqlite;
 
 namespace Kpos;
 
-internal sealed record StoreLine(string Barcode, bool IsCase, int Quantity, decimal DiscountRate = 0);
-internal sealed record StoreQuoteRequest(Guid TerminalId, Guid SaleId, StoreLine[] Lines, SaleTotals Expected);
+internal sealed record StoreLine(string Barcode, bool IsCase, int Quantity, decimal DiscountRate = 0, bool TaxExempt = false);
+internal sealed record StoreQuoteRequest(Guid TerminalId, Guid SaleId, StoreLine[] Lines, SaleTotals Expected, bool TaxExempt = false);
 internal sealed record StoreQuote(Guid Id, Guid TerminalId, string TerminalName, Guid SaleId, DateOnly Day,
-    SaleLine[] Lines, SaleTotals Totals, DateTimeOffset ExpiresAt, bool RequireItemCount, int ChangeSeconds);
+    SaleLine[] Lines, SaleTotals Totals, DateTimeOffset ExpiresAt, bool RequireItemCount, int ChangeSeconds, bool TaxExempt = false, TaxSettings? Taxes = null);
 internal sealed record StoreCommit(Guid TerminalId, Guid QuoteId, Payment Payment, long ItemCount);
 internal sealed record StoreCancel(Guid TerminalId, Guid QuoteId);
 internal sealed record StoreReceipt(Guid SaleId, Guid QuoteId, string Terminal, DateOnly Day, DateTimeOffset RecordedAt,
@@ -60,28 +60,29 @@ internal sealed partial class RegisterData
         foreach(StoreLine line in request.Lines)
         {
             if(line is null || string.IsNullOrWhiteSpace(line.Barcode) || line.Barcode.Length > 100 || line.Quantity == 0 ||
-                line.Quantity is < -9999 or > 9999 || line.DiscountRate is < 0 or > 100 || decimal.Round(line.DiscountRate, 2) != line.DiscountRate)
+                line.Quantity is < -100 or > 100 || line.DiscountRate is < 0 or > 100 || decimal.Round(line.DiscountRate, 2) != line.DiscountRate)
                 throw new ArgumentException("Check the item, quantity and discount.");
             using var productQuery = Command($"SELECT {ProductColumns} FROM products WHERE barcode=$barcode AND archived=0", transaction);
             productQuery.Parameters.AddWithValue("$barcode", line.Barcode);
             using var reader = productQuery.ExecuteReader();
             Product product = reader.Read() ? ReadProduct(reader) : throw new InvalidOperationException("An item is no longer available. Refresh the sale.");
             if(line.IsCase && !product.HasCasePrice) throw new ArgumentException("This item has no case price.");
-            lines.Add(new(product, line.IsCase, line.Quantity, line.DiscountRate));
+            lines.Add(new(product, line.IsCase, line.Quantity, line.DiscountRate, TaxExempt: line.TaxExempt));
         }
-        Sale sale = Sale.FromLines(lines);
+        Sale sale = Sale.FromLines(lines, request.TaxExempt);
         using var taxQuery = Command("SELECT tax_rate, require_item_count, change_seconds FROM register_settings WHERE id=1", transaction);
-        decimal rate; bool requireCount; int changeSeconds;
+        bool requireCount; int changeSeconds;
         using(var settings = taxQuery.ExecuteReader())
-        { settings.Read(); rate = settings.GetInt64(0) / 10000m; requireCount = settings.GetInt64(1) != 0; changeSeconds = settings.GetInt32(2); }
-        SaleTotals totals = sale.GetTotals(rate);
+        { settings.Read(); requireCount = settings.GetInt64(1) != 0; changeSeconds = settings.GetInt32(2); }
+        TaxSettings taxes = ReadTaxes(transaction);
+        SaleTotals totals = sale.GetTotals(taxes);
         if(totals.Total is < -999999999.99m or > 999999999.99m) throw new ArgumentException("This sale exceeds the terminal limit.");
-        if(totals != request.Expected) throw new InvalidOperationException("Store prices or tax changed. Choose Refresh Prices, then review the total before checkout.");
+        if(totals != (request.Expected.TaxDetails is null ? request.Expected with { TaxDetails = totals.TaxDetails } : request.Expected)) throw new InvalidOperationException("Store prices or tax changed. Choose Refresh Prices, then review the total before checkout.");
         DateTimeOffset now = DateTimeOffset.UtcNow;
         using(var cleanup = Command("DELETE FROM terminal_quotes WHERE expires_at < $now", transaction))
         { cleanup.Parameters.AddWithValue("$now", now.ToString("O")); cleanup.ExecuteNonQuery(); }
         var quote = new StoreQuote(Guid.NewGuid(), request.TerminalId, terminalName, request.SaleId,
-            OpenBusinessDate(DateOnly.FromDateTime(DateTime.Now), transaction), lines.ToArray(), totals, now.AddMinutes(15), requireCount, changeSeconds);
+            OpenBusinessDate(DateOnly.FromDateTime(DateTime.Now), transaction), lines.ToArray(), totals, now.AddMinutes(15), requireCount, changeSeconds, request.TaxExempt, taxes);
         using var save = Command("""
             INSERT INTO terminal_quotes VALUES($quote,$sale,$terminal,$expires,$json)
             ON CONFLICT(sale_id) DO UPDATE SET quote_id=excluded.quote_id, terminal_id=excluded.terminal_id,
@@ -121,10 +122,10 @@ internal sealed partial class RegisterData
         }
         if(quote.ExpiresAt < DateTimeOffset.UtcNow || quote.Day != OpenBusinessDate(DateOnly.FromDateTime(DateTime.Now), transaction))
             throw new InvalidOperationException("This checkout expired or its business day was closed. Cancel it at the store, then review a new checkout.");
-        Sale sale = Sale.FromLines(quote.Lines);
+        Sale sale = Sale.FromLines(quote.Lines, quote.TaxExempt);
         if(quote.RequireItemCount && request.ItemCount != sale.ItemCount) throw new ArgumentException("Confirm the correct item count.");
         DateTimeOffset recordedAt = DateTimeOffset.Now;
-        RecordSaleInTransaction(quote.SaleId, recordedAt, sale, quote.Totals, request.Payment, transaction);
+        RecordSaleInTransaction(quote.SaleId, recordedAt, sale, quote.Totals, request.Payment, transaction, quote.Taxes ?? new(quote.Totals.TaxRate));
         var receipt = new StoreReceipt(quote.SaleId, quote.Id, quote.TerminalName, quote.Day, recordedAt, quote.Totals, request.Payment);
         using var save = Command("INSERT INTO terminal_sales VALUES($sale,$quote,$terminal,$name,$hash,$json)", transaction);
         save.Parameters.AddWithValue("$sale", quote.SaleId.ToString("N")); save.Parameters.AddWithValue("$quote", quote.Id.ToString("N"));

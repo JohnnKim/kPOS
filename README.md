@@ -1,9 +1,10 @@
 # kPOS
 Independent liquor store POS system
 
-Preview.28 separates **Host Terminal** (store server), **Remote Connection** (home/office management), and **Store Terminal** (shared LAN checkout).
-It adds connected-terminal status, stock filters, supplier lookup, and the first shared sales/stock implementation for three or more tills.
-See [Store-Terminals.md](docs/Store-Terminals.md) for setup, recovery, and the remaining multi-register work.
+Preview.29 adds keyboard-first register controls, a live 24-hour clock, sale line numbers/sizes, and daily receipt selection/reprinting.
+Lookup shows barcode, brand, description, size, price, quantity and vendor; tax settings now support separate components and tax-exempt sales/returns, with component amounts shown in the sale and checkout.
+Printer/drawer connections include a capture mode for testing before hardware is available. See [Hardware-Testing.md](docs/Hardware-Testing.md).
+Host Terminal, Remote Connection, and shared LAN checkout remain separate roles; see [Store-Terminals.md](docs/Store-Terminals.md).
 See [Preview-25.md](docs/Preview-25.md) for setup, scrolling, and directory migration details.
 
 Home-terminal setup instructions, Windows 10 validation limits, client questions,
@@ -11,10 +12,10 @@ and hardware/connection options are in [Home-Terminal.md](docs/Home-Terminal.md)
 
 ## kPOS – Product / Development Report
 
-November 18th 2026
+November 19th 2026
 
 Windows oriented Point-Of-Sale and back office software for independent liquor retail
-Current Stage: Windows testing preview, v0.1.0-preview.28
+Current Stage: Windows testing preview, v0.1.0-preview.29
 
 ## Executive Summary
 kPOS is being built to replace an aging LiquorPOS system that the store uses to ring up sales, manage products, track inventory, place orders, and close the day. The current Windows XP based system contains years of work that would be expensive to recreate and easy to lose in a haphazard transition. The mission statement is to preserve that progress while also modernizing the current system.

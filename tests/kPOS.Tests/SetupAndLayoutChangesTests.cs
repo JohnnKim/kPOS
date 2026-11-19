@@ -15,8 +15,9 @@ public sealed class SetupAndLayoutChangesTests
         window.Show();
         Application.DoEvents();
         var grid = Descendants(window).OfType<DataGridView>().Single();
-        Assert.IsFalse(grid.Columns["Code"]!.Visible);
-        Assert.IsFalse(grid.Columns["Barcode"]!.Visible);
+        Assert.IsNull(grid.Columns["Code"]);
+        Assert.IsTrue(grid.Columns["Barcode"]!.Visible);
+        Assert.AreEqual(7, grid.Columns.Count);
         Assert.IsTrue(grid.Columns["OnHand"]!.Displayed);
         Assert.IsFalse(grid.Controls.OfType<HScrollBar>().Any(bar => bar.Visible));
         using var editor = new ProductEditorForm("901234567891", product => data.SaveProduct(product)) { Opacity = 0, ShowInTaskbar = false };

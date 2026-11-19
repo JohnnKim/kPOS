@@ -17,6 +17,9 @@ public sealed class WindowPerformanceTests
         [ ("Register", () => new RegisterForm(data, folders)), ("End of day", () => new CloseoutForm(data, folders)),
           ("Backup", () => new BackupOptionsForm()), ("Orders", () => new OrderForm(data)),
           ("Reports", () => new RecordsForm(data, folders)), ("Remote Connection", () => new HomeTerminalForm()), ("Host Terminal", () => new HomeHostForm(data)),
+          ("Settings", () => new SettingsForm(data, folders)),
+          ("Item Lookup", () => new ProductListForm(data.ListProducts(), true, data: data)),
+          ("Transactions", () => new TransactionsForm(data.CurrentBusinessDate(), day => Task.FromResult(data.ReadReport(RecordReport.Sales, day, day)), row => Task.FromResult("Test receipt"), new(), Path.GetTempPath())),
           ("Catalog", () => new ProductListForm(data.ListProducts(), false, data: data)),
           ("Item Details", () => new CatalogDetailsForm(data, data.ListProducts()[0])) ];
         foreach (var (name, create) in factories)

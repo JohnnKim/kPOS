@@ -153,7 +153,7 @@ public sealed class CloseoutTests
                     DROP INDEX sales_refund_of;
                     ALTER TABLE sales DROP COLUMN refund_of;
                     ALTER TABLE sales DROP COLUMN lottery_cents;
-                    PRAGMA user_version = 2;
+                    ALTER TABLE register_settings DROP COLUMN taxes_json; ALTER TABLE register_settings DROP COLUMN hardware_json; ALTER TABLE register_settings DROP COLUMN shortcuts_json; ALTER TABLE sales DROP COLUMN tax_exempt; ALTER TABLE sales DROP COLUMN taxes_json; ALTER TABLE sales DROP COLUMN tax_details_json; ALTER TABLE sale_lines DROP COLUMN tax_void; PRAGMA user_version = 2;
                     """;
                 command.ExecuteNonQuery();
             }

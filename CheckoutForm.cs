@@ -15,6 +15,7 @@ internal sealed class CheckoutForm : PosForm
     private readonly Button cashRefund = PosView.Button("Record &Cash Refund", primary: true, size: 11);
     private readonly Button cardRefund = PosView.Button("Record Card &Refund", size: 11);
     private readonly System.Windows.Forms.Timer changeTimer = new() { Interval = 150 };
+    private readonly TaxBreakdownView taxDetails = new();
     private bool unlocked;
     private bool amountEdited;
     private bool recorded;
@@ -57,6 +58,7 @@ internal sealed class CheckoutForm : PosForm
         Control summary = CreatePaymentSummary(totals, requireItemCount, sale.HasReturns);
         layout.Controls.Add(PosView.Frame(PosView.Scroll(summary), new Padding(8)), 1, 1);
         Controls.Add(layout);
+        taxDetails.SetTotals(totals);
 
         amount.Text = totals.Total.ToString("F2", CultureInfo.InvariantCulture);
         amount.Enabled = unlocked;
@@ -298,6 +300,9 @@ internal sealed class CheckoutForm : PosForm
         };
         PosView.Grid(grid);
         grid.Columns.Add("Item", "Item");
+        grid.Columns.Add("Size", "Size");
+        grid.Columns["Size"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
+        grid.Columns["Size"]!.MinimumWidth = 70;
         grid.Columns.Add("Quantity", "Qty");
         grid.Columns.Add("UnitPrice", "Unit Price");
         grid.Columns.Add("Extended", "Amount");
@@ -310,11 +315,9 @@ internal sealed class CheckoutForm : PosForm
         foreach (SaleLine line in sale.Lines)
         {
             string name = line.Product.Description;
-            if (!string.IsNullOrEmpty(line.Product.Size))
-                name += $" · {line.Product.Size}";
             if (line.IsCase)
                 name += $" · Case of {line.Product.UnitsPerCase}";
-            grid.Rows.Add(name, line.Quantity, Sale.Money(line.Price), Sale.Money(line.Extended));
+            grid.Rows.Add(name, line.Product.Size, line.Quantity, Sale.Money(line.Price), Sale.Money(line.Extended));
         }
 
         grid.ClearSelection();
@@ -335,8 +338,10 @@ internal sealed class CheckoutForm : PosForm
         AddAmountRow(summary, 1, "Merchandise", totals.Merchandise);
         AddAmountRow(summary, 2, "Lottery", totals.Lottery);
         AddAmountRow(summary, 3, "Discounts", -totals.Discount);
-        AddAmountRow(summary, 4, $"Sales tax ({Sale.Rate(totals.TaxRate)})", totals.Tax);
-        int row = 5;
+        AddAmountRow(summary, 4, totals.MiscTaxRate is decimal miscRate && miscRate != totals.TaxRate ? "Sales tax" : $"Sales tax ({Sale.Rate(totals.TaxRate)})", totals.Tax);
+        taxDetails.SetTotals(totals);
+        AddWide(summary, 5, taxDetails);
+        int row = 6;
         if (requireCount)
         {
             string prompt = saleHasReturns ? "Count purchases and returns" : "Item count";

@@ -7,7 +7,7 @@ internal sealed class RegisterForm : PosForm
 {
     private readonly RegisterData data;
     private readonly RegisterFolders folders;
-    private decimal taxRate;
+    private TaxSettings taxes;
     private readonly Sale sale = new();
     private readonly Dictionary<Keys, Action> shortcuts = [];
     private RegisterKeys keys;
@@ -49,6 +49,7 @@ internal sealed class RegisterForm : PosForm
     private readonly System.Windows.Forms.Timer legalAgeTimer = new() { Interval = 30000 };
     private readonly Label discounts = CreateAmountLabel();
     private readonly Label tax = CreateAmountLabel();
+    private readonly TaxBreakdownView taxDetails = new();
     private readonly Label totalDue = PosView.BannerAmount("", 54);
     private readonly Label totalCaption = PosView.Label("TOTAL DUE", 14, FontStyle.Bold, Color.White);
     private readonly Panel totalBanner = new()
@@ -66,7 +67,7 @@ internal sealed class RegisterForm : PosForm
     {
         this.data = data;
         this.folders = folders;
-        taxRate = data.TaxRate;
+        taxes = data.ReadTaxes();
         keys = data.ReadRegisterKeys();
         scanCode.DetectKeyboardScanner = keys.AutoScan;
         scanCode.ScanReady += (_, _) => RunRegisterAction(() => SubmitScan());
@@ -201,10 +202,24 @@ internal sealed class RegisterForm : PosForm
         AddCommand(saleMenu, "Drawer &Expense…", Keys.Control | Keys.Shift | Keys.E, RecordExpense);
         saleMenu.DropDownItems.Add(new ToolStripSeparator());
         AddCommand(saleMenu, "E&xit", Keys.F2, Close);
+        AddCommand(saleMenu, "Tax exempt &sale", Keys.Control | Keys.Shift | Keys.X, () => ToggleTax(false));
+        AddCommand(saleMenu, "Tax exempt selected &line", Keys.Control | Keys.Alt | Keys.X, () => ToggleTax(true));
+        AddCommand(saleMenu, "Open cash &drawer", Keys.Control | Keys.Shift | Keys.C, OpenDrawer);
+        AddCommand(saleMenu, "Edit &quantity", Keys.Control | Keys.Q, EditQuantity);
+        AddCommand(saleMenu, "&Lottery", Keys.Control | Keys.Alt | Keys.L, AddLottery);
+        AddCommand(saleMenu, "&Misc", Keys.Control | Keys.M, AddMisc);
         var lists = new ToolStripMenuItem("&Lists");
         AddCommand(lists, "&Item Lookup", Keys.F3, LookupItem);
         AddCommand(lists, "&Product List", Keys.Control | Keys.L, ViewProducts);
+        shortcuts.Add(Keys.F8, ViewProducts);
+        shortcuts.Add(Keys.Control | Keys.F, LookupItem);
+        shortcuts.Add(Keys.Control | Keys.Oemcomma, ViewSettings);
+#if !KPOS_UPDATE_FIXTURE
+        shortcuts.Add(Keys.F12, FocusScanner);
+#endif
         var reports = new ToolStripMenuItem("&Records");
+        AddCommand(reports, "Today's &receipts…", Keys.F11, ViewTransactions);
+        shortcuts.Add(Keys.Control | Keys.P, ViewTransactions);
         AddCommand(reports, "&End of Day…", Keys.Control | Keys.E, ViewCloseout);
         AddCommand(reports, "&Daily Reports…", Keys.Control | Keys.R, ViewRecords);
         AddCommand(reports, "&Orders…", Keys.Control | Keys.O, ViewOrders);
@@ -258,7 +273,13 @@ internal sealed class RegisterForm : PosForm
         version.Margin = new Padding(8, 16, 0, 0);
         identity.Controls.AddRange([title, version]);
         header.Controls.Add(identity, 0, 0);
-        header.Controls.Add(legalAge, 1, 0);
+        var dateAndTime = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        dateAndTime.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        dateAndTime.RowStyles.Add(new RowStyle(SizeType.AutoSize)); dateAndTime.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        legalAge.Anchor = AnchorStyles.Right;
+        dateAndTime.Controls.Add(legalAge, 0, 0);
+        dateAndTime.Controls.Add(new RegisterClock { Anchor = AnchorStyles.Right, Margin = new Padding(3, 0, 3, 0) }, 0, 1);
+        header.Controls.Add(dateAndTime, 1, 0);
         return header;
     }
 
@@ -309,7 +330,7 @@ internal sealed class RegisterForm : PosForm
 
     private Control CreateTotals()
     {
-        var totals = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 6 };
+        var totals = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 7 };
         totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         totals.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         for (int row = 0; row < totals.RowCount; row++)
@@ -332,7 +353,8 @@ internal sealed class RegisterForm : PosForm
         AddTotal(PosView.Label("Lottery", 12, color: PosView.Muted), lottery, 2);
         AddTotal(PosView.Label("Discounts", 12, color: PosView.Muted), discounts, 3);
         AddTotal(PosView.Label("Sales tax", 12, color: PosView.Muted), tax, 4);
-        AddTotal(lastChangeCaption, lastChange, 5);
+        totals.Controls.Add(taxDetails, 0, 5); totals.SetColumnSpan(taxDetails, 2);
+        AddTotal(lastChangeCaption, lastChange, 6);
         return PosView.Frame(totals, new Padding(8), fitContent: true, stretchWidth: true);
 
         void AddTotal(Label caption, Label amount, int row)
@@ -349,13 +371,12 @@ internal sealed class RegisterForm : PosForm
     {
         (string Key, string Action)[] tilesToShow =
         [
-            (keys.Quantity, "Quantity"), ("F3", "Lookup"),
-            (keys.Lottery, "Lottery"), ("F4", "Void"),
-            (keys.Misc, "Misc"), ("F5", "Delete"),
-            ("F7", "Discount"), ("F10", "Case"),
-            keys.Expense.Length > 0 ? (keys.Expense, "Expense") : ("Ctrl+E", "Closeout"),
-            keys.Refund.Length > 0 ? (keys.Refund, "Refund") : ("Ctrl+R", "Reports"),
-            ("F6", "Edit item"), ("F9", "Checkout")
+            ("F3", "Lookup"), ("F8", "Catalog"),
+            (keys.Quantity.Length > 0 ? keys.Quantity : "Ctrl+Q", "Quantity"), ("F6", "Edit item"),
+            ("F10", "Case"), ("F7", "Discount"),
+            (keys.Lottery.Length > 0 ? keys.Lottery : "Ctrl+Alt+L", "Lottery"), (keys.Misc.Length > 0 ? keys.Misc : "Ctrl+M", "Misc"),
+            (keys.Refund.Length > 0 ? keys.Refund : "Ctrl+Shift+R", "Refund"), ("F5", "Delete"),
+            (keys["Receipts"].Length > 0 ? keys["Receipts"] : "F11", "Receipts"), ("F9", "Checkout")
         ];
         var section = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 2 };
         section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -377,8 +398,9 @@ internal sealed class RegisterForm : PosForm
             tile.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
             tile.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             tile.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            var key = PosView.Label(tilesToShow[i].Key, 12, FontStyle.Bold, Color.White);
+            var key = PosView.Label(tilesToShow[i].Key, tilesToShow[i].Key.Length > 5 ? 8 : 11, FontStyle.Bold, Color.White);
             key.AutoSize = false;
+            key.AutoEllipsis = true;
             key.Dock = DockStyle.Fill;
             key.TextAlign = ContentAlignment.MiddleCenter;
             key.BackColor = PosView.Navy;
@@ -408,6 +430,54 @@ internal sealed class RegisterForm : PosForm
             registerKeyPanel.Controls.Add(CreateHotkeys());
     }
 
+    private bool DispatchCommand(string action)
+    {
+        Action? command = action switch
+        {
+            "Quantity" => EditQuantity, "Lottery" => AddLottery, "Misc" => AddMisc, "Refund" => RefundLine,
+            "Drawer expense" => RecordExpense, "Receipts" => ViewTransactions, "Open drawer" => OpenDrawer,
+            "Tax exempt sale" => () => ToggleTax(false), "Tax exempt line" => () => ToggleTax(true),
+            "Item lookup" => LookupItem, "Catalog" => ViewProducts, "Checkout" => FinishSale, "Discount" => DiscountLine,
+            "Case sale" => ArmCaseSale, "Delete line" => DeleteLine, "Void sale" => VoidSale, "Settings" => ViewSettings,
+            "Reports" => ViewRecords, "Orders" => ViewOrders, "End of day" => ViewCloseout, "Backup" => ExportBackup, _ => null
+        };
+        command?.Invoke(); return command is not null;
+    }
+
+    private void ToggleTax(bool selectedLine)
+    {
+        if(selectedLine)
+        {
+            if(ticket.CurrentRow is not DataGridViewRow row) { status.Text = "Select a line first."; return; }
+            sale.ToggleLineTax(row.Index);
+        }
+        else sale.TaxExempt = !sale.TaxExempt;
+        RefreshTicket(ticket.CurrentRow?.Index ?? 0);
+        status.Text = selectedLine ? "Selected line tax status changed." : sale.TaxExempt ? "Sales tax void for this sale." : "Sales tax restored.";
+    }
+
+    private string HardwareDirectory => Path.Combine(folders.Root, "Records", "Hardware");
+    private async Task CompleteHardwareAsync(Guid id, PaymentMethod method)
+    {
+        try { await ReceiptHardware.AfterSaleAsync(data.ReadHardware(), HardwareDirectory, id, data.ReceiptText(id), method); }
+        catch(Exception error) when(error is not OutOfMemoryException)
+        {
+            if(!IsDisposed) MessageBox.Show(this, "Payment is saved. Printer/drawer request failed: " + error.Message + "\nUse Receipts to reprint.", "Hardware Request");
+        }
+    }
+    private async void OpenDrawer()
+    {
+        try { string result = await ReceiptHardware.SendAsync(data.ReadHardware(), HardwareDirectory, null, true, "Manual drawer opening"); if(!IsDisposed) status.Text = result; }
+        catch(Exception error) when(error is not OutOfMemoryException) { if(!IsDisposed) status.Text = "Drawer request failed: " + error.Message; }
+    }
+    private void ViewTransactions()
+    {
+        using var window = new TransactionsForm(data.CurrentBusinessDate(),
+            day => Task.FromResult(data.ReadReport(RecordReport.Sales, day, day)),
+            row => Task.FromResult(data.ReceiptText(Guid.Parse((string)row["Sale ID"]))), data.ReadHardware(), HardwareDirectory);
+        window.ShowDialog(this);
+    }
+
     private void ViewRegisterHelp()
     {
         using var dialog = new RegisterHelpForm(keys);
@@ -419,7 +489,14 @@ internal sealed class RegisterForm : PosForm
     private void ConfigureTicket()
     {
         PosView.Grid(ticket, 14, 46);
+        ticket.Columns.Add("Line", "#");
+        ticket.Columns["Line"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
+        ticket.Columns["Line"]!.MinimumWidth = 38;
+        ticket.Columns["Line"]!.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
         ticket.Columns.Add("Description", "Current Sale");
+        ticket.Columns.Add("Size", "Size");
+        ticket.Columns["Size"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
+        ticket.Columns["Size"]!.MinimumWidth = 70;
         ticket.Columns.Add("Quantity", "Qty");
         ticket.Columns.Add("Price", "Unit Price");
         ticket.Columns.Add("Discount", "Disc %");
@@ -462,28 +539,7 @@ internal sealed class RegisterForm : PosForm
         if (code.Length == 0)
             return;
 
-        if (allowRegisterCommand && code.Equals(keys.Refund, StringComparison.OrdinalIgnoreCase))
-        {
-            RefundLine();
-            return;
-        }
-
-        if (allowRegisterCommand && code.Equals(keys.Expense, StringComparison.OrdinalIgnoreCase))
-        {
-            RecordExpense();
-            return;
-        }
-
-        if (code.Length == 1 && char.IsLetter(code[0]))
-        {
-            if (code.Equals(keys.Quantity, StringComparison.OrdinalIgnoreCase))
-                EditQuantity();
-            else if (code.Equals(keys.Lottery, StringComparison.OrdinalIgnoreCase))
-                AddLottery();
-            else if (code.Equals(keys.Misc, StringComparison.OrdinalIgnoreCase))
-                AddMisc();
-            return;
-        }
+        if(allowRegisterCommand && keys.ActionFor(code) is string action && DispatchCommand(action)) return;
 
         Product? product = data.FindProduct(code);
         if (product is not null)
@@ -492,8 +548,6 @@ internal sealed class RegisterForm : PosForm
             return;
         }
 
-        if (code.Length < 2)
-            return;
         if (code.Any(char.IsLetter))
             LookupItem(code, allowAddCode: true);
         else
@@ -605,13 +659,12 @@ internal sealed class RegisterForm : PosForm
 
         int index = row.Index;
         SaleLine line = sale.Lines[index];
-        bool isReturn = line.Quantity < 0;
         using var dialog = new NumberEntryForm(
-            "Edit Quantity", $"Quantity for {line.Product.Description}", Math.Abs(line.Quantity),
-            1, SaleLine.MaximumQuantity, 0, _ => "");
+            "Edit Quantity", $"Quantity for {line.Product.Description}", line.Quantity,
+            -SaleLine.MaximumQuantity, SaleLine.MaximumQuantity, 0, _ => "");
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
-            int quantity = (int)dialog.Value * (isReturn ? -1 : 1);
+            int quantity = (int)dialog.Value;
             sale.SetQuantity(index, quantity);
             status.Text = $"Quantity for {line.Product.Description}: {quantity}";
             RefreshTicket(index);
@@ -669,9 +722,13 @@ internal sealed class RegisterForm : PosForm
         }
 
         Guid saleId = Guid.NewGuid();
-        SaleTotals totals = sale.GetTotals(taxRate);
+        SaleTotals totals = sale.GetTotals(taxes);
         using var dialog = new CheckoutForm(sale, totals, data.ChangeSeconds,
-            payment => data.RecordSale(saleId, DateTimeOffset.Now, sale, totals, payment),
+            payment =>
+            {
+                data.RecordSale(saleId, DateTimeOffset.Now, sale, totals, payment);
+                _ = CompleteHardwareAsync(saleId, payment.Method);
+            },
             data.RequireItemCount, data.StartMaximized);
         if (dialog.ShowDialog(this) != DialogResult.OK)
             return;
@@ -742,7 +799,7 @@ internal sealed class RegisterForm : PosForm
         }
 
         sale.RefundLine(row.Index);
-        status.Text = $"Return: {sale.Lines[row.Index].Product.Description} (Qty -1)";
+        status.Text = $"Return: {sale.Lines[row.Index].Product.Description} (Qty {sale.Lines[row.Index].Quantity})";
         RefreshTicket(row.Index);
     }
 
@@ -846,7 +903,7 @@ internal sealed class RegisterForm : PosForm
             return;
         }
 
-        taxRate = data.TaxRate;
+        taxes = data.ReadTaxes();
         keys = data.ReadRegisterKeys();
         scanCode.DetectKeyboardScanner = keys.AutoScan;
         ApplyDisplaySettings();
@@ -875,26 +932,34 @@ internal sealed class RegisterForm : PosForm
         foreach (SaleLine line in sale.Lines)
         {
             string description = line.Product.Description;
-            if (!string.IsNullOrWhiteSpace(line.Product.Size))
-                description += $"  ·  {line.Product.Size}";
             if (line.IsCase)
                 description += $"  ·  Case of {line.Product.UnitsPerCase}";
 
-            int index = ticket.Rows.Add(description, line.Quantity, Sale.Money(line.Price),
+            if(line.Quantity < 0) description += "  ·  RETURN";
+            bool taxVoid = sale.TaxExempt || line.TaxExempt;
+            if(taxVoid) description += "  ·  TAX VOID";
+            int index = ticket.Rows.Add(ticket.Rows.Count + 1, description, line.Product.Size, line.Quantity, Sale.Money(line.Price),
                 line.DiscountRate == 0 ? "" : line.DiscountRate.ToString("0.##", CultureInfo.InvariantCulture),
                 Sale.Money(line.Extended));
-            if (line.Quantity < 0)
-                ticket.Rows[index].DefaultCellStyle.ForeColor = PosView.Error;
+            if(line.Quantity < 0 || taxVoid)
+            {
+                var style = ticket.Rows[index].DefaultCellStyle;
+                style.ForeColor = line.Quantity < 0 ? PosView.Error : Color.Teal;
+                style.BackColor = taxVoid ? Color.FromArgb(225, 245, 243) : Color.FromArgb(255, 237, 237);
+                style.SelectionBackColor = line.Quantity < 0 ? PosView.Error : Color.Teal;
+                style.SelectionForeColor = Color.White;
+            }
         }
 
         if (ticket.RowCount > 0)
             ticket.CurrentCell = ticket.Rows[Math.Min(selected, ticket.RowCount - 1)].Cells[0];
 
-        SaleTotals totals = sale.GetTotals(taxRate);
+        SaleTotals totals = sale.GetTotals(taxes);
         subtotal.Text = Sale.Money(totals.Merchandise);
         lottery.Text = Sale.Money(totals.Lottery);
         discounts.Text = Sale.Money(totals.Discount);
         tax.Text = Sale.Money(totals.Tax);
+        taxDetails.SetTotals(totals);
         totalCaption.Text = totals.Total < 0 ? "REFUND DUE" : "TOTAL DUE";
         totalBanner.BackColor = totals.Total < 0 ? PosView.Refund : PosView.Navy;
         totalDue.Text = Sale.Money(Math.Abs(totals.Total));

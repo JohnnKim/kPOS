@@ -29,9 +29,9 @@ internal sealed record Product(
 internal enum SaleLineKind { Product, Lottery, Misc }
 
 internal sealed record SaleLine(Product Product, bool IsCase, int Quantity = 1, decimal DiscountRate = 0,
-    SaleLineKind Kind = SaleLineKind.Product, decimal? PriceOverride = null)
+    SaleLineKind Kind = SaleLineKind.Product, decimal? PriceOverride = null, bool TaxExempt = false)
 {
-    public const int MaximumQuantity = 9999;
+    public const int MaximumQuantity = 100;
     public decimal RegularPrice => IsCase ? Product.CasePrice : Product.UnitPrice;
     public decimal Price => PriceOverride ?? RegularPrice;
     public decimal Gross => Price * Quantity;
@@ -39,7 +39,7 @@ internal sealed record SaleLine(Product Product, bool IsCase, int Quantity = 1, 
     public decimal Extended => Gross - Discount;
 }
 
-internal readonly record struct SaleTotals(decimal Subtotal, decimal Discount, decimal TaxRate, decimal Tax, decimal Lottery)
+internal readonly record struct SaleTotals(decimal Subtotal, decimal Discount, decimal TaxRate, decimal Tax, decimal Lottery, decimal? MiscTaxRate = null, TaxBreakdown? TaxDetails = null)
 {
     public decimal Merchandise => Subtotal - Lottery;
     public decimal Total => Subtotal - Discount + Tax;
@@ -48,6 +48,7 @@ internal readonly record struct SaleTotals(decimal Subtotal, decimal Discount, d
 internal sealed class Sale
 {
     private readonly List<SaleLine> lines = [];
+    public bool TaxExempt { get; set; }
 
     public IReadOnlyList<SaleLine> Lines => lines;
     public long ItemCount => lines.Sum(line => Math.Abs((long)line.Quantity));
@@ -55,19 +56,23 @@ internal sealed class Sale
     public decimal Subtotal => lines.Sum(line => line.Gross);
     public decimal Discount => lines.Sum(line => line.Discount);
 
-    public SaleTotals GetTotals(decimal taxRate)
+    public SaleTotals GetTotals(decimal taxRate) => GetTotals(new TaxSettings(taxRate));
+
+    public SaleTotals GetTotals(TaxSettings taxes)
     {
-        decimal taxable = lines.Where(line => line.Product.IsTaxable).Sum(line => line.Extended);
-        decimal tax = decimal.Round(taxable * taxRate / 100, 2, MidpointRounding.AwayFromZero);
+        var taxable = lines.Where(line => line.Product.IsTaxable && !line.TaxExempt && !TaxExempt).ToArray();
+        decimal tax = decimal.Round(taxable.Sum(line => line.Extended * (line.Kind == SaleLineKind.Misc ? taxes.MiscRate : taxes.SalesRate) / 100), 2, MidpointRounding.AwayFromZero);
         decimal lottery = lines.Where(line => line.Kind == SaleLineKind.Lottery).Sum(line => line.Extended);
-        return new SaleTotals(Subtotal, Discount, taxRate, tax, lottery);
+        return new SaleTotals(Subtotal, Discount, taxes.SalesRate, tax, lottery, taxes.MiscBase is null ? null : taxes.MiscRate,
+            TaxBreakdown.Calculate(taxes, taxable.Where(line => line.Kind != SaleLineKind.Misc).Sum(line => line.Extended),
+                taxable.Where(line => line.Kind == SaleLineKind.Misc).Sum(line => line.Extended), tax));
     }
 
     public int Add(Product product, bool isCase)
     {
         int existing = lines.FindLastIndex(line =>
             line.Product == product && line.IsCase == isCase &&
-            line.DiscountRate == 0 && line.PriceOverride is null && line.Quantity is > 0 and < SaleLine.MaximumQuantity);
+            line.DiscountRate == 0 && line.PriceOverride is null && !line.TaxExempt && line.Quantity > 0 && line.Quantity < SaleLine.MaximumQuantity);
         if (existing >= 0)
         {
             SaleLine line = lines[existing];
@@ -93,15 +98,19 @@ internal sealed class Sale
         return lines.Count - 1;
     }
 
-    public void SetQuantity(int index, int quantity) =>
+    public void SetQuantity(int index, int quantity)
+    {
+        if(quantity == 0 || quantity is < -SaleLine.MaximumQuantity or > SaleLine.MaximumQuantity) throw new ArgumentOutOfRangeException(nameof(quantity), "Enter a quantity from -100 to 100, excluding zero.");
         lines[index] = lines[index] with { Quantity = quantity };
+    }
 
-    public void RefundLine(int index) => SetQuantity(index, -1);
+    public void RefundLine(int index) => SetQuantity(index, -Math.Abs(lines[index].Quantity));
+    public void ToggleLineTax(int index) => lines[index] = lines[index] with { TaxExempt = !lines[index].TaxExempt };
 
     public void EditLine(int index, int quantity, decimal price, decimal discountRate)
     {
         SaleLine line = lines[index];
-        if (quantity is < 1 or > SaleLine.MaximumQuantity)
+        if (quantity == 0 || quantity is < -SaleLine.MaximumQuantity or > SaleLine.MaximumQuantity)
             throw new ArgumentOutOfRangeException(nameof(quantity));
         if (price is < 0 or > 999999.99m || decimal.Round(price, 2) != price)
             throw new ArgumentOutOfRangeException(nameof(price));
@@ -112,7 +121,7 @@ internal sealed class Sale
 
         lines[index] = line with
         {
-            Quantity = quantity * Math.Sign(line.Quantity),
+            Quantity = quantity,
             PriceOverride = price == line.RegularPrice ? null : price,
             DiscountRate = discountRate
         };
@@ -126,10 +135,10 @@ internal sealed class Sale
 
     public void Delete(int index) => lines.RemoveAt(index);
 
-    public void Clear() => lines.Clear();
+    public void Clear() { lines.Clear(); TaxExempt = false; }
 
-    internal static Sale FromLines(IEnumerable<SaleLine> source)
-    { var sale = new Sale(); sale.lines.AddRange(source); return sale; }
+    internal static Sale FromLines(IEnumerable<SaleLine> source, bool taxExempt = false)
+    { var sale = new Sale { TaxExempt = taxExempt }; sale.lines.AddRange(source); return sale; }
 
     public static bool TryParseMoney(string text, out decimal amount) =>
         decimal.TryParse(text.Trim(), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out amount) &&

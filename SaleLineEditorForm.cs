@@ -42,7 +42,7 @@ internal sealed class SaleLineEditorForm : PosForm
         item.Margin = new Padding(3, 4, 3, 12);
         Wide(item, 1);
 
-        quantity.Text = Math.Abs(line.Quantity).ToString(CultureInfo.InvariantCulture);
+        quantity.Text = line.Quantity.ToString(CultureInfo.InvariantCulture);
         price.Text = line.Price.ToString("F2", CultureInfo.InvariantCulture);
         discount.Text = line.DiscountRate.ToString("0.##", CultureInfo.InvariantCulture);
         AddField(line.Quantity < 0 ? "Return quantity" : "Quantity", quantity, 2);
@@ -108,9 +108,9 @@ internal sealed class SaleLineEditorForm : PosForm
         void RefreshPreview()
         {
             string? error = null;
-            if (!int.TryParse(quantity.Text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int count) ||
-                count is < 1 or > SaleLine.MaximumQuantity)
-                error = $"Enter a quantity from 1 to {SaleLine.MaximumQuantity}.";
+            if (!int.TryParse(quantity.Text.Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out int count) ||
+                count == 0 || count is < -SaleLine.MaximumQuantity or > SaleLine.MaximumQuantity)
+                error = $"Enter a quantity from -100 to 100, excluding zero.";
             else if (!Sale.TryParseMoney(price.Text, out decimal value) || value is < 0 or > 999999.99m)
                 error = "Enter a price from $0.00 to $999,999.99.";
             else if (!Sale.TryParseMoney(discount.Text, out decimal rate) || rate is < 0 or > 100)
@@ -120,7 +120,7 @@ internal sealed class SaleLineEditorForm : PosForm
                 Quantity = count;
                 Price = value;
                 DiscountRate = rate;
-                SaleLine edited = line with { Quantity = count * Math.Sign(line.Quantity), PriceOverride = value, DiscountRate = rate };
+                SaleLine edited = line with { Quantity = count, PriceOverride = value, DiscountRate = rate };
                 total.Text = $"Line total  {Sale.Money(edited.Extended)}";
             }
             save.Enabled = error is null;

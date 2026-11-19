@@ -97,9 +97,8 @@ public static class KposExecutableTest
                 WaitUntil(() => TextIsInBounds(settings, "Show Register Keys on the sales screen") &&
                     TextIsInBounds(settings, "Show last change on the sales screen"), "show both display settings");
                 Send(tabs, 0x0100, 0x27); // Right to Shortcuts
-                WaitUntil(() => TextIsInBounds(settings, "Stock in Orders (Alt + letter)") &&
-                    TextIsInBounds(settings, "Submit fast barcode scans without Enter") && !HasScrollBars(settings),
-                    "show all shortcut settings without scrolling");
+                WaitUntil(() => RevealText(settings, "Stock in Orders (F6)") && RevealText(settings, "Submit fast barcode scans without Enter"),
+                    "reach the expanded shortcut settings by scrolling");
                 Send(tabs, 0x0100, 0x25); // Left to Display
                 WaitUntil(() => TextIsInBounds(settings, "Show Register Keys on the sales screen"), "return to display settings");
                 IntPtr showKeys = FindChildWithText(settings, "Show Register Keys on the sales screen");
@@ -210,8 +209,12 @@ public static class KposExecutableTest
                 WaitUntil(() => HasText(register, "Training sale complete. Ready to scan."), "return after recording lottery");
 
                 EnterText(scanner, "v");
-                EnterText(scanner, "V0");
                 IntPtr partial = FindWindow(desktop, process.ProcessId, "Item Lookup");
+                WaitUntil(() => HasText(partial, "1 of 6 items"), "search an unassigned single letter");
+                Send(partial, 0x0010, 0);
+                WaitUntil(() => !IsWindow(partial) && IsWindowEnabled(register), "return from a single-letter search");
+                EnterText(scanner, "V0");
+                partial = FindWindow(desktop, process.ProcessId, "Item Lookup");
                 WaitUntil(() => HasText(partial, "0 of 6 items"), "search a two-character alphanumeric input");
                 Send(partial, 0x0010, 0); // WM_CLOSE
                 WaitUntil(() => !IsWindow(partial) && IsWindowEnabled(register), "return to the scanner from lookup");
@@ -347,21 +350,28 @@ public static class KposExecutableTest
                 Send(FindChildWithText(lineEditor, "&Apply Changes"), 0x00F5, 0);
                 WaitUntil(() => !IsWindow(lineEditor) && HasText(register, "$24.68"), "restore the regular item price");
                 EnterText(scanner, "RF");
-                WaitUntil(() => HasText(register, "Return: Pale Ale (Qty -1)") &&
-                    HasText(register, "REFUND DUE") && HasText(register, "$12.34"), "return one unit from the selected line");
+                WaitUntil(() => HasText(register, "Return: Pale Ale (Qty -2)") &&
+                    HasText(register, "REFUND DUE") && HasText(register, "$24.68"), "return both units from the selected line");
                 Send(scanner, 0x0100, 0x78); // F9
                 checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
-                WaitUntil(() => HasText(checkout, "REFUND DUE") && HasText(checkout, "$12.34"), "show the payout for the returned item");
+                WaitUntil(() => HasText(checkout, "REFUND DUE") && HasText(checkout, "$24.68"), "show the payout for the returned items");
                 IntPtr cashRefund = FindChildWithText(checkout, "Record &Cash Refund");
                 if (cashRefund == IntPtr.Zero || IsWindowEnabled(cashRefund))
                     throw new InvalidOperationException("Refund payout must be locked before confirming the item count.");
-                EnterText(FindTextBox(checkout), "1");
-                WaitUntil(() => IsWindowEnabled(cashRefund), "confirm one returned item");
+                EnterText(FindTextBox(checkout), "2");
+                WaitUntil(() => IsWindowEnabled(cashRefund), "confirm two returned items");
                 Send(cashRefund, 0x00F5, 0); // BM_CLICK
-                WaitUntil(() => HasText(checkout, "REFUND RECORDED") && HasText(checkout, "$12.34"), "record the cash refund");
+                WaitUntil(() => HasText(checkout, "REFUND RECORDED") && HasText(checkout, "$24.68"), "record the cash refund");
                 Send(FindChildWithText(checkout, "&Next Sale"), 0x0100, 0x0d); // Enter
                 WaitUntil(() => HasText(register, "Training refund complete. Ready to scan.") &&
                     HasText(register, "$1.91"), "record the refund and retain the last change due");
+                EnterText(scanner, "R");
+                IntPtr receiptHistory = FindWindow(desktop, process.ProcessId, "Day's Transactions / Receipts");
+                WaitUntil(() => HasText(receiptHistory, "&View Receipt · Enter") && HasText(receiptHistory, "&Print Selected · Ctrl+P"), "open daily receipt history with R");
+                Send(FindChildWithText(receiptHistory, "&Print Selected · Ctrl+P"), 0x00F5, 0);
+                WaitUntil(() => ContainsText(receiptHistory, "receipt(s)"), "capture a selected receipt without physical hardware");
+                Send(receiptHistory, 0x0010, 0);
+                WaitUntil(() => !IsWindow(receiptHistory) && IsWindowEnabled(register), "return from receipt history");
                 if (automaticUpdate)
                 {
                     UpdateThroughRegister(desktop, process, scanner);
@@ -956,6 +966,10 @@ finally {
             Remove-Item -LiteralPath $path
         }
     }
+    $hardwarePath = [IO.Path]::GetFullPath((Join-Path $smokeData.FullName 'Records/Hardware'))
+    $smokeRoot = [IO.Path]::GetFullPath($smokeData.FullName).TrimEnd([char[]] '\/') + [IO.Path]::DirectorySeparatorChar
+    if (-not $hardwarePath.StartsWith($smokeRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected smoke-test hardware path.' }
+    if (Test-Path -LiteralPath $hardwarePath) { Remove-Item -LiteralPath $hardwarePath -Recurse -Force }
     foreach ($folder in 'Records/End of Day', 'Records/Backups', 'Records', 'Database') {
         $path = Join-Path $smokeData.FullName $folder
         if ((Test-Path -LiteralPath $path -PathType Container) -and

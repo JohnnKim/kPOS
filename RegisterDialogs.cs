@@ -43,7 +43,7 @@ internal sealed class ProductListForm : PosForm
         LoadStock();
         Text = selectItem ? "Item Lookup" : "Product List";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(980, 580);
+        ClientSize = new Size(1400, 760);
         MinimumSize = new Size(720, 360);
         MinimizeBox = false;
         ShowInTaskbar = false;
@@ -156,97 +156,48 @@ internal sealed class ProductListForm : PosForm
         layout.Controls.Add(footer, 0, 2);
         Controls.Add(layout);
 
-        PosView.Grid(grid, 12, 38);
-        grid.Columns.Add("Code", "Item Code");
-        grid.Columns.Add("Barcode", "Barcode");
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Description", HeaderText = "Name", MinimumWidth = 200 });
-        grid.Columns.Add("Size", "Size / Pack");
-        grid.Columns.Add("Price", "Unit Price");
-        grid.Columns.Add("CasePrice", "Case Price");
-        if (data is not null)
+        PosView.Grid(grid, 11, 38);
+        foreach(var (name, caption, width) in new[] { ("Barcode", "Barcode", 155), ("Brand", "Brand", 140),
+            ("Description", "Description", 240), ("Size", "Size", 125), ("Price", "Price", 95),
+            ("OnHand", "Qty", 105), ("Supplier", "Vendor", 190) })
+            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = caption, Width = width, MinimumWidth = width });
+        grid.Columns["OnHand"]!.ToolTipText = "Selling units on hand from saved counts, deliveries, sales and returns. Not counted means no inventory baseline exists.";
+        if(!selectItem)
         {
-            grid.Columns.Add("OnHand", "On Hand");
-            grid.Columns["OnHand"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
-            grid.Columns["OnHand"]!.MinimumWidth = 112;
-            grid.Columns["OnHand"]!.ToolTipText = "Selling units on hand, based on saved stock counts, deliveries, sales and returns.";
-            if (selectItem)
-                grid.Columns["OnHand"]!.DisplayIndex = 3;
-            PosView.AmountColumn(grid, "OnHand", 12);
-            grid.CellFormatting += (_, e) =>
-            {
-                if (e.ColumnIndex != 6 || e.Value is not long units)
-                    return;
-                e.Value = units.ToString("N0");
-                e.FormattingApplied = true;
-                if (units < 0)
-                {
-                    e.CellStyle!.ForeColor = PosView.Error;
-                    e.CellStyle.SelectionForeColor = PosView.Error;
-                }
-            };
-        }
-        grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
-        grid.Columns["Code"]!.Width = 112;
-        grid.Columns["Barcode"]!.Width = 136;
-        grid.Columns["Code"]!.Visible = false;
-        grid.Columns["Barcode"]!.Visible = false;
-        if (grid.Columns["OnHand"] is DataGridViewColumn onHand)
-            onHand.DisplayIndex = 3;
-        if (selectItem)
-        {
-            grid.Columns.Add("Availability", "Availability");
-            grid.Columns["Availability"]!.Width = 120;
-            grid.Columns["Availability"]!.DisplayIndex = 4;
-            grid.Columns["CasePrice"]!.Visible = false;
-        }
-        else
-        {
-            foreach (var (name, caption) in new[] { ("Brand", "Brand"), ("Type", "Type"), ("Supplier", "Supplier"),
-                ("VendorCode", "Supplier item code"), ("UnitCost", "Unit cost"), ("CaseUnits", "Units per case"), ("Taxable", "Taxable") })
-            { grid.Columns.Add(name, caption); grid.Columns[name]!.Width = name == "Supplier" ? 160 : 120; }
+            foreach(var (name, caption) in new[] { ("CasePrice", "Case price"), ("Type", "Type"), ("VendorCode", "Vendor item code"),
+                ("UnitCost", "Unit cost"), ("CaseUnits", "Units per case"), ("Taxable", "Taxable") })
+                grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = caption, Width = 140 });
         }
         grid.Columns["Description"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
         grid.Columns["Description"]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
         grid.HandleCreated += (_, _) => grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders;
+        grid.ColumnWidthChanged += (_, _) => { if(grid.IsHandleCreated) grid.AutoResizeRows(DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders); };
         grid.ScrollBars = ScrollBars.Both;
-        grid.Columns["Size"]!.Width = 121;
-        grid.Columns["Price"]!.Width = 111;
-        grid.Columns["CasePrice"]!.Width = 115;
-        foreach (DataGridViewColumn column in grid.Columns)
-            column.SortMode = DataGridViewColumnSortMode.NotSortable;
-        foreach (string name in new[] { "Price", "CasePrice" })
+        foreach(DataGridViewColumn column in grid.Columns) column.SortMode = DataGridViewColumnSortMode.NotSortable;
+        foreach(string name in new[] { "Price", "CasePrice" })
         {
-            PosView.AmountColumn(grid, name, 12);
-            grid.Columns[name]!.ValueType = typeof(decimal);
-            grid.Columns[name]!.DefaultCellStyle.Format = "C2";
-            grid.Columns[name]!.DefaultCellStyle.FormatProvider = CultureInfo.GetCultureInfo("en-US");
+            if(grid.Columns[name] is not DataGridViewColumn column) continue;
+            PosView.AmountColumn(grid, name, 11); column.ValueType = typeof(decimal);
+            column.DefaultCellStyle.Format = "C2"; column.DefaultCellStyle.FormatProvider = CultureInfo.GetCultureInfo("en-US");
         }
-
         grid.CellValueNeeded += (_, e) =>
         {
-            if ((uint)e.RowIndex >= (uint)matches.Length)
-                return;
-            Product item = matches[e.RowIndex];
-            if (e.ColumnIndex >= (data is null ? 6 : 7))
+            if((uint)e.RowIndex >= (uint)matches.Length) return;
+            Product item = matches[e.RowIndex]; CatalogDetails meta = catalog.GetValueOrDefault(item.Barcode) ?? new();
+            e.Value = grid.Columns[e.ColumnIndex].Name switch
             {
-                CatalogDetails meta = catalog.GetValueOrDefault(item.Barcode) ?? new();
-                long? count = stock.GetValueOrDefault(item.Barcode);
-                e.Value = grid.Columns[e.ColumnIndex].Name switch
-                {
-                    "Availability" => count is null ? "Not counted" : count > 0 ? "In stock" : "Out of stock",
-                    "Brand" => meta.Brand, "Type" => meta.Type, "Supplier" => meta.Supplier, "VendorCode" => meta.VendorCode,
-                    "UnitCost" => meta.UnitCost is decimal price ? Sale.Money(price) : "Not set",
-                    "CaseUnits" => item.UnitsPerCase, "Taxable" => item.IsTaxable ? "Yes" : "No", _ => null
-                };
-                return;
-            }
-            e.Value = e.ColumnIndex switch
-            {
-                0 => item.Code, 1 => item.Barcode, 2 => item.Description, 3 => item.Size,
-                4 => item.UnitPrice, 5 when item.HasCasePrice => item.CasePrice,
-                6 => stock.GetValueOrDefault(item.Barcode) is long units ? units : "Not counted",
-                _ => null
+                "Barcode" => item.Barcode, "Brand" => meta.Brand, "Description" => item.Description, "Size" => item.Size,
+                "Price" => item.UnitPrice, "OnHand" => stock.GetValueOrDefault(item.Barcode) is long units ? units : "Not counted",
+                "Supplier" => meta.Supplier, "CasePrice" => item.HasCasePrice ? item.CasePrice : null, "Type" => meta.Type,
+                "VendorCode" => meta.VendorCode, "UnitCost" => meta.UnitCost is decimal cost ? Sale.Money(cost) : "Not set",
+                "CaseUnits" => item.UnitsPerCase, "Taxable" => item.IsTaxable ? "Yes" : "No", _ => null
             };
+        };
+        grid.CellFormatting += (_, e) =>
+        {
+            if(grid.Columns[e.ColumnIndex].Name == "OnHand" && e.Value is long units && units < 0)
+            { e.CellStyle!.ForeColor = PosView.Error; e.CellStyle.SelectionForeColor = Color.White; }
         };
         search.Text = initialSearch;
         search.TextChanged += (_, _) => Filter();
@@ -299,14 +250,14 @@ internal sealed class ProductListForm : PosForm
     private void Filter()
     {
         string query = search.Text.Trim();
-        bool tooShort = query.Length == 1;
+        bool tooShort = false;
         matches = tooShort ? [] : products.Where(product => field.SelectedIndex switch
         {
             1 => Contains(product.Description),
             2 => Contains(product.Code),
             3 => Contains(product.Barcode),
             4 => Contains(product.Size),
-            _ => Contains(product.Description) || Contains(product.Code) || Contains(product.Barcode) || Contains(product.Size)
+            _ => Contains(product.Description) || Contains(product.Code) || Contains(product.Barcode) || Contains(product.Size) || Contains((catalog.GetValueOrDefault(product.Barcode) ?? new()).Brand) || Contains((catalog.GetValueOrDefault(product.Barcode) ?? new()).Supplier)
         }).ToArray();
 
         grid.RowCount = matches.Length;
@@ -334,7 +285,7 @@ internal sealed class ProductListForm : PosForm
         DateOnly today = data.CurrentBusinessDate();
         stock = data.ReadOrderItems(today, today, today).ToDictionary(item => item.Product.Barcode, item => item.OnHand,
             StringComparer.OrdinalIgnoreCase);
-        if (!selectItem) catalog = data.ReadCatalogDetails();
+        catalog = data.ReadCatalogDetails();
     }
 
     private void ReloadProducts()
@@ -463,8 +414,8 @@ internal sealed class NumberEntryForm : PosForm
 
         void UpdateValue()
         {
-            bool parsed = decimal.TryParse(input.Text.Trim(), NumberStyles.AllowDecimalPoint, InputCulture, out decimal value);
-            bool valid = parsed && value >= minimum && value <= maximum && decimal.Round(value, precision) == value;
+            bool parsed = decimal.TryParse(input.Text.Trim(), NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign, InputCulture, out decimal value);
+            bool valid = parsed && value >= minimum && value <= maximum && (minimum >= 0 || value != 0) && decimal.Round(value, precision) == value;
             accept.Enabled = valid;
             Value = valid ? value : 0;
             status.Text = valid ? describe(value) : "Enter a value from " + minimum.ToString(InputCulture) +

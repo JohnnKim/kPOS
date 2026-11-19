@@ -11,7 +11,7 @@ internal sealed class RegisterHelpForm : PosForm
         BackColor = PosView.Canvas;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(670, 425);
+        ClientSize = new Size(1000, 680);
         MinimumSize = new Size(555, 420);
 
         var layout = new TableLayoutPanel
@@ -30,18 +30,11 @@ internal sealed class RegisterHelpForm : PosForm
         [
             ("F1", "Register help"), ("F2", "Exit"), ("F3", "Item lookup"),
             ("F4", "Void sale"), ("F5", "Delete selected line"), ("F6", "Edit quantity, price, discount"),
-            ("F7", "Line discount"), ("F9", "Checkout"), ("F10", "Case sale for next item")
+            ("F7", "Line discount"), ("F8", "Catalog"), ("F11 / Ctrl+P", "Day transactions / receipts"), ("F12", "Focus scanner"), ("Ctrl+Q", "Edit quantity"), ("Ctrl+M", "Misc"), ("Ctrl+Alt+L", "Lottery"), ("Ctrl+Shift+X", "Toggle sale tax exemption"), ("Ctrl+Alt+X", "Toggle selected line tax"), ("Ctrl+Shift+C", "Open drawer"), ("Ctrl+,", "Settings"), ("F9", "Checkout"), ("F10", "Case sale for next item")
         ]);
         AddSection("In the scanner field", 1,
-        [
-            ("Enter", "Submit the code"), ("Esc", "Clear code and case mode"),
-            ("↑ / ↓", "Select a sale line"),
-            (keys.Quantity + " + Enter", "Edit quantity"),
-            (keys.Lottery + " + Enter", "Enter a lottery sale"),
-            (keys.Misc + " + Enter", "Enter a misc sale"),
-            (keys.Expense.Length > 0 ? keys.Expense + " + Enter" : "Ctrl+Shift+E", "Record drawer expense"),
-            (keys.Refund.Length > 0 ? keys.Refund + " + Enter" : "Ctrl+Shift+R", "Refund selected line")
-        ]);
+            new[] { ("Enter", "Submit the code"), ("Esc", "Clear code and case mode"), ("Up / Down", "Select a sale line") }
+                .Concat(keys.SaleCommands.Where(pair => pair.Value.Length > 0).Select(pair => (pair.Value + " + Enter", pair.Key))).ToArray());
 
         var close = PosView.Button("&Close", primary: true, size: 11);
         close.Anchor = AnchorStyles.Right;

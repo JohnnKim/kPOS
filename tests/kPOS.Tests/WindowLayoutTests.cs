@@ -34,7 +34,7 @@ public sealed class WindowLayoutTests
     {
         using var data = new RegisterData(":memory:");
         Product[] products = Enumerable.Range(0, 240).Select(index => new Product(
-            $"ITEM-{index}", $"000000{index:D6}", new string('W', 100) + $" Product {index}",
+            $"ITEM-{index}", $"000000{index:D6}", string.Join(' ', Enumerable.Repeat("Very long product description", 8)) + $" Product {index}",
             "12 x 750 mL", 123.45m, 12, 1234.50m)).ToArray();
         using var window = new ProductListForm(products, true, data: data);
         window.Opacity = 0;
@@ -49,7 +49,7 @@ public sealed class WindowLayoutTests
 
         Assert.IsTrue(grid.Controls.OfType<HScrollBar>().Any(bar => bar.Visible));
         Assert.IsTrue(grid.Controls.OfType<VScrollBar>().Any(bar => bar.Visible));
-        Assert.IsTrue(grid.Rows[0].Height > grid.RowTemplate.Height, "Long product names must wrap into taller rows.");
+        Assert.IsTrue(grid.Rows[0].Height > grid.RowTemplate.Height, "Long product descriptions must wrap into taller rows.");
         grid.FirstDisplayedScrollingColumnIndex = grid.Columns["OnHand"]!.Index;
         Assert.IsTrue(grid.Columns["OnHand"]!.Displayed, "The last column must be reachable by horizontal scrolling.");
 

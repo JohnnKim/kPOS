@@ -258,6 +258,14 @@ internal sealed class HomeTerminalForm : PosForm
         var source = Connected;
         HomeTable table = await source.ReportAsync(RecordReport.Products, DateOnly.MinValue, DateOnly.MinValue, catalogPage, null, null, closing.Token, activeCatalogSearch);
         if(IsDisposed || !ReferenceEquals(source, client)) return; catalog.DataSource = table.ToDataTable(); catalog.Enabled = true; catalogMore = table.More;
+        string[] core = ["Barcode", "Brand", "Product", "Size", "Unit price", "On hand", "Supplier"];
+        foreach(DataGridViewColumn column in catalog.Columns)
+        {
+            int index = Array.IndexOf(core, column.Name); if(index >= 0) column.DisplayIndex = index;
+            if(column.Name == "Product") column.HeaderText = "Description";
+            if(column.Name == "Supplier") column.HeaderText = "Vendor";
+            if(column.Name == "On hand") column.HeaderText = "Qty";
+        }
         status.Text = $"Catalog · page {catalogPage + 1}.";
     }
     private async Task LoadRecordsAsync()
@@ -267,6 +275,7 @@ internal sealed class HomeTerminalForm : PosForm
         var source = Connected;
         HomeTable table = await source.ReportAsync(kind, DateOnly.FromDateTime(from.Value), DateOnly.FromDateTime(through.Value), reportPage, null, null, closing.Token);
         if(IsDisposed || !ReferenceEquals(source, client)) return; records.DataSource = table.ToDataTable(); records.Enabled = true; reportMore = table.More;
+        if(records.Columns["Tax detail"] is DataGridViewColumn internalDetail) internalDetail.Visible = false;
         status.Text = $"{report.Text} · page {reportPage + 1}.";
     }
     private async Task LoadOrdersAsync()

@@ -9,7 +9,7 @@ internal sealed record TerminalHello(Guid Id, string Name);
 internal sealed record TerminalPresence(Guid Id, string Name, string Role, DateTimeOffset LastSeen)
 { public string Connection => LastSeen > DateTimeOffset.UtcNow.AddSeconds(-45) ? "Active" : "Idle"; }
 internal sealed record StoreConnectionInfo(Guid StoreId, string StoreName, string Role, DateOnly BusinessDate, decimal TaxRate,
-    bool StoreCheckoutEnabled, TerminalPresence[] Terminals);
+    bool StoreCheckoutEnabled, TerminalPresence[] Terminals, TaxSettings? Taxes = null, RegisterKeys? Keys = null);
 internal sealed record CancelledCheckout(StoreReceipt? Receipt);
 
 internal sealed class HostConnections(bool checkoutEnabled)
@@ -75,7 +75,7 @@ internal sealed class HostConnections(bool checkoutEnabled)
         {
             using var data = RegisterData.OpenHomeConnection(databasePath);
             string name = data.ReadOrderBusiness().Name;
-            return new(data.StoreIdentity(), string.IsNullOrWhiteSpace(name) ? Environment.MachineName : name, Role(context), data.CurrentBusinessDate(), data.TaxRate, checkoutEnabled, Snapshot());
+            return new(data.StoreIdentity(), string.IsNullOrWhiteSpace(name) ? Environment.MachineName : name, Role(context), data.CurrentBusinessDate(), data.TaxRate, checkoutEnabled, Snapshot(), data.ReadTaxes(), data.ReadRegisterKeys());
         }
     }
     private static string Role(HttpContext context) => (string)context.Items["TerminalRole"]!;
@@ -83,6 +83,17 @@ internal sealed class HostConnections(bool checkoutEnabled)
 
 internal sealed partial class HomeTerminalClient
 {
+    internal async Task<System.Data.DataTable> FullReportAsync(RecordReport report, DateOnly day, string? saleId = null, CancellationToken token = default)
+    {
+        System.Data.DataTable? result = null;
+        for(int page = 0; ; page++)
+        {
+            HomeTable part = await ReportAsync(report, day, day, page, null, saleId, token).ConfigureAwait(false);
+            var table = part.ToDataTable();
+            if(result is null) result = table; else foreach(System.Data.DataRow row in table.Rows) result.ImportRow(row);
+            if(!part.More) return result;
+        }
+    }
     internal Task<StoreConnectionInfo> HeartbeatAsync(TerminalHello hello, CancellationToken token = default) => PostAsync<StoreConnectionInfo>("api/v1/connections/heartbeat", hello, token);
     internal Task<StoreConnectionInfo> ConnectionInfoAsync(CancellationToken token = default) => ReadAsync<StoreConnectionInfo>("api/v1/connections", token);
     internal Task<OrderContact[]> SuppliersAsync(CancellationToken token = default) => ReadAsync<OrderContact[]>("api/v1/suppliers", token);

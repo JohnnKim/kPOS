@@ -78,7 +78,7 @@ public sealed class StoreTerminalWindowTests
                         typeof(Control).GetMethod("OnKeyDown", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(scan, [new KeyEventArgs(Keys.Enter)]);
                         await Until(() => grid.Rows.Count == 1 && Descendants(window).OfType<Button>().Single(button => button.Text == "Checkout · F9").Enabled);
                     }
-                    Assert.AreEqual(1, grid.Rows.Count);
+                    Assert.AreEqual(1, grid.Rows.Count); Assert.AreEqual(1, grid.Rows[0].Cells["Line"].Value);
                     Click(recover ? "Retry Confirmation" : "Checkout · F9");
                     await Until(() => grid.Rows.Count == 0 && !File.Exists(profilePath + ".pending.json"));
                     Assert.AreEqual(1L, fixture.Data.GetDaySales(fixture.Data.CurrentBusinessDate()).Count);
@@ -118,7 +118,7 @@ public sealed class StoreTerminalWindowTests
             foreach(var create in windows)
             {
                 using var window = create(); window.Opacity = 0; window.ShowInTaskbar = false;
-                Assert.IsFalse(Descendants(window).Any(control => control.IsHandleCreated), "Terminal windows must not create hidden native controls during construction.");
+                Assert.IsFalse(Descendants(window).Any(control => control.IsHandleCreated), window.Text + " created native controls during construction: " + string.Join(", ", Descendants(window).Where(control => control.IsHandleCreated).Select(control => control.GetType().Name + " " + control.AccessibleName)));
                 window.Size = new(Math.Min(window.Width, width-24), Math.Min(window.Height, height-72));
                 window.Show(); Application.DoEvents(); WindowLayoutTests.CheckControls(window); window.Close();
             }

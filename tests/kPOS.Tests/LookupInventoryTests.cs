@@ -31,7 +31,7 @@ public sealed class LookupInventoryTests
         using (var lookup = new ProductListForm(data.ListProducts(), true, data: data))
         {
             DataGridView grid = Descendants(lookup).OfType<DataGridView>().Single();
-            Assert.AreEqual(3, grid.Columns["OnHand"]!.DisplayIndex);
+            Assert.AreEqual(5, grid.Columns["OnHand"]!.DisplayIndex);
             Assert.AreEqual(21L, Stock(grid, "101"));
             Assert.AreEqual(0L, Stock(grid, "102"));
             Assert.AreEqual(-1L, Stock(grid, "201"));
@@ -95,7 +95,7 @@ public sealed class LookupInventoryTests
     }
 
     private static object? Stock(DataGridView grid, string code) =>
-        grid.Rows.Cast<DataGridViewRow>().Single(row => (string)row.Cells["Code"].Value! == code).Cells["OnHand"].Value;
+        grid.Rows.Cast<DataGridViewRow>().Single(row => (string)row.Cells["Barcode"].Value! == "000000000" + code).Cells["OnHand"].Value;
 
     private static IEnumerable<Control> Descendants(Control parent)
     {

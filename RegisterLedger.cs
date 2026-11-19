@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Data;
 using System.Globalization;
 using Microsoft.Data.Sqlite;
@@ -12,7 +13,7 @@ internal enum RecordReport { Totals, Sales, SaleLines, ItemTotals, PriceHistory,
 
 internal sealed partial class RegisterData
 {
-    public const int SchemaVersion = 13;
+    public const int SchemaVersion = 14;
     public const int DefaultChangeSeconds = 8;
     public const int MaximumChangeSeconds = 120;
     private const string HasSoldItems = """
@@ -44,7 +45,7 @@ internal sealed partial class RegisterData
         transaction.Commit();
     }
 
-    private void RecordSaleInTransaction(Guid saleId, DateTimeOffset soldAt, Sale sale, SaleTotals totals, Payment payment, SqliteTransaction transaction)
+    private void RecordSaleInTransaction(Guid saleId, DateTimeOffset soldAt, Sale sale, SaleTotals totals, Payment payment, SqliteTransaction transaction, TaxSettings? taxProfile = null)
     {
         if (sale.Lines.Count == 0 || payment.Received < totals.Total ||
             ((payment.Method == PaymentMethod.Card || totals.Total < 0) && payment.Received != totals.Total))
@@ -52,8 +53,8 @@ internal sealed partial class RegisterData
 
         using var header = Command("""
             INSERT INTO sales (id, sold_at, business_date, subtotal_cents, discount_cents, tax_cents,
-                               tax_rate, total_cents, tender, received_cents, change_cents, lottery_cents)
-            VALUES ($id, $time, $day, $subtotal, $discount, $tax, $rate, $total, $tender, $received, $change, $lottery)
+                               tax_rate, total_cents, tender, received_cents, change_cents, lottery_cents, tax_exempt, taxes_json, tax_details_json)
+            VALUES ($id, $time, $day, $subtotal, $discount, $tax, $rate, $total, $tender, $received, $change, $lottery, $exempt, $taxes, $details)
             ON CONFLICT (id) DO NOTHING
             """, transaction);
         string id = saleId.ToString("N");
@@ -69,13 +70,16 @@ internal sealed partial class RegisterData
         header.Parameters.AddWithValue("$received", Cents(payment.Received));
         header.Parameters.AddWithValue("$change", Cents(payment.Received - totals.Total));
         header.Parameters.AddWithValue("$lottery", Cents(totals.Lottery));
+        header.Parameters.AddWithValue("$exempt", sale.TaxExempt);
+        header.Parameters.AddWithValue("$details", JsonSerializer.Serialize(totals.TaxDetails));
+        header.Parameters.AddWithValue("$taxes", JsonSerializer.Serialize(taxProfile ?? ReadTaxes(transaction)));
 
         if (header.ExecuteNonQuery() == 1)
         {
             using var lineCommand = Command("""
                 INSERT INTO sale_lines (sale_id, line_number, barcode, code, description, size, quantity,
-                                        units_per_pack, is_case, unit_cents, discount_cents, net_cents, taxable, kind)
-                VALUES ($id, $number, $barcode, $code, $name, $size, $qty, $units, $case, $price, $discount, $net, $taxable, $kind)
+                                        units_per_pack, is_case, unit_cents, discount_cents, net_cents, taxable, kind, tax_void)
+                VALUES ($id, $number, $barcode, $code, $name, $size, $qty, $units, $case, $price, $discount, $net, $taxable, $kind, $void)
                 """, transaction);
             lineCommand.Parameters.AddWithValue("$id", id);
             var number = lineCommand.Parameters.Add("$number", SqliteType.Integer);
@@ -91,6 +95,7 @@ internal sealed partial class RegisterData
             var net = lineCommand.Parameters.Add("$net", SqliteType.Integer);
             var taxable = lineCommand.Parameters.Add("$taxable", SqliteType.Integer);
             var kind = lineCommand.Parameters.Add("$kind", SqliteType.Text);
+            var taxVoid = lineCommand.Parameters.Add("$void", SqliteType.Integer);
             lineCommand.Prepare();
 
             for (int index = 0; index < sale.Lines.Count; index++)
@@ -107,7 +112,8 @@ internal sealed partial class RegisterData
                 price.Value = Cents(line.Price);
                 discount.Value = Cents(line.Discount);
                 net.Value = Cents(line.Extended);
-                taxable.Value = line.Product.IsTaxable;
+                taxable.Value = line.Product.IsTaxable && !line.TaxExempt && !sale.TaxExempt;
+                taxVoid.Value = line.TaxExempt || sale.TaxExempt;
                 kind.Value = line.Kind.ToString();
                 lineCommand.ExecuteNonQuery();
             }
@@ -153,8 +159,10 @@ internal sealed partial class RegisterData
                             WHEN {{HasReturnedItems}} THEN 'Refund'
                             WHEN EXISTS (SELECT 1 FROM sales AS refund WHERE refund.refund_of = sales.id) THEN 'Refunded sale'
                             ELSE 'Sale' END AS Entry,
-                       refund_of AS "Original Sale ID"
-                FROM sales WHERE business_date BETWEEN $start AND $end
+                       refund_of AS "Original Sale ID",
+                       (SELECT coalesce(sum(abs(quantity)),0) FROM sale_lines WHERE sale_id=sales.id) AS Items,
+                       tax_exempt AS "Tax void", business_date AS "Business date", tax_details_json AS "Tax detail"
+                FROM sales WHERE business_date BETWEEN $start AND $end AND ($sale IS NULL OR id=$sale)
                 ORDER BY business_date DESC, sold_at DESC, id DESC
                 """,
             RecordReport.SaleLines or RecordReport.LotterySales => """
@@ -163,7 +171,7 @@ internal sealed partial class RegisterData
                        kind AS Type, sale_lines.size AS Size, quantity AS Quantity, units_per_pack AS "Units per pack",
                        CASE is_case WHEN 1 THEN 'Case' ELSE 'Unit' END AS Pack,
                        sale_lines.unit_cents / 100.0 AS "Unit price", sale_lines.discount_cents / 100.0 AS Discount,
-                       net_cents / 100.0 AS "Net sales", sale_lines.taxable AS Taxable
+                       net_cents / 100.0 AS "Net sales", sale_lines.taxable AS Taxable, tax_void AS "Tax void"
                 FROM sales JOIN sale_lines ON sales.id = sale_lines.sale_id
                 WHERE business_date BETWEEN $start AND $end
                   AND ($barcode IS NULL OR sale_lines.barcode = $barcode)

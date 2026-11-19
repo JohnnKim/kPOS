@@ -81,7 +81,7 @@ public sealed class ProductScrollingTests
             Assert.IsTrue(grid.HorizontalScrollingOffset > 0);
             search.Text = "Product";
             Assert.AreEqual(0, grid.HorizontalScrollingOffset);
-            Assert.AreEqual(grid.Columns["Description"]!.Index, grid.FirstDisplayedScrollingColumnIndex);
+            Assert.AreEqual(grid.Columns["Barcode"]!.Index, grid.FirstDisplayedScrollingColumnIndex);
             Assert.AreEqual(0, grid.FirstDisplayedScrollingRowIndex);
             grid.Focus();
             Press(grid, Keys.Right);
@@ -93,7 +93,7 @@ public sealed class ProductScrollingTests
         using var reopened = CreateWindow(data);
         ProductGrid reopenedGrid = Descendants(reopened).OfType<ProductGrid>().Single();
         Assert.AreEqual(0, reopenedGrid.HorizontalScrollingOffset);
-        Assert.AreEqual(reopenedGrid.Columns["Description"]!.Index, reopenedGrid.FirstDisplayedScrollingColumnIndex);
+        Assert.AreEqual(reopenedGrid.Columns["Barcode"]!.Index, reopenedGrid.FirstDisplayedScrollingColumnIndex);
         Assert.AreEqual(0, reopenedGrid.FirstDisplayedScrollingRowIndex);
     }
 
