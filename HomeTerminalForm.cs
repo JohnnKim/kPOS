@@ -9,6 +9,8 @@ internal sealed class HomeTerminalForm : PosForm
     private readonly TextBox url = new() { PlaceholderText = "https://store-private-ip:17443/" };
     private readonly TextBox fingerprint = new();
     private readonly TextBox key = new() { UseSystemPasswordChar = true };
+    private readonly TextBox terminalName = new() { Text = Environment.MachineName, MaxLength = 64 };
+    private readonly ComboBox stockFilter = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 155 };
     private readonly TextBox search = new() { Width = 230, MaxLength = 100, PlaceholderText = "Name, barcode, or code" };
     private readonly TextBox catalogSearch = new() { Width = 210, MaxLength = 100, PlaceholderText = "Item, brand, or supplier" };
     private readonly NumericUpDown units = new() { Minimum = 1, Maximum = 999999, Value = 1, Width = 100 };
@@ -16,13 +18,19 @@ internal sealed class HomeTerminalForm : PosForm
     private readonly CheckBox refresh = new() { Text = "Auto refresh", AutoSize = true, Checked = true };
     private readonly Label connection = PosView.Label("● Off", 12, FontStyle.Bold, PosView.Muted);
     private readonly Label totals = PosView.Label("Connect to check the store.", 14, FontStyle.Bold);
-    private readonly Label status = PosView.Label("Home PC: paste the store's pairing details, then Connect.", 11);
+    private readonly Label status = PosView.Label("Home / office PC: paste the store's pairing details, then Connect.", 11);
     private readonly Label pages = PosView.Label("", 11);
     private readonly DataGridView items = HomeTerminalView.Grid();
     private readonly DataGridView catalog = HomeTerminalView.Grid();
     private readonly DataGridView records = HomeTerminalView.Grid();
     private readonly DataGridView history = HomeTerminalView.Grid();
     private readonly DataGridView basketGrid = HomeTerminalView.Grid();
+    private readonly DataGridView suppliers = HomeTerminalView.Grid();
+    private readonly DataGridView terminals = HomeTerminalView.Grid();
+    private readonly Guid connectionId = Guid.NewGuid();
+    private StoreConnectionInfo? hostInfo;
+    private Control? connectionFields;
+    private Guid? pendingStore;
     private readonly TabControl tabs = new() { Dock = DockStyle.Fill };
     private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 110, Value = DateTime.Today.AddDays(-7) };
     private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 110 };
@@ -51,12 +59,13 @@ internal sealed class HomeTerminalForm : PosForm
     private bool ordersMore;
     private string activeSearch = "";
     private string activeCatalogSearch = "";
+    private string activeStock = "all";
 
     private static string Preferences => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kPOS", "home-preferences.json");
 
     public HomeTerminalForm()
     {
-        Text = "kPOS — Home Terminal";
+        Text = "kPOS — Remote Connection";
         ClientSize = new Size(1140, 780);
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = PosView.Canvas;
@@ -67,23 +76,41 @@ internal sealed class HomeTerminalForm : PosForm
         };
         var connect = Button("Connect / Refresh", async () =>
         {
-            var next = new HomeTerminalClient(url.Text, key.Text, fingerprint.Text);
+            string address = url.Text.Trim();
+            var next = new HomeTerminalClient(address, key.Text, fingerprint.Text);
+            StoreConnectionInfo verified;
+            try
+            {
+                verified = await next.ConnectionInfoAsync(closing.Token);
+                if(verified.Role != "Remote Connection") throw new InvalidOperationException("Use Copy Remote Pairing from Host Terminal for this window.");
+                if(pending is not null && pendingStore is Guid original && original != verified.StoreId) throw new InvalidOperationException("Reconnect to the original store to confirm the unconfirmed order.");
+                verified = await next.HeartbeatAsync(new(connectionId, terminalName.Text.Trim()), closing.Token);
+            }
+            catch { next.Dispose(); throw; }
             client?.Dispose();
-            client = next;
-            connectedEndpoint = new Uri(url.Text.Trim()).AbsoluteUri;
+            client = next; hostInfo = verified;
+            if(connectionFields is not null) connectionFields.Visible = false;
+            connectedEndpoint = new Uri(address).AbsoluteUri;
             inventoryPage = 0;
             activeSearch = search.Text.Trim();
             await LoadInventoryAsync();
             await LoadCurrentAsync();
         }, true);
         var disconnect = PosView.Button("Disconnect", size: 11);
-        disconnect.Click += (_, _) => { connectionGeneration++; client?.Dispose(); client = null; connectedEndpoint = null; SetConnection("Off", PosView.Muted); DisableData(); status.Text = "Disconnected. Connect when you want to check the store again."; };
+        disconnect.Click += async (_, _) =>
+        {
+            connectionGeneration++; var leaving = client; client = null; connectedEndpoint = null; SetConnection("Off", PosView.Muted); DisableData(); status.Text = "Disconnected. Connect when you want to check the store again.";
+            if(leaving is not null)
+            { try { await leaving.LeaveAsync(new(connectionId, terminalName.Text)); } catch(Exception error) when(error is HttpRequestException or OperationCanceledException or IOException) { } finally { leaving.Dispose(); } }
+        };
         var paste = PosView.Button("Paste Pairing Details", size: 11);
         paste.Click += (_, _) => PastePairing();
-        var pairing = HomeTerminalView.Fields(("Store address", url), ("Certificate SHA256", fingerprint), ("Access key", key));
+        var pairing = HomeTerminalView.Fields(("Connection name", terminalName), ("Store address", url), ("Certificate SHA256", fingerprint), ("Access key", key));
+        connectionFields = pairing;
         var connectionSetup = PosView.Button("Connection Setup", size: 11);
         connectionSetup.Click += (_, _) => pairing.Visible = !pairing.Visible;
-        var searchButton = Button("Search", async () => { inventoryPage = 0; activeSearch = search.Text.Trim(); await LoadInventoryAsync(); });
+        stockFilter.Items.AddRange(["All stock", "Out of stock", "Low stock (≤5)", "Not counted"]); stockFilter.SelectedIndex = 0;
+        var searchButton = Button("Search", async () => { inventoryPage = 0; activeSearch = search.Text.Trim(); activeStock = new[] { "all", "empty", "low", "uncounted" }[stockFilter.SelectedIndex]; await LoadInventoryAsync(); });
         search.KeyDown += (_, e) => { if(e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; searchButton.PerformClick(); } };
         var details = Button("Item Details", () => ViewItemAsync(items));
         items.CellDoubleClick += async (_, e) => { if(e.RowIndex >= 0) await RunAsync(() => ViewItemAsync(items)); };
@@ -92,7 +119,7 @@ internal sealed class HomeTerminalForm : PosForm
         submit.Click += async (_, _) => await RunAsync(SubmitAsync);
         operationButtons.Add(submit);
         var inventory = HomeTerminalView.Layout();
-        HomeTerminalView.Row(inventory, HomeTerminalView.Actions(search, searchButton, details));
+        HomeTerminalView.Row(inventory, HomeTerminalView.Actions(search, stockFilter, searchButton, details));
         HomeTerminalView.Row(inventory, items, true);
         HomeTerminalView.Row(inventory, HomeTerminalView.Actions(
             Button("Previous", async () => { inventoryPage = Math.Max(0, inventoryPage - 1); await LoadInventoryAsync(); }),
@@ -115,7 +142,8 @@ internal sealed class HomeTerminalForm : PosForm
         report.Items.AddRange(new object[] { new ReportChoice(RecordReport.Sales, "Sales history"), new ReportChoice(RecordReport.Totals, "Daily totals"),
             new ReportChoice(RecordReport.ItemTotals, "Item sales totals"), new ReportChoice(RecordReport.SaleLines, "Sale items"),
             new ReportChoice(RecordReport.Closeout, "End of day"), new ReportChoice(RecordReport.Expenses, "Drawer expenses"),
-            new ReportChoice(RecordReport.LotterySales, "Lottery sales"), new ReportChoice(RecordReport.PriceHistory, "Price history") });
+            new ReportChoice(RecordReport.LotterySales, "Lottery sales"), new ReportChoice(RecordReport.PriceHistory, "Price history"),
+            new ReportChoice(RecordReport.TerminalSales, "Sales by terminal") });
         report.SelectedIndex = 0;
         var recordLayout = HomeTerminalView.Layout();
         HomeTerminalView.Row(recordLayout, HomeTerminalView.Actions(report, PosView.Label("From", 11), from, PosView.Label("Through", 11), through,
@@ -141,6 +169,13 @@ internal sealed class HomeTerminalForm : PosForm
         HomeTerminalView.Row(orderLayout, HomeTerminalView.Actions(Button("Previous", async () => { orderPage = Math.Max(0, orderPage - 1); await LoadOrdersAsync(); }),
             Button("Next", async () => { if(ordersMore) orderPage++; await LoadOrdersAsync(); }), ExportButton(history)));
         Page("Orders", orderLayout);
+        var supplierLayout = HomeTerminalView.Layout();
+        HomeTerminalView.Row(supplierLayout, HomeTerminalView.Actions(Button("Refresh Suppliers", LoadSuppliersAsync), ExportButton(suppliers)));
+        HomeTerminalView.Row(supplierLayout, suppliers, true); Page("Suppliers", supplierLayout);
+        var terminalLayout = HomeTerminalView.Layout();
+        HomeTerminalView.Row(terminalLayout, PosView.Label("Remote Connection views store records. Store Terminal rings sales. Host Terminal stays at the store.", 11));
+        HomeTerminalView.Row(terminalLayout, HomeTerminalView.Actions(Button("Test Connection", LoadConnectionsAsync), ExportButton(terminals)));
+        HomeTerminalView.Row(terminalLayout, terminals, true); Page("Store Status", terminalLayout);
         RefreshBasket();
 
         try { if(File.Exists(Preferences)) sound.Checked = JsonSerializer.Deserialize<HomePreferences>(File.ReadAllText(Preferences))?.OrderSound ?? false; }
@@ -151,7 +186,7 @@ internal sealed class HomeTerminalForm : PosForm
             catch(Exception error) when(error is IOException or UnauthorizedAccessException) { status.Text = "Sound preference could not be saved."; }
         };
         var layout = HomeTerminalView.Layout();
-        HomeTerminalView.Row(layout, PosView.Label("kPOS · Home Terminal", 20, FontStyle.Bold));
+        HomeTerminalView.Row(layout, PosView.Label("kPOS · Remote Connection", 20, FontStyle.Bold));
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(connection, connectionSetup, paste, connect, disconnect, refresh, sound));
         HomeTerminalView.Row(layout, pairing);
         HomeTerminalView.Row(layout, totals);
@@ -164,7 +199,7 @@ internal sealed class HomeTerminalForm : PosForm
             if(working) refreshSelectedTab = true;
             else await RunAsync(LoadCurrentAsync);
         };
-        poll.Tick += async (_, _) => { if(refresh.Checked && client is not null && !working) await RunAsync(async () => { await LoadInventoryAsync(); await LoadCurrentAsync(); }); };
+        poll.Tick += async (_, _) => { if(refresh.Checked && client is not null && !working) await RunAsync(async () => { hostInfo = await Connected.HeartbeatAsync(new(connectionId, terminalName.Text.Trim()), closing.Token); await LoadInventoryAsync(); await LoadCurrentAsync(); }); };
         poll.Start();
         DisableData();
     }
@@ -174,14 +209,14 @@ internal sealed class HomeTerminalForm : PosForm
     private void Page(string title, Control body) { var page = new TabPage(title); page.Controls.Add(body); tabs.TabPages.Add(page); }
     private HomeTerminalClient Connected => client ?? throw new InvalidOperationException("Paste pairing details and connect to the store first.");
     private void SetConnection(string text, Color color) { connection.Text = "● " + text; connection.ForeColor = color; }
-    private void DisableData() { foreach(var grid in new[] { items, catalog, records, history }) grid.Enabled = false; totals.Text = "Connect to check the store."; }
+    private void DisableData() { foreach(var grid in new[] { items, catalog, records, history, suppliers, terminals }) grid.Enabled = false; totals.Text = "Connect to check the store."; }
 
     private async Task LoadInventoryAsync()
     {
         string? selectedBarcode = (items.CurrentRow?.DataBoundItem as HomeStock)?.Barcode;
         int firstRow = items.FirstDisplayedScrollingRowIndex;
         var source = Connected;
-        HomeSnapshot snapshot = await source.OverviewAsync(activeSearch, inventoryPage, closing.Token);
+        HomeSnapshot snapshot = await source.OverviewAsync(activeSearch, inventoryPage, closing.Token, activeStock);
         if(IsDisposed || !ReferenceEquals(source, client)) return;
         items.DataSource = snapshot.Items;
         items.Enabled = true;
@@ -199,10 +234,25 @@ internal sealed class HomeTerminalForm : PosForm
         itemCount = snapshot.ItemCount;
         pages.Text = $"Page {snapshot.Page + 1} of {Math.Max(1, (itemCount + 99) / 100)} · {itemCount} items";
         totals.Text = $"{snapshot.BusinessDate:yyyy-MM-dd}   Total {Sale.Money(snapshot.Sales.Total)}   Sales {snapshot.Sales.Count}   Refunds {snapshot.Sales.Refunds}   Cash {Sale.Money(snapshot.Sales.Cash)}   Card {Sale.Money(snapshot.Sales.Card)}";
-        status.Text = $"Updated {snapshot.CheckedAt.ToLocalTime():HH:mm:ss}.";
+        status.Text = $"Store: {hostInfo?.StoreName} · Updated {snapshot.CheckedAt.ToLocalTime():HH:mm:ss}.";
     }
 
-    private Task LoadCurrentAsync() => tabs.SelectedIndex switch { 1 => LoadCatalogAsync(), 2 => LoadRecordsAsync(), 3 => LoadOrdersAsync(), _ => Task.CompletedTask };
+    private Task LoadCurrentAsync() => tabs.SelectedIndex switch { 1 => LoadCatalogAsync(), 2 => LoadRecordsAsync(), 3 => LoadOrdersAsync(), 4 => LoadSuppliersAsync(), 5 => LoadConnectionsAsync(), _ => Task.CompletedTask };
+    private async Task LoadSuppliersAsync()
+    {
+        var source = Connected; var result = await source.SuppliersAsync(closing.Token);
+        if(IsDisposed || !ReferenceEquals(source, client)) return;
+        suppliers.DataSource = result; suppliers.Enabled = true; status.Text = $"{result.Length} suppliers · store contact details";
+    }
+    private async Task LoadConnectionsAsync()
+    {
+        var timer = System.Diagnostics.Stopwatch.StartNew(); var source = Connected;
+        var result = await source.HeartbeatAsync(new(connectionId, terminalName.Text.Trim()), closing.Token);
+        if(IsDisposed || !ReferenceEquals(source, client)) return;
+        hostInfo = result;
+        terminals.DataSource = result.Terminals.Select(terminal => new { Terminal = terminal.Name, terminal.Role, Status = terminal.Connection, LastSeen = terminal.LastSeen.ToLocalTime().ToString("g") }).ToArray();
+        terminals.Enabled = true; status.Text = $"Host Terminal: {result.StoreName} · {timer.ElapsedMilliseconds} ms · {result.Terminals.Length} connections";
+    }
     private async Task LoadCatalogAsync()
     {
         var source = Connected;
@@ -276,7 +326,7 @@ internal sealed class HomeTerminalForm : PosForm
         {
             if(basket.Count == 0) AddToOrder();
             if(basket.Count == 0) return;
-            pending = basket.Select(item => item.Request).ToArray(); pendingEndpoint = connectedEndpoint;
+            pending = basket.Select(item => item.Request).ToArray(); pendingEndpoint = connectedEndpoint; pendingStore = hostInfo?.StoreId;
         }
         if(pendingEndpoint != connectedEndpoint) throw new InvalidOperationException("Reconnect to the original store to confirm the pending order.");
         HomeOrderReceipt[] receipts;
@@ -325,13 +375,8 @@ internal sealed class HomeTerminalForm : PosForm
 
     private void PastePairing()
     {
-        foreach(string line in Clipboard.GetText().Split(['\r','\n'], StringSplitOptions.RemoveEmptyEntries))
-        {
-            if(line.StartsWith("Store address: ")) url.Text = line[15..].Trim();
-            if(line.StartsWith("Certificate SHA256: ")) fingerprint.Text = line[20..].Trim();
-            if(line.StartsWith("Access key: ")) key.Text = line[12..].Trim();
-        }
-        status.Text = "Pairing details pasted. Choose Connect / Refresh.";
+        try { TerminalPairing.Paste(Clipboard.GetText(), false, url, fingerprint, key); status.Text = "Remote pairing pasted. Choose Connect / Refresh."; }
+        catch(ArgumentException error) { status.Text = error.Message; }
     }
     private Button ExportButton(DataGridView grid)
     {

@@ -11,6 +11,30 @@ namespace Kpos.Tests;
 public sealed class HomeManagementTests
 {
     [TestMethod]
+    public async Task RemoteStockFiltersSupplierContactsAndConnectionStatusMatchTheStore()
+    {
+        using var store = new Store();
+        Product first = store.Data.FindProduct("101")!; Product second = store.Data.FindProduct("102")!;
+        DateOnly day = store.Data.CurrentBusinessDate();
+        store.Data.SaveInventoryEntry(first.Barcode, day, InventoryEntry.OpeningCount, 0);
+        store.Data.SaveInventoryEntry(second.Barcode, day, InventoryEntry.OpeningCount, 3);
+        store.Data.SaveDistributor(null, new("Supplier", "Contact", "555-0100", "contact@example.test", "Street", "Account-1"));
+        await using var host = await HomeTerminalHost.StartAsync(store.Path, IPAddress.Loopback, Port());
+        using var client = new HomeTerminalClient(host.Url, host.Token, host.Fingerprint);
+        var hello = new TerminalHello(Guid.NewGuid(), "Home Office");
+        StoreConnectionInfo info = await client.HeartbeatAsync(hello);
+        Assert.AreEqual("Remote Connection", info.Role); Assert.IsFalse(info.StoreCheckoutEnabled);
+        Assert.AreEqual("Home Office", info.Terminals.Single().Name);
+        Assert.AreEqual(first.Barcode, (await client.OverviewAsync("", 0, stock: "empty")).Items.Single().Barcode);
+        Assert.HasCount(2, (await client.OverviewAsync("", 0, stock: "low")).Items);
+        Assert.IsTrue((await client.OverviewAsync("", 0, stock: "uncounted")).Items.All(item => item.OnHand is null));
+        Assert.AreEqual("Account-1", (await client.SuppliersAsync()).Single().Account);
+        await client.LeaveAsync(hello);
+        Assert.HasCount(0, (await client.ConnectionInfoAsync()).Terminals);
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.OverviewAsync("", 0, stock: "unknown"));
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.HeartbeatAsync(new(Guid.NewGuid(), "Invalid\nName")));
+    }
+    [TestMethod]
     public async Task HomeCatalogRecordsAndOrderHistoryUseStoreDataAndRequireAuthentication()
     {
         using var store = new Store();
@@ -97,7 +121,7 @@ public sealed class HomeManagementTests
         using(var sql = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = store.Path, Pooling = false }.ToString()))
         {
             sql.Open(); sql.CreateCollation("ITEM_CODE", StringComparer.OrdinalIgnoreCase.Compare);
-            using var command = sql.CreateCommand(); command.CommandText = "DROP TABLE product_details; PRAGMA user_version=11;"; command.ExecuteNonQuery();
+            using var command = sql.CreateCommand(); command.CommandText = "DROP TABLE product_details; DROP TABLE terminal_sales; DROP TABLE terminal_quotes; DROP TABLE store_identity; PRAGMA user_version=11;"; command.ExecuteNonQuery();
         }
         using(var upgraded = new RegisterData(store.Path))
         {

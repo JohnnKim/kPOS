@@ -25,14 +25,18 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
     private readonly X509Certificate2 certificate;
     public string Url { get; }
     public string Token { get; }
+    public string StoreToken { get; }
+    public HostConnections Connections { get; }
     public string Fingerprint => certificate.GetCertHashString(HashAlgorithmName.SHA256);
 
-    private HomeTerminalHost(WebApplication app, X509Certificate2 certificate, string url, string token)
+    private HomeTerminalHost(WebApplication app, X509Certificate2 certificate, string url, string token, string storeToken, HostConnections connections)
     {
         this.app = app;
         this.certificate = certificate;
         Url = url;
         Token = token;
+        StoreToken = storeToken;
+        Connections = connections;
     }
 
     internal static bool IsPrivateAddress(IPAddress ip)
@@ -44,14 +48,14 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
     }
 
     public static async Task<HomeTerminalHost> StartAsync(string databasePath, IPAddress address, int port,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, bool checkoutEnabled = false)
     {
         if (!IsPrivateAddress(address) || port is < 1024 or > 65535)
             throw new ArgumentException("Choose a loopback, local network, or private VPN IPv4 address and port 1024–65535.");
         using (var check = RegisterData.OpenHomeConnection(databasePath))
             _ = check.ReadHomeOrders();
         using RSA rsa = RSA.Create(2048);
-        var request = new CertificateRequest("CN=kPOS Home Terminal", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var request = new CertificateRequest("CN=kPOS Store Host", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
         var names = new SubjectAlternativeNameBuilder();
         names.AddIpAddress(address);
         request.CertificateExtensions.Add(names.Build());
@@ -64,6 +68,9 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
             X509KeyStorageFlags.UserKeySet);
         string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         byte[] expectedToken = System.Text.Encoding.ASCII.GetBytes("Bearer " + token);
+        string storeToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        byte[] expectedStoreToken = System.Text.Encoding.ASCII.GetBytes("Bearer " + storeToken);
+        var connections = new HostConnections(checkoutEnabled);
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { Args = [], ContentRootPath = AppContext.BaseDirectory });
         builder.Logging.ClearProviders();
         builder.WebHost.ConfigureKestrel(options =>
@@ -83,21 +90,24 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
         {
             context.Response.Headers.CacheControl = "no-store";
             byte[] supplied = System.Text.Encoding.ASCII.GetBytes(context.Request.Headers.Authorization.ToString());
-            if (!CryptographicOperations.FixedTimeEquals(expectedToken, supplied))
+            bool remote = CryptographicOperations.FixedTimeEquals(expectedToken, supplied);
+            bool store = checkoutEnabled && CryptographicOperations.FixedTimeEquals(expectedStoreToken, supplied);
+            if (!remote && !store)
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 return;
             }
+            context.Items["TerminalRole"] = store ? "Store Terminal" : "Remote Connection";
             try { await next(context); }
             catch (Exception error) when (error is SqliteException or IOException)
             {
                 context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
             }
         });
-        app.MapGet("/api/v1/overview", (string? search, int? page) =>
+        app.MapGet("/api/v1/overview", (string? search, int? page, string? stock) =>
         {
             int index = page ?? 0;
-            if (index is < 0 or > 100000 || search?.Length > 100)
+            if (index is < 0 or > 100000 || search?.Length > 100 || stock is not (null or "all" or "empty" or "low" or "uncounted"))
                 return Results.BadRequest();
             using var data = RegisterData.OpenHomeConnection(databasePath);
             DateOnly day = data.CurrentBusinessDate();
@@ -105,11 +115,12 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
             OrderItem[] items = data.ReadOrderItems(day, day, day).Where(item =>
                 item.Product.Description.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 item.Product.Barcode.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                item.Product.Code.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
-            HomeStock[] stock = items.Skip(index * 100).Take(100).Select(item => new HomeStock(item.Product.Barcode,
+                item.Product.Code.Contains(query, StringComparison.OrdinalIgnoreCase)).Where(item => stock switch
+                { "empty" => item.OnHand <= 0, "low" => item.OnHand is <= 5, "uncounted" => item.OnHand is null, _ => true }).ToArray();
+            HomeStock[] stockRows = items.Skip(index * 100).Take(100).Select(item => new HomeStock(item.Product.Barcode,
                 item.Product.Code, item.Product.Description, item.Product.Size, item.OnHand, item.Sold, item.DistributorName,
                 item.Product.UnitPrice, item.Product.UnitsPerCase, item.Product.CasePrice, item.Product.IsTaxable, item.Draft)).ToArray();
-            return Results.Ok(new HomeSnapshot(day, DateTimeOffset.UtcNow, data.GetDaySales(day), stock, items.Length, index));
+            return Results.Ok(new HomeSnapshot(day, DateTimeOffset.UtcNow, data.GetDaySales(day), stockRows, items.Length, index));
         });
         app.MapPost("/api/v1/order-requests", (HomeOrderRequest order) =>
         {
@@ -119,10 +130,11 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
             catch (InvalidOperationException error) { return Results.Conflict(error.Message); }
         });
         HomeManagement.Map(app, databasePath);
+        connections.Map(app, databasePath);
         try
         {
             await app.StartAsync(cancellationToken).ConfigureAwait(false);
-            return new(app, certificate, $"https://{(address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? $"[{address}]" : address)}:{port}/", token);
+            return new(app, certificate, $"https://{(address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? $"[{address}]" : address)}:{port}/", token, storeToken, connections);
         }
         catch
         {
@@ -147,7 +159,7 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
     }
 }
 
-internal sealed class HomeTerminalClient : IDisposable
+internal sealed partial class HomeTerminalClient : IDisposable
 {
     private readonly HttpClient http;
 
@@ -169,9 +181,9 @@ internal sealed class HomeTerminalClient : IDisposable
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
     }
 
-    public async Task<HomeSnapshot> OverviewAsync(string search, int page, CancellationToken cancellationToken = default)
+    public async Task<HomeSnapshot> OverviewAsync(string search, int page, CancellationToken cancellationToken = default, string stock = "all")
     {
-        using HttpResponseMessage response = await http.GetAsync($"api/v1/overview?search={Uri.EscapeDataString(search)}&page={page}", cancellationToken).ConfigureAwait(false);
+        using HttpResponseMessage response = await http.GetAsync($"api/v1/overview?search={Uri.EscapeDataString(search)}&page={page}&stock={Uri.EscapeDataString(stock)}", cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<HomeSnapshot>(cancellationToken).ConfigureAwait(false) ?? throw new IOException("The store returned an empty response.");
     }

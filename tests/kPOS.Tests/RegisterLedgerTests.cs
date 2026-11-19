@@ -71,7 +71,8 @@ public sealed class RegisterLedgerTests
 
             using (var zip = ZipFile.OpenRead(daily))
             {
-                Assert.HasCount(8, zip.Entries);
+            Assert.HasCount(9, zip.Entries);
+            Assert.IsNotNull(zip.GetEntry("terminal-sales.csv"));
                 using var lines = new StreamReader(zip.GetEntry("sale-lines.csv")!.Open());
                 StringAssert.Contains(lines.ReadToEnd(), "Pale Ale");
             }

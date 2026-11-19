@@ -142,6 +142,9 @@ public sealed class CloseoutTests
                     DROP TABLE order_draft;
                     DROP TABLE home_order_requests;
                     DROP TABLE product_details;
+                    DROP TABLE terminal_sales;
+                    DROP TABLE terminal_quotes;
+                    DROP TABLE store_identity;
                     DROP TABLE inventory_receipts;
                     DROP TABLE inventory_counts;
                     ALTER TABLE products DROP COLUMN archived;

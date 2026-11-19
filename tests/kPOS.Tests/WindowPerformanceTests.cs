@@ -16,7 +16,7 @@ public sealed class WindowPerformanceTests
         (string Name, Func<PosForm> Create)[] factories =
         [ ("Register", () => new RegisterForm(data, folders)), ("End of day", () => new CloseoutForm(data, folders)),
           ("Backup", () => new BackupOptionsForm()), ("Orders", () => new OrderForm(data)),
-          ("Reports", () => new RecordsForm(data, folders)), ("Home", () => new HomeTerminalForm()),
+          ("Reports", () => new RecordsForm(data, folders)), ("Remote Connection", () => new HomeTerminalForm()), ("Host Terminal", () => new HomeHostForm(data)),
           ("Catalog", () => new ProductListForm(data.ListProducts(), false, data: data)),
           ("Item Details", () => new CatalogDetailsForm(data, data.ListProducts()[0])) ];
         foreach (var (name, create) in factories)

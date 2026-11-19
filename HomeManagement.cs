@@ -23,7 +23,7 @@ internal sealed record HomeTable(string[] Columns, string?[][] Rows, bool More =
 }
 
 internal sealed record HomeItemDetails(Product Product, CatalogDetails Catalog, long? OnHand, long Draft,
-    OrderContact? Supplier, HomeTable StockHistory, HomeTable PriceHistory);
+    OrderContact? Supplier, HomeTable StockHistory, HomeTable PriceHistory, HomeTable SalesHistory);
 internal sealed record HomeOrderHistory(HomeOrderReceipt[] Items, bool More, int Page);
 
 internal static class HomeManagement
@@ -38,11 +38,14 @@ internal static class HomeManagement
         OrderContact? supplier = data.ReadDistributors().FirstOrDefault(supplier => supplier.Id == details.SupplierId)?.Details;
         return new(product, details, stock?.OnHand, stock?.Draft ?? 0, supplier,
             HomeTable.From(data.ReadStockHistory(product.Barcode), pageSize: 500),
-            HomeTable.From(data.ReadReport(RecordReport.PriceHistory, DateOnly.MinValue, DateOnly.MaxValue, product.Barcode, limit: 501), pageSize: 500));
+            HomeTable.From(data.ReadReport(RecordReport.PriceHistory, DateOnly.MinValue, DateOnly.MaxValue, product.Barcode, limit: 501), pageSize: 500),
+            HomeTable.From(data.ReadReport(RecordReport.SaleLines, DateOnly.MinValue, DateOnly.MaxValue, product.Barcode, limit: 501), pageSize: 500));
     }
 
     internal static void Map(WebApplication app, string databasePath)
     {
+        app.MapGet("/api/v1/suppliers", () =>
+        { using var data = RegisterData.OpenHomeConnection(databasePath); return Results.Ok(data.ReadDistributors().Select(distributor => distributor.Details).ToArray()); });
         app.MapGet("/api/v1/item", (string barcode) =>
         {
             if (barcode.Length is < 1 or > 100) return Results.BadRequest();

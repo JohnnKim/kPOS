@@ -110,6 +110,7 @@ internal sealed partial class RegisterData
         RecordReport.ItemTotals => "item-totals.csv",
         RecordReport.LotterySales => "lottery-sales.csv",
         RecordReport.Expenses => "drawer-expenses.csv",
+        RecordReport.TerminalSales => "terminal-sales.csv",
         RecordReport.Closeout => "closeout.csv",
         RecordReport.PriceHistory => "price-history.csv",
         RecordReport.Products => "catalog-at-export.csv",

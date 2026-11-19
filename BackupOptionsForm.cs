@@ -64,7 +64,7 @@ internal sealed class BackupOptionsForm : PosForm
             (RecordReport.Sales, "Sale history"), (RecordReport.PriceHistory, "Price history"),
             (RecordReport.SaleLines, "Sale line details"), (RecordReport.Closeout, "Closeout history"),
             (RecordReport.ItemTotals, "Item sales totals"), (RecordReport.LotterySales, "Lottery sales"),
-            (RecordReport.Expenses, "Drawer expenses")
+            (RecordReport.Expenses, "Drawer expenses"), (RecordReport.TerminalSales, "Sales by terminal")
         ];
         for (int i = 0; i < types.Length; i++)
         {

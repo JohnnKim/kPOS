@@ -78,7 +78,7 @@ jobs:
           version="${RELEASE_TAG#v}"
           asset="kPOS-${version}-win-x64.zip"
           sha256sum --check "$asset.sha256"
-          args=( "$RELEASE_TAG" "$asset" "$asset.sha256" "Start-Home-Terminal.cmd" "Home-Terminal.md" --verify-tag --generate-notes --title "kPOS $version" )
+          args=( "$RELEASE_TAG" "$asset" "$asset.sha256" "Start-Home-Terminal.cmd" "Start-Remote-Connection.cmd" "Start-Store-Terminal.cmd" "Home-Terminal.md" "Store-Terminals.md" --verify-tag --generate-notes --title "kPOS $version" )
           if [[ "$version" == *-* ]]; then
             args+=( --prerelease --latest=false )
           fi

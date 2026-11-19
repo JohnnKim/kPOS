@@ -20,9 +20,15 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
-        if (args.Length == 1 && args[0] == "--home")
+        if (args.Length == 1 && args[0] is "--home" or "--remote")
         {
             Application.Run(new HomeTerminalForm());
+            return;
+        }
+
+        if (args.Length == 1 && args[0] == "--store-terminal")
+        {
+            Application.Run(new StoreTerminalForm(Environment.GetEnvironmentVariable("KPOS_TERMINAL_PROFILE")));
             return;
         }
 

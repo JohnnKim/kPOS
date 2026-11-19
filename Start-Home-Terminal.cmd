@@ -1,2 +1,2 @@
 @echo off
-start "kPOS Home Terminal" "%~dp0kPOS.exe" --home
+start "kPOS Remote Connection" "%~dp0kPOS.exe" --remote

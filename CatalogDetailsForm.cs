@@ -34,6 +34,7 @@ internal sealed class CatalogDetailsForm : PosForm
         Page("Details / Pricing", details);
         Page("Counts / Deliveries", Table(item.StockHistory));
         Page("Price History", Table(item.PriceHistory));
+        if(item.SalesHistory is not null) Page("Sales History", Table(item.SalesHistory));
         var close = PosView.Button("Close", size: 11); close.DialogResult = DialogResult.Cancel;
         var layout = HomeTerminalView.Layout();
         HomeTerminalView.Row(layout, tabs, fill: true);

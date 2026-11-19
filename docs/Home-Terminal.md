@@ -1,12 +1,12 @@
-# Home terminal and client options
+# Remote Connection and client options
 
-Preview.27 · November 18, 2026
+Preview.28 · November 18, 2026
 
 ## Implemented in this preview
 
-The store can host an optional HTTPS API while its register stays open. A separate home window connects to that host to retrieve the store's current business-day totals, cash/card totals, sale/refund counts, and inventory. Stock uses the same opening counts, deliveries, case conversions, sales, and returns as the register. Items without a starting count display **Not counted**. Search results are paginated at 100 items, with horizontal and vertical table scrolling.
+**Host Terminal** runs at the store. **Remote Connection** runs at home/office and connects to that store for current business-day totals, cash/card totals, sale/refund counts, and inventory. **Store Terminal (LAN)** is the separate shared-checkout window for additional store tills; see [Store-Terminals.md](Store-Terminals.md). Stock uses the same counts, deliveries, case conversions, sales and returns as the register. Items without a starting count display **Not counted**. Search results are paginated at 100 items, with table scrolling.
 
-Availability prioritizes current on-hand counts. Catalog shows scrollable product, pack, pricing, brand, department, supplier and purchase-cost fields; Item Details also shows supplier contacts, counts/deliveries and price history. Unentered metadata stays blank or **Not set**. Records supports dated sales, sale items, daily totals, closeouts, expenses, lottery and price history, with paging and CSV export of the displayed page.
+Availability adds out-of-stock, low-stock and uncounted filters. Catalog shows scrollable product, pack, pricing, brand, department, supplier and purchase-cost fields; Item Details includes supplier contacts, counts/deliveries, price history and recent item sales. Unentered metadata stays blank or **Not set**. Records adds **Sales by terminal** alongside existing reports. **Suppliers** shows contact/account details. **Store Status** checks the host, request latency and named connections. Active means a heartbeat/request was seen within 45 seconds; Idle means it has been longer.
 
 An operator at home can add up to 100 items to an order draft in **selling units**, review/remove lines in Orders, and send the whole request together. Requests are stored atomically in the store database as Pending. At the store, **Add to Order Draft** adds that quantity to the existing supplier order draft; **Decline Request** leaves the draft unchanged. Approval can only add a request once. Retrying an unconfirmed request reuses the same payload and IDs. Orders shows pending, accepted and declined requests; optional **Order sound** plays after submission and when a pending request is observed entering the store draft.
 
@@ -14,10 +14,10 @@ Assumption for this foundation: “orders” means supplier purchase requests. C
 
 ## Try the foundation
 
-1. Open the store register. Choose **Records > Home Terminal Host** (Ctrl+Shift+H).
+1. Open the store register. Choose **Records > Host Terminal** (Ctrl+Shift+H).
 2. Keep **127.0.0.1** selected for a same-PC trial. Choose **Start Host**.
-3. Copy the pairing details: store address, certificate SHA256, and access key.
-4. Download the optional **Start-Home-Terminal.cmd** release asset beside your extracted `kPOS.exe` and run it, run `kPOS.exe --home` directly, or choose **Records > Connect to Store** (Ctrl+Shift+J). This window can run without installing a register or creating a home copy of the store database. The update ZIP continues to contain only `kPOS.exe` for compatibility with existing installers; the launcher and this guide are separate release assets.
+3. Choose **Copy Remote Pairing**. This key cannot record checkout sales.
+4. Put **Start-Remote-Connection.cmd** beside your extracted `kPOS.exe` and open it, run `kPOS.exe --remote`, or choose **Records > Remote Connection** (Ctrl+Shift+J). This window needs no register installation or local database. The old `--home` option and `Start-Home-Terminal.cmd` remain aliases. The update ZIP still contains only `kPOS.exe`; launchers/guides are separate release assets.
 5. Choose **Paste Pairing Details**, then **Connect / Refresh**. Search inventory, select an item, enter units, and choose **Request Order**, or build a draft with **Add to Order** and review it in Orders.
 6. At the store, choose **Refresh Requests**, select the request, then **Add to Order Draft**. Open Orders to continue the normal purchase-order process. Reopen Orders if it was already open so its displayed draft reloads.
 
@@ -33,7 +33,7 @@ These are architecture proposals, not equipment purchases or configured services
 
 | Option | Home experience | Store equipment | Tradeoffs |
 | --- | --- | --- | --- |
-| **Store host + private VPN — recommended direction** | A separate kPOS home window for sales, inventory, and purchase requests. Later, a browser dashboard could serve phones/tablets. | Reuse a suitable always-on store PC for trials. For daily use, consider a dedicated mini PC, gigabit router/switch, wired connections, UPS, and separate backup drive. Home needs a PC and internet. | Store data stays local. Home requires store power/internet and host availability. A central checkout API can later serve 3+ tills over the LAN. |
+| **Store host + private VPN — recommended direction** | Remote Connection for records, stock and purchase requests. A browser dashboard could later serve phones/tablets. | Reuse a suitable always-on store PC for trials. For daily use, consider a dedicated mini PC, gigabit router/switch, wired connections, UPS, and separate backup drive. Home needs a PC and internet. | Store data stays local. Home requires store power/internet and host availability. Preview.28 adds a separate central-checkout trial for 3+ store tills over the LAN. |
 | **Remote Desktop + private VPN — quickest bridge** | Control a dedicated store office PC from home. | Dedicated store PC with a Windows edition capable of hosting Remote Desktop; existing home PC. UPS/network equipment as above. | Less application work initially. Session sharing and licensing need review; use an office PC rather than interrupting a cashier. This does not by itself create shared multi-register checkout. |
 | **Cloud backend + home dashboard** | View sales and prepare orders through a hosted service; store PCs send updates. | Existing PCs, reliable internet, router/switch, UPS, and a paid cloud service. A cellular internet backup may be useful. | Recurring hosting/maintenance costs. Requires deliberate offline sales, queueing, reconciliation, account recovery, and sync-conflict handling before tills depend on it. |
 

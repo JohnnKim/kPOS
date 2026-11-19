@@ -131,7 +131,7 @@ public sealed class WindowLayoutTests
         }
     }
 
-    private static void CheckControls(Form window)
+    internal static void CheckControls(Form window)
     {
         foreach (Control control in Descendants(window).ToArray())
         {

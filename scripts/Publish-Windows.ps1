@@ -31,6 +31,9 @@ try {
     $archive = Join-Path $staging.FullName $zipName
     $launcher = Join-Path $PSScriptRoot '../Start-Home-Terminal.cmd'
     $guide = Join-Path $PSScriptRoot '../docs/Home-Terminal.md'
+    $remoteLauncher = Join-Path $PSScriptRoot '../Start-Remote-Connection.cmd'
+    $storeLauncher = Join-Path $PSScriptRoot '../Start-Store-Terminal.cmd'
+    $storeGuide = Join-Path $PSScriptRoot '../docs/Store-Terminals.md'
     # Existing installed versions require a ZIP containing only kPOS.exe.
     Compress-Archive -LiteralPath (Join-Path $publish 'kPOS.exe') -DestinationPath $archive
     $extracted = Join-Path $staging.FullName 'extracted'
@@ -54,7 +57,7 @@ try {
     $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
     Set-Content -LiteralPath $checksum -Encoding ascii -Value "$hash  $zipName"
     Move-Item -LiteralPath $archive, $checksum -Destination $destination.FullName
-    Copy-Item -LiteralPath $launcher, $guide -Destination $destination.FullName
+    Copy-Item -LiteralPath $launcher, $guide, $remoteLauncher, $storeLauncher, $storeGuide -Destination $destination.FullName
     Write-Output "Built and verified $zipName"
 }
 finally {

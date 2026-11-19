@@ -278,6 +278,8 @@ internal sealed partial class RegisterData : IDisposable
             CreateHomeOrders(transaction);
         if (currentVersion < 12)
             CreateCatalogDetails(transaction);
+        if (currentVersion < 13)
+            CreateStoreTerminals(transaction);
 
         transaction.Commit();
     }

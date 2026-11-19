@@ -128,6 +128,9 @@ internal sealed class Sale
 
     public void Clear() => lines.Clear();
 
+    internal static Sale FromLines(IEnumerable<SaleLine> source)
+    { var sale = new Sale(); sale.lines.AddRange(source); return sale; }
+
     public static bool TryParseMoney(string text, out decimal amount) =>
         decimal.TryParse(text.Trim(), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out amount) &&
         decimal.Round(amount, 2) == amount;

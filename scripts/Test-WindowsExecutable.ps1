@@ -390,7 +390,7 @@ public static class KposExecutableTest
         }
     }
 
-    public static void RunHome(string executable, bool setup = false)
+    public static void RunHome(string executable, bool setup = false, bool storeTerminal = false)
     {
         string desktopName = "kPOS-home-test-" + Guid.NewGuid().ToString("N");
         IntPtr desktop = CreateDesktop(desktopName, null, IntPtr.Zero, 0, 0x1ff, IntPtr.Zero);
@@ -398,7 +398,7 @@ public static class KposExecutableTest
         try
         {
             var startup = new StartupInfo { Size = Marshal.SizeOf(typeof(StartupInfo)), Desktop = desktopName };
-            var command = new StringBuilder("\"" + executable + (setup ? "\" --setup" : "\" --home"));
+            var command = new StringBuilder("\"" + executable + (setup ? "\" --setup" : storeTerminal ? "\" --store-terminal" : "\" --remote"));
             ProcessInfo process;
             if (!CreateProcess(executable, command, IntPtr.Zero, IntPtr.Zero, false, 0, IntPtr.Zero,
                 Path.GetDirectoryName(executable), ref startup, out process)) throw new Win32Exception();
@@ -419,9 +419,11 @@ public static class KposExecutableTest
                 }
                 else
                 {
-                    home = FindWindow(desktop, process.ProcessId, "kPOS — Home Terminal");
-                    WaitUntil(() => HasText(home, "Connect / Refresh") && HasText(home, "Request Order") &&
-                        HasText(home, "Certificate SHA256"), "start the independent home terminal without register setup");
+                    home = FindWindow(desktop, process.ProcessId, storeTerminal ? "kPOS — Store Terminal (LAN)" : "kPOS — Remote Connection");
+                    WaitUntil(() => storeTerminal
+                        ? HasText(home, "Paste Store Pairing") && HasText(home, "Connect to Host") && HasText(home, "Store checkout key")
+                        : HasText(home, "Connect / Refresh") && HasText(home, "Request Order") && HasText(home, "Certificate SHA256"),
+                        "start the independent store/remote connection without register setup");
                 }
                 if (setup)
                 {
@@ -878,12 +880,20 @@ public static class KposExecutableTest
 
 $previousData = [Environment]::GetEnvironmentVariable('KPOS_DATA_DIRECTORY')
 $previousOrigin = [Environment]::GetEnvironmentVariable('KPOS_TEST_UPDATE_ORIGIN')
+$previousTerminalProfile = [Environment]::GetEnvironmentVariable('KPOS_TERMINAL_PROFILE')
 $server = $null
 $smokeData = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) "kpos-smoke-$([guid]::NewGuid().ToString('N'))")
 try {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $smokeData.FullName)
+    [Environment]::SetEnvironmentVariable('KPOS_TERMINAL_PROFILE', (Join-Path $smokeData.FullName 'terminal-test.json'))
     $source = (Resolve-Path -LiteralPath $Executable).ProviderPath
     [KposExecutableTest]::RunHome($source)
+    [KposExecutableTest]::RunHome($source, $false, $true)
+    # Keep the fresh-install destination empty after the independent till launch.
+    foreach ($name in 'terminal-test.json', 'terminal-test.json.lock') {
+        $path = Join-Path $smokeData.FullName $name
+        if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
+    }
     if (Test-Path -LiteralPath (Join-Path $smokeData.FullName 'Database')) {
         throw 'The home terminal must not create a register database.'
     }
@@ -926,6 +936,7 @@ try {
 finally {
     [Environment]::SetEnvironmentVariable('KPOS_DATA_DIRECTORY', $previousData)
     [Environment]::SetEnvironmentVariable('KPOS_TEST_UPDATE_ORIGIN', $previousOrigin)
+    [Environment]::SetEnvironmentVariable('KPOS_TERMINAL_PROFILE', $previousTerminalProfile)
     if ($server) { $server.Dispose() }
     foreach ($name in 'kPOS.exe', 'kPOS.exe.previous') {
         $path = Join-Path $smokeData.FullName $name
@@ -934,6 +945,10 @@ finally {
         }
     }
     $setupPointer = Join-Path $smokeData.FullName 'installation-folder.txt'
+    foreach ($name in 'terminal-test.json', 'terminal-test.json.lock') {
+        $path = Join-Path $smokeData.FullName $name
+        if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
+    }
     if (Test-Path -LiteralPath $setupPointer) { Remove-Item -LiteralPath $setupPointer }
     foreach ($name in 'register.db', 'register.db-journal', 'register.db-wal', 'register.db-shm') {
         $path = Join-Path $smokeData.FullName "Database/$name"

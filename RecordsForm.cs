@@ -51,6 +51,7 @@ internal sealed class RecordsForm : PosForm
         {
             AddTab("Totals", RecordReport.Totals);
             AddTab("Sales History", RecordReport.Sales);
+            AddTab("Sales by Terminal", RecordReport.TerminalSales);
             AddTab("Item Sales Totals", RecordReport.ItemTotals);
             AddTab("Lottery Sales", RecordReport.LotterySales);
             AddTab("Drawer Expenses", RecordReport.Expenses);
@@ -282,6 +283,7 @@ internal sealed class RecordsForm : PosForm
                     (individualSale && field == "Type"),
                 RecordReport.ItemTotals => field != "Type",
                 RecordReport.PriceHistory => field != "Code",
+                RecordReport.TerminalSales => field != "Terminal ID",
                 RecordReport.Closeout => field is "Business date" or "Close number" or "Sales" or "Revised total" or "Drawer expenses" or
                     "Cash over/short" or "Card over/short" or "Cash deposit" or "Notes",
                 _ => true

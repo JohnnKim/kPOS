@@ -13,13 +13,15 @@ internal static class HomeTerminalView
         AutoGenerateColumns = true, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells,
         RowHeadersVisible = false, MultiSelect = false, SelectionMode = DataGridViewSelectionMode.FullRowSelect,
         BackgroundColor = Color.White, BorderStyle = BorderStyle.FixedSingle, ScrollBars = ScrollBars.Both,
-        MinimumSize = new Size(0, 160), AccessibleName = "Home terminal items"
+        MinimumSize = new Size(0, 160), AccessibleName = "Store connection data"
     };
 
-    internal static TableLayoutPanel Layout() => new()
+    internal static TableLayoutPanel Layout()
     {
-        Dock = DockStyle.Fill, ColumnCount = 1, Padding = new Padding(12), RowCount = 0
-    };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, Padding = new Padding(12), RowCount = 0 };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        return layout;
+    }
 
     internal static void Row(TableLayoutPanel layout, Control control, bool fill = false)
     {
@@ -67,6 +69,11 @@ internal sealed class HomeHostForm : PosForm
     private readonly TextBox url = new() { ReadOnly = true };
     private readonly TextBox fingerprint = new() { ReadOnly = true };
     private readonly TextBox key = new() { ReadOnly = true, UseSystemPasswordChar = true };
+    private readonly TextBox storeKey = new() { ReadOnly = true, UseSystemPasswordChar = true };
+    private readonly CheckBox allowCheckout = new() { Text = "Allow Store Checkout · LAN tills", AutoSize = true };
+    private readonly DataGridView connections = HomeTerminalView.Grid();
+    private readonly System.Windows.Forms.Timer connectionTimer = new() { Interval = 5000 };
+    private readonly Button copyStore = PosView.Button("Copy Store Pairing", size: 11);
     private readonly Label status = PosView.Label("Stopped. Connections are disabled until you start the host.", 11);
     private readonly DataGridView orders = HomeTerminalView.Grid();
     private readonly Button toggle = PosView.Button("Start Host", primary: true, size: 11);
@@ -80,8 +87,8 @@ internal sealed class HomeHostForm : PosForm
     public HomeHostForm(RegisterData data)
     {
         this.data = data;
-        Text = "Home Terminal — Store Host";
-        ClientSize = new Size(920, 640);
+        Text = "kPOS — Host Terminal";
+        ClientSize = new Size(960, 780);
         StartPosition = FormStartPosition.CenterParent;
         BackColor = PosView.Canvas;
         address.Items.Add("127.0.0.1");
@@ -99,12 +106,14 @@ internal sealed class HomeHostForm : PosForm
             transition = ToggleAsync();
             await transition;
         };
-        var copy = PosView.Button("Copy Pairing Details", size: 11);
+        var copy = PosView.Button("Copy Remote Pairing", size: 11);
         copy.Click += (_, _) =>
         {
             if (host is not null)
-                Clipboard.SetText($"Store address: {host.Url}\r\nCertificate SHA256: {host.Fingerprint}\r\nAccess key: {host.Token}");
+                Clipboard.SetText(TerminalPairing.Text(host, false));
         };
+        copyStore.Click += (_, _) => { if(host is not null && allowCheckout.Checked) Clipboard.SetText(TerminalPairing.Text(host, true)); };
+        copyStore.Enabled = false;
         var refresh = PosView.Button("Refresh Requests", size: 11);
         refresh.Click += (_, _) => RefreshOrders();
         var approve = PosView.Button("Add to Order Draft", size: 11);
@@ -112,16 +121,25 @@ internal sealed class HomeHostForm : PosForm
         var decline = PosView.Button("Decline Request", size: 11);
         decline.Click += (_, _) => Review(false);
         var layout = HomeTerminalView.Layout();
-        HomeTerminalView.Row(layout, PosView.Label("Home Terminal", 20, FontStyle.Bold));
-        HomeTerminalView.Row(layout, PosView.Label("Store PC: choose network/VPN address → Start Host → Copy Pairing Details to the home PC.", 11));
+        HomeTerminalView.Row(layout, PosView.Label("Host Terminal · Store", 20, FontStyle.Bold));
+        var directions = PosView.Label("Store PC hosts the data. Choose its LAN/VPN address, start hosting, then copy pairing for the connection you need.", 11);
+        directions.MaximumSize = new Size(880, 0);
+        HomeTerminalView.Row(layout, directions);
+        HomeTerminalView.Row(layout, allowCheckout);
         HomeTerminalView.Row(layout, HomeTerminalView.Fields(("Bind address", address), ("Port", port),
-            ("Store address", url), ("Certificate SHA256", fingerprint), ("Access key", key)));
-        HomeTerminalView.Row(layout, HomeTerminalView.Actions(toggle, copy));
+            ("Store address", url), ("Certificate SHA256", fingerprint), ("Remote access key", key), ("Store checkout key", storeKey)));
+        HomeTerminalView.Row(layout, HomeTerminalView.Actions(toggle, copy, copyStore));
         HomeTerminalView.Row(layout, status);
-        HomeTerminalView.Row(layout, PosView.Label("Pending home orders (units) — review before adding to the supplier order draft", 11, FontStyle.Bold));
-        HomeTerminalView.Row(layout, orders, fill: true);
-        HomeTerminalView.Row(layout, HomeTerminalView.Actions(refresh, approve, decline));
+        var tabs = new TabControl { Dock = DockStyle.Fill };
+        var requests = HomeTerminalView.Layout();
+        HomeTerminalView.Row(requests, PosView.Label("Remote purchase requests · selling units", 11, FontStyle.Bold));
+        HomeTerminalView.Row(requests, orders, fill: true);
+        HomeTerminalView.Row(requests, HomeTerminalView.Actions(refresh, approve, decline));
+        var requestsPage = new TabPage("Order Requests"); requestsPage.Controls.Add(requests); tabs.TabPages.Add(requestsPage);
+        var connectionsPage = new TabPage("Connected Terminals"); connectionsPage.Controls.Add(connections); tabs.TabPages.Add(connectionsPage);
+        HomeTerminalView.Row(layout, tabs, fill: true);
         Controls.Add(layout);
+        connectionTimer.Tick += (_, _) => RefreshConnections(); connectionTimer.Start();
         RefreshOrders();
     }
 
@@ -133,15 +151,18 @@ internal sealed class HomeHostForm : PosForm
             if (host is null)
             {
                 HomeTerminalHost started = await HomeTerminalHost.StartAsync(data.DatabasePath,
-                    IPAddress.Parse(address.Text), (int)port.Value, closing.Token);
+                    IPAddress.Parse(address.Text), (int)port.Value, closing.Token, checkoutEnabled: allowCheckout.Checked);
                 if (IsDisposed) { await started.DisposeAsync(); return; }
                 host = started;
                 url.Text = host.Url;
                 fingerprint.Text = host.Fingerprint;
                 key.Text = host.Token;
-                status.Text = "● Hosting · Copy pairing details to the home PC. Keep this window open.";
+                storeKey.Text = allowCheckout.Checked ? host.StoreToken : "Disabled";
+                copyStore.Enabled = allowCheckout.Checked;
+                status.Text = "● Hosting · Store host running. Pair remote connections or store tills here.";
                 status.ForeColor = Color.DarkGreen;
                 address.Enabled = port.Enabled = false;
+                allowCheckout.Enabled = false;
                 toggle.Text = "Stop Host";
             }
             else
@@ -150,10 +171,11 @@ internal sealed class HomeHostForm : PosForm
                 host = null;
                 await stopped.DisposeAsync();
                 if (IsDisposed) return;
-                url.Clear(); fingerprint.Clear(); key.Clear();
-                status.Text = "Stopped. Home terminals are disconnected.";
+                url.Clear(); fingerprint.Clear(); key.Clear(); storeKey.Clear(); copyStore.Enabled = false;
+                status.Text = "Stopped. All connected terminals are disconnected.";
                 status.ForeColor = PosView.Muted;
                 address.Enabled = port.Enabled = true;
+                allowCheckout.Enabled = true;
                 toggle.Text = "Start Host";
             }
         }
@@ -166,7 +188,7 @@ internal sealed class HomeHostForm : PosForm
     }
 
     private bool AskToStop() => ConfirmStop?.Invoke() ?? MessageBox.Show(this,
-        "Stop hosting and disconnect home terminals?", "Stop Host", MessageBoxButtons.YesNo,
+        "Stop hosting and disconnect all connected terminals?", "Stop Host", MessageBoxButtons.YesNo,
         MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) == DialogResult.Yes;
 
     protected override void OnFormClosing(FormClosingEventArgs e)
@@ -216,6 +238,9 @@ internal sealed class HomeHostForm : PosForm
         catch (SqliteException error) { status.Text = "Requests could not be loaded: " + error.Message; }
     }
 
+    private void RefreshConnections() => connections.DataSource = host?.Connections.Snapshot().Select(terminal => new
+        { Terminal = terminal.Name, terminal.Role, Status = terminal.Connection, LastSeen = terminal.LastSeen.ToLocalTime().ToString("g") }).ToArray();
+
     private void Review(bool approve)
     {
         if (orders.CurrentRow?.Cells["Id"].Value is not Guid id) return;
@@ -229,6 +254,7 @@ internal sealed class HomeHostForm : PosForm
         if (disposing && !resourcesDisposed)
         {
             resourcesDisposed = true;
+            connectionTimer.Dispose();
             closing.Cancel();
             if (host is HomeTerminalHost remaining)
                 _ = Task.Run(async () => await remaining.DisposeAsync());

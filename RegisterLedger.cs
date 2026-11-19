@@ -8,11 +8,11 @@ internal enum PaymentMethod { Card, Cash }
 
 internal readonly record struct Payment(PaymentMethod Method, decimal Received);
 
-internal enum RecordReport { Totals, Sales, SaleLines, ItemTotals, PriceHistory, Products, LotterySales, Closeout, Expenses }
+internal enum RecordReport { Totals, Sales, SaleLines, ItemTotals, PriceHistory, Products, LotterySales, Closeout, Expenses, TerminalSales }
 
 internal sealed partial class RegisterData
 {
-    public const int SchemaVersion = 12;
+    public const int SchemaVersion = 13;
     public const int DefaultChangeSeconds = 8;
     public const int MaximumChangeSeconds = 120;
     private const string HasSoldItems = """
@@ -39,11 +39,17 @@ internal sealed partial class RegisterData
 
     public void RecordSale(Guid saleId, DateTimeOffset soldAt, Sale sale, SaleTotals totals, Payment payment)
     {
+        using var transaction = connection.BeginTransaction(deferred: false);
+        RecordSaleInTransaction(saleId, soldAt, sale, totals, payment, transaction);
+        transaction.Commit();
+    }
+
+    private void RecordSaleInTransaction(Guid saleId, DateTimeOffset soldAt, Sale sale, SaleTotals totals, Payment payment, SqliteTransaction transaction)
+    {
         if (sale.Lines.Count == 0 || payment.Received < totals.Total ||
             ((payment.Method == PaymentMethod.Card || totals.Total < 0) && payment.Received != totals.Total))
             throw new InvalidOperationException("The ticket or payment amount is incomplete.");
 
-        using var transaction = connection.BeginTransaction(deferred: false);
         using var header = Command("""
             INSERT INTO sales (id, sold_at, business_date, subtotal_cents, discount_cents, tax_cents,
                                tax_rate, total_cents, tender, received_cents, change_cents, lottery_cents)
@@ -107,7 +113,6 @@ internal sealed partial class RegisterData
             }
         }
 
-        transaction.Commit();
     }
 
     public DataTable ReadReport(RecordReport report, DateOnly start, DateOnly end, string? barcode = null,
@@ -195,6 +200,17 @@ internal sealed partial class RegisterData
                        amount_cents / 100.0 AS Amount, reason AS Reason
                 FROM drawer_expenses WHERE business_date BETWEEN $start AND $end
                 ORDER BY business_date DESC, recorded_at DESC, id DESC
+                """,
+            RecordReport.TerminalSales => """
+                SELECT coalesce(n.terminal_name, 'Host Register') AS Terminal, count(*) AS Transactions,
+                       sum(s.total_cents) / 100.0 AS Total,
+                       sum(CASE WHEN s.tender='Cash' THEN s.total_cents ELSE 0 END) / 100.0 AS Cash,
+                       sum(CASE WHEN s.tender='Card' THEN s.total_cents ELSE 0 END) / 100.0 AS Card,
+                       coalesce(n.terminal_id, 'host') AS "Terminal ID"
+                FROM sales s LEFT JOIN terminal_sales n ON n.sale_id=s.id
+                WHERE s.business_date BETWEEN $start AND $end
+                GROUP BY coalesce(n.terminal_id, 'host'), coalesce(n.terminal_name, 'Host Register')
+                ORDER BY Terminal
                 """,
             RecordReport.Products => """
                 SELECT p.barcode AS Barcode, p.code AS Code, p.description AS Product, p.size AS Size,

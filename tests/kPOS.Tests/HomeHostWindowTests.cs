@@ -107,7 +107,7 @@ public sealed class HomeHostWindowTests
             toggle.PerformClick();
             Pump(() => toggle.Text == "Stop Host");
             string url = Descendants(window).OfType<TextBox>().Single(control => control.AccessibleName == "Store address").Text;
-            string key = Descendants(window).OfType<TextBox>().Single(control => control.AccessibleName == "Access key").Text;
+            string key = Descendants(window).OfType<TextBox>().Single(control => control.AccessibleName == "Remote access key").Text;
             string pin = Descendants(window).OfType<TextBox>().Single(control => control.AccessibleName == "Certificate SHA256").Text;
             using var client = new HomeTerminalClient(url, key, pin);
             var read = client.OverviewAsync("", 0); Pump(() => read.IsCompleted); Assert.IsTrue(read.IsCompletedSuccessfully);
