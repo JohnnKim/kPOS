@@ -202,6 +202,7 @@ internal class PosForm : Form
             var offset=viewport.AutoScrollPosition;
             canvas.Location=new Point(canvas.Width<=viewport.ClientSize.Width?(viewport.ClientSize.Width-canvas.Width)/2:offset.X,
                 canvas.Height<=viewport.ClientSize.Height?(viewport.ClientSize.Height-canvas.Height)/2:offset.Y);
+            if(this is RegisterForm register)register.ArrangeDisplayMessage();
         }
         finally
         {

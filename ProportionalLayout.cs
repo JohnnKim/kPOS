@@ -24,7 +24,7 @@ internal sealed class ProportionalLayout : IDisposable
             bool explicitFont=System.ComponentModel.TypeDescriptor.GetProperties(control)["Font"]?.ShouldSerializeValue(control)??false;
             fonts[control]=(font.FontFamily.Name,explicitFont?font.Size:(float)(font.Size/scale),font.Style);
             control.ControlAdded+=Added;
-            if(control is Label { AutoSize:false, Dock:DockStyle.None })fixedLabels[control]=control.Size;
+            if(control is RegisterClock)fixedLabels[control]=control.Size;
             metrics[control]=new(control.Margin,control.Padding,control.MinimumSize,
                 control is TableLayoutPanel rows?rows.RowStyles.Cast<RowStyle>().Select(row=>row.SizeType==SizeType.Absolute?row.Height:-1).ToArray():[],
                 control is TableLayoutPanel columns?columns.ColumnStyles.Cast<ColumnStyle>().Select(column=>column.SizeType==SizeType.Absolute?column.Width:-1).ToArray():[]);
