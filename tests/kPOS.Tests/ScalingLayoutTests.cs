@@ -31,5 +31,19 @@ public sealed class ScalingLayoutTests
         using var data=new RegisterData(":memory:");using var window=new SettingsForm(data,new RegisterFolders(Path.GetTempPath())){Opacity=0,ShowInTaskbar=false};window.Show();Application.DoEvents();
         var tabs=Children(window).OfType<TabControl>().Single();Assert.IsTrue(tabs.Font.Size>=11);Assert.IsTrue(tabs.GetTabRect(0).Height>=28);
     }
+    [TestMethod]
+    public void LookupColumnsReturnToTheirReferenceWidthsAfterShrinking()
+    {
+        using var data=new RegisterData(":memory:");
+        using var window=new ProductListForm(data.ListProducts(),true,data:data){Opacity=0,ShowInTaskbar=false,Size=new Size(1000,650)};
+        window.Show();Application.DoEvents();
+        var grid=Children(window).OfType<DataGridView>().Single();
+        for(int cycle=0;cycle<4;cycle++)foreach(var size in new[]{new Size(600,450),new Size(1280,650),new Size(1000,650)})
+        {
+            window.Size=size;Application.DoEvents();
+            if(size.Width>=1000)Assert.IsFalse(grid.Controls.OfType<HScrollBar>().Any(bar=>bar.Visible),
+                $"Lookup columns must fit after resizing to {size}: grid={grid.ClientSize}, columns={string.Join(",",grid.Columns.Cast<DataGridViewColumn>().Select(column=>$"{column.Name}:{column.Width}/{column.MinimumWidth}"))}");
+        }
+    }
     private static IEnumerable<Control> Children(Control root){foreach(Control child in root.Controls){yield return child;foreach(var nested in Children(child))yield return nested;}}
 }

@@ -70,7 +70,7 @@ internal sealed class ProportionalLayout : IDisposable
                 foreach(var (column,dimensions) in size.Columns.Where(pair=>pair.Key.DataGridView==grid))
                 {
                     column.MinimumWidth=Math.Max(2,(int)Math.Round(dimensions.Minimum*scale));
-                    if(column.AutoSizeMode==DataGridViewAutoSizeColumnMode.None)column.Width=Math.Max(column.MinimumWidth,(int)Math.Round(dimensions.Width*scale));
+                    if(column.AutoSizeMode==DataGridViewAutoSizeColumnMode.None || column.AutoSizeMode==DataGridViewAutoSizeColumnMode.NotSet && grid.AutoSizeColumnsMode==DataGridViewAutoSizeColumnsMode.None)column.Width=Math.Max(column.MinimumWidth,(int)Math.Round(dimensions.Width*scale));
                 }
             }
         }
