@@ -155,6 +155,20 @@ public sealed class WorkstationWindowTests
         data.DisplayMessage="";Assert.AreEqual("",data.DisplayMessage);
     }
 
+    [TestMethod]
+    public void RegisterTextCounterAndLiveMessageUpdateAfterSaving()
+    {
+        using var data=new RegisterData(":memory:");var folders=new RegisterFolders(Path.GetTempPath());
+        using var settings=new SettingsForm(data,folders);var editor=Descendants(settings).OfType<TextBox>().Single(box=>box.AccessibleName=="Register display text");
+        var counter=Descendants(settings).OfType<Label>().Single(label=>label.AccessibleName=="Register text characters left");
+        Assert.AreEqual("160 characters left",counter.Text);editor.Text="Welcome";Assert.AreEqual("153 characters left",counter.Text);
+        editor.Text=new string('x',160);Assert.AreEqual("0 characters left",counter.Text);
+        using var register=new RegisterForm(data,folders){Opacity=0,ShowInTaskbar=false};register.Show();Application.DoEvents();
+        data.DisplayMessage="Welcome to the store";typeof(RegisterForm).GetMethod("RefreshTicket",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(register,[0]);Application.DoEvents();
+        var message=Descendants(register).OfType<Label>().Single(label=>label.Text==data.DisplayMessage);Assert.IsTrue(message.Visible);Assert.IsTrue(message.Font.Size>=16);Assert.AreEqual(ContentAlignment.MiddleCenter,message.TextAlign);
+        if(Environment.GetEnvironmentVariable("KPOS_WINDOW_SCREENSHOTS") is string directory){using var bitmap=new Bitmap(register.Width,register.Height);register.DrawToBitmap(bitmap,new Rectangle(Point.Empty,bitmap.Size));bitmap.Save(Path.Combine(directory,"Register message.png"));}
+    }
+
     private static IEnumerable<Control> Descendants(Control parent)
     { foreach(Control child in parent.Controls) { yield return child; foreach(Control nested in Descendants(child)) yield return nested; } }
 }

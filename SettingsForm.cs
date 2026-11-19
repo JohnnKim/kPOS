@@ -48,7 +48,10 @@ internal sealed class SettingsForm : PosForm
         var showChange = Option("Show last change on the sales screen", data.ShowLastChange);
         AddTab("Checkout", ("Change display duration (seconds)", duration), (null, requireCount));
         var displayText=new TextBox{Text=data.DisplayMessage,MaxLength=160,Multiline=true,Dock=DockStyle.Top,Height=72,Width=400,AccessibleName="Register display text"};
-        AddTab("Display", (null, maximize), (null, showKeys), (null, showChange),(null,PosView.Label("Register text (optional, 160 characters)",11)),(null,displayText));
+        var charactersLeft=PosView.Label("",10,color:PosView.Muted);charactersLeft.AccessibleName="Register text characters left";
+        void UpdateCharactersLeft()=>charactersLeft.Text=$"{displayText.MaxLength-displayText.Text.Length} characters left";
+        displayText.TextChanged+=(_,_)=>UpdateCharactersLeft();UpdateCharactersLeft();
+        AddTab("Display", (null, maximize), (null, showKeys), (null, showChange),(null,PosView.Label("Register text (optional, 160 characters)",11)),(null,displayText),(null,charactersLeft));
         RegisterKeys keys = data.ReadRegisterKeys();
         var quantityKey = Shortcut(keys.Quantity);
         var lotteryKey = Shortcut(keys.Lottery);

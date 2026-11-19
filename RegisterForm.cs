@@ -58,7 +58,7 @@ internal sealed class RegisterForm : PosForm
     };
     private readonly Label lastChangeCaption = PosView.Label("Last change", 12, color: PosView.Muted);
     private readonly Label lastChange = CreateAmountLabel();
-    private readonly Label displayMessage=new(){AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,ForeColor=PosView.Muted,Visible=false};
+    private readonly Label displayMessage=new(){AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,ForeColor=PosView.Navy,Font=new Font("Segoe UI Semibold",22,FontStyle.Regular),Visible=false};
     private bool nextItemIsCase;
     private bool exporting;
     public string? RequestedDirectory { get; private set; }
@@ -116,13 +116,16 @@ internal sealed class RegisterForm : PosForm
         side.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        side.Controls.Add(CreateTotals(), 0, 0);
+        var totalsFrame=CreateTotals();
+        totalsFrame.Margin=new Padding(3,3,3,6);
+        registerKeyPanel.Margin=new Padding(0,6,0,0);
+        side.Controls.Add(totalsFrame, 0, 0);
         side.Controls.Add(registerKeyPanel, 0, 1);
         ApplyDisplaySettings();
         var sidebar = PosView.Scroll(side);
         sidebar.Margin = new Padding(0, 0, 3, 3);
         sidebar.Controls.Add(displayMessage);
-        sidebar.Layout+=(_,_)=>{int top=side.Bottom+8;int height=Math.Max(0,sidebar.ClientSize.Height-top);displayMessage.SetBounds(8,top,Math.Max(0,sidebar.ClientSize.Width-16),height);if(sidebar.IsHandleCreated)displayMessage.Visible=height>20&&displayMessage.Text.Length>0;};
+        sidebar.Layout+=(_,_)=>{int top=side.Bottom+8;int height=Math.Max(0,sidebar.ClientSize.Height-top);displayMessage.SetBounds(16,top,Math.Max(0,sidebar.ClientSize.Width-32),height);if(sidebar.IsHandleCreated)displayMessage.Visible=height>20&&displayMessage.Text.Length>0;};
         layout.Controls.Add(sidebar, 1, 2);
         layout.SetRowSpan(sidebar, 2);
 
@@ -970,6 +973,7 @@ internal sealed class RegisterForm : PosForm
         discounts.Text = Sale.Money(totals.Discount);
         tax.Text = Sale.Money(totals.Tax);
         displayMessage.Text=data.DisplayMessage;
+        displayMessage.Parent?.PerformLayout();
         totalCaption.Text = totals.Total < 0 ? "REFUND DUE" : "TOTAL DUE";
         totalBanner.BackColor = totals.Total < 0 ? PosView.Refund : PosView.Navy;
         totalDue.Text = Sale.Money(Math.Abs(totals.Total));
