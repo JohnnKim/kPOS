@@ -157,9 +157,9 @@ internal sealed class ProductListForm : PosForm
         Controls.Add(layout);
 
         PosView.Grid(grid, 11, 38);
-        foreach(var (name, caption, width) in new[] { ("Barcode", "Barcode", 155), ("Brand", "Brand", 140),
-            ("Description", "Description", 240), ("Size", "Size", 125), ("Price", "Price", 95),
-            ("OnHand", "Qty", 105), ("Supplier", "Vendor", 190) })
+        foreach(var (name, caption, width) in new[] { ("Barcode", "Barcode", 130), ("Brand", "Brand", 110),
+            ("Description", "Description", 200), ("Size", "Size", 100), ("Price", "Price", 105),
+            ("OnHand", "Qty", 105), ("Supplier", "Vendor", 160) })
             grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = caption, Width = width, MinimumWidth = width });
         grid.Columns["OnHand"]!.ToolTipText = "Selling units on hand from saved counts, deliveries, sales and returns. Not counted means no inventory baseline exists.";
         if(!selectItem)
@@ -169,7 +169,7 @@ internal sealed class ProductListForm : PosForm
                 grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = caption, Width = 140 });
         }
         grid.Columns["Description"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
-        grid.Columns["Description"]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        foreach(string name in new[] { "Description", "Brand", "Supplier", "Size" }) grid.Columns[name]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
         grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
         grid.HandleCreated += (_, _) => grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders;
         grid.ColumnWidthChanged += (_, _) => { if(grid.IsHandleCreated) grid.AutoResizeRows(DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders); };

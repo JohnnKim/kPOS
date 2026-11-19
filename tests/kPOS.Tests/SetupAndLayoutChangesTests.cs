@@ -13,6 +13,7 @@ public sealed class SetupAndLayoutChangesTests
         Assert.AreEqual("901234567890", data.FindProduct("901234567890")!.Code);
         using var window = new ProductListForm(data.ListProducts(), true, data: data) { Opacity = 0, ShowInTaskbar = false };
         window.Show();
+        window.Size = new Size(1000, 650);
         Application.DoEvents();
         var grid = Descendants(window).OfType<DataGridView>().Single();
         Assert.IsNull(grid.Columns["Code"]);

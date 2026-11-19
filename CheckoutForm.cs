@@ -384,6 +384,7 @@ internal sealed class CheckoutForm : PosForm
             BackColor = background ?? PosView.Navy, Padding = new Padding(10, 5, 10, 5),
             Margin = new Padding(0, 0, 0, 6), Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 2
         };
+        banner.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         banner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         banner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         banner.Controls.Add(PosView.Label(caption, 12, FontStyle.Bold, Color.White), 0, 0);

@@ -1,4 +1,4 @@
-# Register controls and hardware testing — preview.29
+# Register controls and hardware testing — preview.30
 
 The register and LAN till show the current date, a live 24-hour clock, and numbered sale lines with a separate Size column. The main register keeps Legal Date separate from today's date.
 

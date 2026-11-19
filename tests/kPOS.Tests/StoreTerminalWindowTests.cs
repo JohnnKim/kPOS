@@ -82,6 +82,7 @@ public sealed class StoreTerminalWindowTests
                     Click(recover ? "Retry Confirmation" : "Checkout · F9");
                     await Until(() => grid.Rows.Count == 0 && !File.Exists(profilePath + ".pending.json"));
                     Assert.AreEqual(1L, fixture.Data.GetDaySales(fixture.Data.CurrentBusinessDate()).Count);
+                    await window.HardwareCompletion;
                     Assert.IsTrue(clickedPayment);
                     if(storageBlocked) Assert.IsTrue(retriedStorage);
                     Assert.IsNull(failure, failure?.ToString());
@@ -92,7 +93,7 @@ public sealed class StoreTerminalWindowTests
                     }
                 }
                 catch(Exception error) { failure = error; }
-                finally { window.Close(); }
+                finally { await window.HardwareCompletion; window.Close(); }
             }
             Application.Run(window);
             Assert.IsNull(failure, failure?.ToString());

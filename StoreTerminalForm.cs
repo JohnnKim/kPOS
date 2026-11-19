@@ -40,6 +40,8 @@ internal sealed class StoreTerminalForm : PosForm
     private Sale sale = new();
     private Guid saleId = Guid.NewGuid();
     private string connectedUrl = "";
+    private Task hardwareCompletion = Task.CompletedTask;
+    internal Task HardwareCompletion => hardwareCompletion;
     private bool working;
     private bool scanning;
     private bool heartbeatWorking;
@@ -242,7 +244,7 @@ internal sealed class StoreTerminalForm : PosForm
         if(payment.Receipt is StoreReceipt receipt)
         {
             lastReceipt = receipt; lastLines = quote.Lines.Select(line => line with { TaxExempt = line.TaxExempt || quote.TaxExempt }).ToArray();
-            _ = CompleteHardwareAsync(receipt, quote.Lines.Select(line => line with { TaxExempt = line.TaxExempt || quote.TaxExempt }).ToArray());
+            hardwareCompletion = CompleteHardwareAsync(receipt, quote.Lines.Select(line => line with { TaxExempt = line.TaxExempt || quote.TaxExempt }).ToArray());
             sale.Clear(); saleId = Guid.NewGuid();
             last.Text = receipt.Totals.Total < 0 ? $"Refund recorded: {Sale.Money(-receipt.Totals.Total)}" : $"Change due: {Sale.Money(receipt.Change)}";
             feedback.Text = "Recorded at the store. Ready for the next sale.";
@@ -432,6 +434,7 @@ internal sealed class StoreLookupForm : PosForm
     internal StoreLookupForm(HomeTerminalClient client, string initialSearch = "")
     {
         Text = "Store Terminal — Item Lookup"; ClientSize = new Size(1400, 760); ShowInTaskbar = false; StartPosition = FormStartPosition.CenterParent;
+        grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
         search.Text = initialSearch;
         var layout = HomeTerminalView.Layout();
         var find = PosView.Button("Search", size: 11);
@@ -459,7 +462,7 @@ internal sealed class StoreLookupForm : PosForm
                 grid.Enabled = true;
                 foreach(DataGridViewColumn column in grid.Columns) column.Visible = column.Name is "Barcode" or "Brand" or "Description" or "OnHand" or "Size" or "UnitPrice" or "Supplier";
                 if(grid.Columns["OnHand"] is DataGridViewColumn stock) { stock.DisplayIndex = 5; stock.HeaderText = "Qty"; stock.DefaultCellStyle.NullValue = "Not counted"; }
-                foreach(var (columnName, index, width) in new[] { ("Barcode",0,155), ("Brand",1,140), ("Description",2,240), ("Size",3,125), ("UnitPrice",4,95), ("OnHand",5,105), ("Supplier",6,190) })
+                foreach(var (columnName, index, width) in new[] { ("Barcode",0,130), ("Brand",1,110), ("Description",2,200), ("Size",3,100), ("UnitPrice",4,105), ("OnHand",5,105), ("Supplier",6,160) })
                     if(grid.Columns[columnName] is DataGridViewColumn column) { column.DisplayIndex = index; column.Width = width; column.HeaderText = columnName == "Supplier" ? "Vendor" : columnName == "UnitPrice" ? "Price" : column.HeaderText; }
                 if(grid.Columns["Description"] is DataGridViewColumn name) { name.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; name.MinimumWidth = 200; }
                 if(grid.Columns["UnitPrice"] is DataGridViewColumn price) price.DefaultCellStyle.Format = "C2";
