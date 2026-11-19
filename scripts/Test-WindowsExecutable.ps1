@@ -323,8 +323,8 @@ public static class KposExecutableTest
                 IntPtr priceInput = FindChildWithText(lineEditor, "11.99");
                 IntPtr discountInput = FindChildWithText(lineEditor, "0");
                 ReplaceText(priceInput, "9.999");
-                WaitUntil(() => HasText(lineEditor, "Enter a price from $0.00 to $999,999.99.") &&
-                    !IsWindowEnabled(FindChildWithText(lineEditor, "&Apply Changes")), "reject prices with fractional cents");
+                WaitUntil(() => HasText(lineEditor, "Line total  $20.00") &&
+                    IsWindowEnabled(FindChildWithText(lineEditor, "&Apply Changes")), "round fractional cents upward in price preview");
                 ReplaceText(priceInput, "9.99");
                 ReplaceText(discountInput, "10");
                 WaitUntil(() => HasText(lineEditor, "Line total  $17.98"), "preview quantity, edited price and discount");
@@ -336,13 +336,13 @@ public static class KposExecutableTest
                 ReplaceText(WaitForChildWithText(lineEditor, "0"), "10");
                 Send(FindChildWithText(lineEditor, "&Apply Changes"), 0x00F5, 0);
                 WaitUntil(() => !IsWindow(lineEditor) && HasText(register, "Updated sale item: Pale Ale") &&
-                    TextIsInBounds(register, "$18.50"), "apply the edited price and discount to the selected line");
+                    TextIsInBounds(register, "$18.51"), "apply the edited price and discount to the selected line");
                 EnterText(scanner, "101");
                 WaitUntil(() => HasText(register, "$30.84"), "use the regular price for a subsequent scan");
                 Send(scanner, 0x0100, 0x74); // F5
                 IntPtr removeRegularLine = FindWindow(desktop, process.ProcessId, "Void Product");
                 Send(removeRegularLine, 0x0111, 6); // Yes
-                WaitUntil(() => !IsWindow(removeRegularLine) && HasText(register, "$18.50"), "keep the edited line after deleting the regular line");
+                WaitUntil(() => !IsWindow(removeRegularLine) && HasText(register, "$18.51"), "keep the edited line after deleting the regular line");
                 Send(scanner, 0x0100, 0x75); // F6
                 lineEditor = FindWindow(desktop, process.ProcessId, "Edit Sale Item");
                 Send(WaitForChildWithText(lineEditor, "Use &Regular Price"), 0x00F5, 0);

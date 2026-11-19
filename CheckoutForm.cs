@@ -15,7 +15,6 @@ internal sealed class CheckoutForm : PosForm
     private readonly Button cashRefund = PosView.Button("Record &Cash Refund", primary: true, size: 11);
     private readonly Button cardRefund = PosView.Button("Record Card &Refund", size: 11);
     private readonly System.Windows.Forms.Timer changeTimer = new() { Interval = 150 };
-    private readonly TaxBreakdownView taxDetails = new();
     private bool unlocked;
     private bool amountEdited;
     private bool recorded;
@@ -58,7 +57,6 @@ internal sealed class CheckoutForm : PosForm
         Control summary = CreatePaymentSummary(totals, requireItemCount, sale.HasReturns);
         layout.Controls.Add(PosView.Frame(PosView.Scroll(summary), new Padding(8)), 1, 1);
         Controls.Add(layout);
-        taxDetails.SetTotals(totals);
 
         amount.Text = totals.Total.ToString("F2", CultureInfo.InvariantCulture);
         amount.Enabled = unlocked;
@@ -338,10 +336,8 @@ internal sealed class CheckoutForm : PosForm
         AddAmountRow(summary, 1, "Merchandise", totals.Merchandise);
         AddAmountRow(summary, 2, "Lottery", totals.Lottery);
         AddAmountRow(summary, 3, "Discounts", -totals.Discount);
-        AddAmountRow(summary, 4, totals.MiscTaxRate is decimal miscRate && miscRate != totals.TaxRate ? "Sales tax" : $"Sales tax ({Sale.Rate(totals.TaxRate)})", totals.Tax);
-        taxDetails.SetTotals(totals);
-        AddWide(summary, 5, taxDetails);
-        int row = 6;
+        AddAmountRow(summary, 4, "Sales Tax", totals.Tax);
+        int row = 5;
         if (requireCount)
         {
             string prompt = saleHasReturns ? "Count purchases and returns" : "Item count";

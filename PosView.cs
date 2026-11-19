@@ -15,13 +15,13 @@ internal static class PosView
     }
 
     public const float CompactScale = 0.85f;
-    public static readonly Color Canvas = Color.FromArgb(236, 243, 242);
+    public static readonly Color Canvas = Color.FromArgb(234, 242, 241);
     public static readonly Color Ink = Color.FromArgb(18, 35, 56);
     public static readonly Color Muted = Color.FromArgb(68, 88, 113);
-    public static readonly Color Navy = Color.FromArgb(18, 41, 62);
-    public static readonly Color Blue = Color.FromArgb(44, 124, 126);
+    public static readonly Color Navy = Color.FromArgb(22, 49, 71);
+    public static readonly Color Blue = Color.FromArgb(47, 126, 130);
     public static readonly Color Refund = Color.FromArgb(138, 66, 12);
-    public static readonly Color Line = Color.FromArgb(176, 197, 196);
+    public static readonly Color Line = Color.FromArgb(166, 192, 194);
     public static readonly Color Light = Color.FromArgb(242, 247, 245);
     public static readonly Color Error = Color.FromArgb(157, 34, 38);
 

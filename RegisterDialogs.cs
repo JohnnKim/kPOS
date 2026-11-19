@@ -9,7 +9,9 @@ internal sealed class ProductListForm : PosForm
 
     private IReadOnlyList<Product> products;
     private Product[] matches = [];
+    private IReadOnlyDictionary<string,long> draft=new Dictionary<string,long>();
     private IReadOnlyDictionary<string, long?> stock = new Dictionary<string, long?>();
+    private IReadOnlyDictionary<string, ItemActivity> activity = new Dictionary<string, ItemActivity>();
     private IReadOnlyDictionary<string, CatalogDetails> catalog = new Dictionary<string, CatalogDetails>();
     private readonly CheckBox deleted = new() { Text = "Show &Deleted", AutoSize = true };
     private readonly Button delete = PosView.Button("&Delete Product", size: 10);
@@ -101,6 +103,9 @@ internal sealed class ProductListForm : PosForm
             var edit = PosView.Button("&Edit Product", size: 10);
             edit.Click += (_, _) => OpenSelectedProduct();
             footer.Controls.Add(edit);
+            var clone=PosView.Button("&Clone Item",size:10);clone.Click+=(_,_)=>
+            {if(CurrentProduct is Product product){using var editor=new ProductEditorForm("",_=>null,product,data,clone:true);if(editor.ShowDialog(this)==DialogResult.OK)ReloadProducts();}};
+            footer.Controls.Add(clone);
             var breakdown = PosView.Button("Full &Details", size: 10);
             breakdown.Click += (_, _) =>
             {
@@ -165,7 +170,7 @@ internal sealed class ProductListForm : PosForm
         if(!selectItem)
         {
             foreach(var (name, caption) in new[] { ("CasePrice", "Case price"), ("Type", "Type"), ("VendorCode", "Vendor item code"),
-                ("UnitCost", "Unit cost"), ("CaseUnits", "Units per case"), ("Taxable", "Taxable") })
+                ("UnitCost", "Unit cost"), ("CaseUnits", "Units per case"), ("Taxable", "Taxable"), ("OnOrder","On order"),("Draft","Draft units"),("Sold7","Sold 7 days"),("Sold30","Sold 30 days"),("Sold90","Sold 90 days"),("MTD","Month to date"),("YTD","Year to date"),("LastSale","Last sale"),("LastReceived","Last received"),("Class","Class"),("Bin","Bin / location"),("Par","Par units"),("Reorder","Reorder point"),("Shelf","On shelf"),("ShelfCapacity","Shelf capacity"),("OrderLot","Order by"),("Notes","Notes"),("Margin","Margin %") })
                 grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = caption, Width = 140 });
         }
         grid.Columns["Description"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
@@ -185,12 +190,16 @@ internal sealed class ProductListForm : PosForm
         {
             if((uint)e.RowIndex >= (uint)matches.Length) return;
             Product item = matches[e.RowIndex]; CatalogDetails meta = catalog.GetValueOrDefault(item.Barcode) ?? new();
+            ItemSetup setup=meta.Setup??new();ItemActivity? a=activity.GetValueOrDefault(item.Barcode);
             e.Value = grid.Columns[e.ColumnIndex].Name switch
             {
                 "Barcode" => item.Barcode, "Brand" => meta.Brand, "Description" => item.Description, "Size" => item.Size,
                 "Price" => item.UnitPrice, "OnHand" => stock.GetValueOrDefault(item.Barcode) is long units ? units : "Not counted",
                 "Supplier" => meta.Supplier, "CasePrice" => item.HasCasePrice ? item.CasePrice : null, "Type" => meta.Type,
                 "VendorCode" => meta.VendorCode, "UnitCost" => meta.UnitCost is decimal cost ? Sale.Money(cost) : "Not set",
+                "OnOrder"=>a?.OnOrder,"Draft"=>draft.GetValueOrDefault(item.Barcode),"Sold7"=>a?.Sold7,"Sold30"=>a?.Sold30,"Sold90"=>a?.Sold90,"MTD"=>a?.MonthToDate,"YTD"=>a?.YearToDate,
+                "LastSale"=>a?.LastSale?.ToString("yyyy-MM-dd"),"LastReceived"=>a?.LastReceived?.ToString("yyyy-MM-dd"),"Class"=>setup.Class,"Bin"=>setup.Bin,"Par"=>setup.Par,"Reorder"=>setup.ReorderPoint,
+                "Shelf"=>setup.ShelfQuantity,"ShelfCapacity"=>setup.ShelfCapacity,"OrderLot"=>setup.OrderCases?"Case":"Unit","Notes"=>setup.Notes,"Margin"=>meta.UnitCost is decimal c&&item.UnitPrice>0?((item.UnitPrice-c)*100/item.UnitPrice).ToString("0.0"):"Not set",
                 "CaseUnits" => item.UnitsPerCase, "Taxable" => item.IsTaxable ? "Yes" : "No", _ => null
             };
         };
@@ -219,6 +228,12 @@ internal sealed class ProductListForm : PosForm
                 grid.ResetScrollPosition();
         };
         Filter();
+        if(data is not null)_=new LocalDataWatch(this,data,()=>
+        {
+            string? selected=CurrentProduct?.Barcode;int horizontal=grid.HorizontalScrollingOffset;int top=grid.FirstDisplayedScrollingRowIndex;
+            ReloadProducts();int row=Array.FindIndex(matches,item=>item.Barcode==selected);if(row>=0)grid.CurrentCell=grid.Rows[row].Cells["Description"];
+            if(top>=0&&grid.RowCount>0&&grid.DisplayedRowCount(false)>0)grid.FirstDisplayedScrollingRowIndex=Math.Min(top,grid.RowCount-1);grid.HorizontalScrollingOffset=horizontal;
+        });
 
         void AddFilterLabel(string title, int column)
         {
@@ -283,9 +298,11 @@ internal sealed class ProductListForm : PosForm
         if (data is null)
             return;
         DateOnly today = data.CurrentBusinessDate();
-        stock = data.ReadOrderItems(today, today, today).ToDictionary(item => item.Product.Barcode, item => item.OnHand,
+        var orderItems=data.ReadOrderItems(today,today,today);draft=orderItems.ToDictionary(item=>item.Product.Barcode,item=>item.Draft);
+        stock = orderItems.ToDictionary(item => item.Product.Barcode, item => item.OnHand,
             StringComparer.OrdinalIgnoreCase);
         catalog = data.ReadCatalogDetails();
+        if(!selectItem)activity=data.ReadItemActivity();
     }
 
     private void ReloadProducts()

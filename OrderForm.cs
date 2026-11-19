@@ -78,7 +78,9 @@ internal sealed class OrderForm : PosForm
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         var close = PosView.Button("Close", size: 10);
         close.DialogResult = DialogResult.Cancel;
-        actions.Controls.AddRange([inventory, details, apply, fill, clear, export, close]);
+        var purchasing=PosView.Button("Purchasing / Receiving",size:10);
+        purchasing.Click+=(_,_)=>{using var window=new PurchasingForm(PurchasingSource.Local(data),local:data);window.ShowDialog(this);Reload();};
+        actions.Controls.AddRange([inventory, details, apply, fill, clear, export, purchasing, close]);
         layout.Controls.Add(actions, 0, 4);
         CancelButton = close;
         Controls.Add(layout);
@@ -98,6 +100,7 @@ internal sealed class OrderForm : PosForm
         export.Click += (_, _) => OpenPurchaseOrder();
         Shown += (_, _) => search.Focus();
         Reload();
+        _=new LocalDataWatch(this,data,()=>{if(!grid.IsCurrentCellInEditMode)Reload();});
     }
 
     private void ConfigureGrid()

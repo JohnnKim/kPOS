@@ -20,7 +20,7 @@ public sealed class RefundTests
         Assert.AreEqual(-2, sale.Lines[selected].Quantity);
         Assert.AreEqual(1, sale.Lines[wine].Quantity);
         Assert.AreEqual(3L, sale.ItemCount);
-        Assert.AreEqual(-6.16m, sale.GetTotals(2.9m).Total);
+        Assert.AreEqual(-6.17m, sale.GetTotals(2.9m).Total);
 
         int next = sale.Add(beer, isCase: false);
         Assert.AreNotEqual(selected, next);
@@ -85,15 +85,15 @@ public sealed class RefundTests
         DaySales daySales = data.GetDaySales(day);
         Assert.AreEqual(1L, daySales.Count);
         Assert.AreEqual(1L, daySales.Refunds);
-        Assert.AreEqual(6.17m, daySales.Card);
+        Assert.AreEqual(6.18m, daySales.Card);
         var saleRow = data.ReadReport(RecordReport.Sales, day, day).Rows[0];
         string receipt = SaleReceiptForm.Format(saleRow,
             data.ReadReport(RecordReport.SaleLines, day, day, saleId: id.ToString("N")));
         StringAssert.Contains(receipt, "Sale with return");
         StringAssert.Contains(receipt, id.ToString("N"));
         StringAssert.Contains(receipt, "-1 × $11.99");
-        StringAssert.Contains(receipt, "Sales tax  $0.17");
-        StringAssert.Contains(receipt, "Total      $6.17");
-        StringAssert.Contains(receipt, "Card received  $6.17");
+        StringAssert.Contains(receipt, "Sales tax  $0.18");
+        StringAssert.Contains(receipt, "Total      $6.18");
+        StringAssert.Contains(receipt, "Card received  $6.18");
     }
 }

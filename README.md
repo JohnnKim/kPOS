@@ -1,8 +1,9 @@
 # kPOS
 Independent liquor store POS system
 
-Preview.30 adds keyboard-first register controls, a live 24-hour clock, sale line numbers/sizes, and daily receipt selection/reprinting.
-Lookup shows barcode, brand, description, size, price, quantity and vendor; tax settings now support separate components and tax-exempt sales/returns, with component amounts shown in the sale and checkout.
+Preview.31 expands catalog details with vendor, storage, stock and sales-history fields, and adds shared purchase orders with partial receiving.
+Host and Remote Connection can manage purchasing, check live inventory and download store backups. Server data changes update connected views automatically; software updates remain manual in Settings → Updates.
+Register keys are grouped by input method, the header and spacing are cleaner, and Sales Tax shows one combined amount. New monetary fractions round upward to the cent; refunds mirror the charge.
 Printer/drawer connections include a capture mode for testing before hardware is available. See [Hardware-Testing.md](docs/Hardware-Testing.md).
 Host Terminal, Remote Connection, and shared LAN checkout remain separate roles; see [Store-Terminals.md](docs/Store-Terminals.md).
 See [Preview-25.md](docs/Preview-25.md) for setup, scrolling, and directory migration details.
@@ -15,7 +16,7 @@ and hardware/connection options are in [Home-Terminal.md](docs/Home-Terminal.md)
 November 19th 2026
 
 Windows oriented Point-Of-Sale and back office software for independent liquor retail
-Current Stage: Windows testing preview, v0.1.0-preview.30
+Current Stage: Windows testing preview, v0.1.0-preview.31
 
 ## Executive Summary
 kPOS is being built to replace an aging LiquorPOS system that the store uses to ring up sales, manage products, track inventory, place orders, and close the day. The current Windows XP based system contains years of work that would be expensive to recreate and easy to lose in a haphazard transition. The mission statement is to preserve that progress while also modernizing the current system.
@@ -65,7 +66,7 @@ Confirm the scope and collect data, observe and note normal shifts, a closeout, 
 Rehearse migration, build the import and map/validate fields, and load a copy of the catalog and available history. Compare results with legacy records and test with the full catalog.
 Prepare for live testing/use case, complete cashier and manger controls, paid-sale corrections, receipts, and store/location specific tax, lottery, terminal checks. Verify hardware, backups, and recovery on a replacement PC.
 Pilot and eventual take over, run side-by-side tests, train staff, schedule switch, provide direct support through the first actual live deployment.
-Improve purchasing and evaluation, add persistent purchase orders, receiving against orders, stronger inventory controls, reports based on store purchases. Evaluation period may include multiple registers and integrations, and broader deployment depending on pilot results.
+Improve purchasing and evaluation, validate saved purchase orders and partial receiving with store staff, strengthen inventory controls and purchase reporting. Evaluation period may include multiple registers and integrations, and broader deployment depending on pilot results.
 
 Important Variables:
 > Sales accuracy

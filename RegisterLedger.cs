@@ -13,7 +13,7 @@ internal enum RecordReport { Totals, Sales, SaleLines, ItemTotals, PriceHistory,
 
 internal sealed partial class RegisterData
 {
-    public const int SchemaVersion = 14;
+    public const int SchemaVersion = 15;
     public const int DefaultChangeSeconds = 8;
     public const int MaximumChangeSeconds = 120;
     private const string HasSoldItems = """
@@ -318,6 +318,6 @@ internal sealed partial class RegisterData
         command.ExecuteNonQuery();
     }
 
-    private static long Cents(decimal amount) => decimal.ToInt64(amount * 100);
+    private static long Cents(decimal amount) => decimal.ToInt64(MoneyMath.Up(amount) * 100);
     private static string Day(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 }

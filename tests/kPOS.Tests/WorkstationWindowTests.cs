@@ -9,7 +9,7 @@ namespace Kpos.Tests;
 public sealed class WorkstationWindowTests
 {
     [TestMethod]
-    public void TaxComponentsAndItemSizesRemainVisibleInTheSaleAndBothCheckouts()
+    public void CombinedSalesTaxAndItemSizesRemainVisibleInTheSaleAndBothCheckouts()
     {
         using var data = new RegisterData(":memory:");
         var rates = new TaxSettings(2.9m, State: .1m, County: 1.2m, City: 3m, District: .5m, Other: .1m, MiscBase: .5m);
@@ -20,8 +20,8 @@ public sealed class WorkstationWindowTests
         checkout.Show(); Application.DoEvents();
         var items = Descendants(checkout).OfType<DataGridView>().Single();
         Assert.AreEqual(sale.Lines[0].Product.Size, items.Rows[0].Cells["Size"].Value);
-        foreach(var row in totals.TaxDetails!.Rows())
-            Assert.IsTrue(Descendants(checkout).OfType<Label>().Any(label => label.Text == $"{row.Name} ({Sale.Rate(row.Rate)})"));
+        Assert.IsTrue(Descendants(checkout).OfType<Label>().Any(label => label.Text == "Sales Tax"));
+        Assert.IsFalse(Descendants(checkout).OfType<Label>().Any(label=>label.Text.Contains("Base tax")));
         WindowLayoutTests.CheckControls(checkout);
         var quote = new StoreQuote(Guid.NewGuid(), Guid.NewGuid(), "Till 2", Guid.NewGuid(), data.CurrentBusinessDate(), sale.Lines.ToArray(), totals,
             DateTimeOffset.Now.AddMinutes(10), true, 8, Taxes: rates);
@@ -31,7 +31,7 @@ public sealed class WorkstationWindowTests
         WindowLayoutTests.CheckControls(lan);
         using var register = new RegisterForm(data, new RegisterFolders(Path.GetTempPath())) { Opacity = 0, ShowInTaskbar = false, WindowState = FormWindowState.Normal };
         register.Show(); Application.DoEvents();
-        Assert.AreEqual(7, Descendants(register).OfType<TaxBreakdownView>().Single().Controls.OfType<Label>().Count(label => label.Visible && label.Text.Contains("tax (")));
+        Assert.IsFalse(Descendants(register).OfType<Label>().Any(label=>label.Text.Contains("Base tax")));
         if(Environment.GetEnvironmentVariable("KPOS_WINDOW_SCREENSHOTS") is string screenshots)
         {
             foreach(var window in new Form[] { checkout, lan })

@@ -71,6 +71,7 @@ internal sealed class RecordsForm : PosForm
         Controls.Add(layout);
 
         Shown += (_, _) => RefreshReport(reset: true);
+        _=new LocalDataWatch(this,data,()=>{if(!saving)RefreshReport(reset:false);});
         tabs.SelectedIndexChanged += (_, _) => RefreshReport(reset: true);
         from.ValueChanged += (_, _) => RefreshReport(reset: true);
         through.ValueChanged += (_, _) => RefreshReport(reset: true);

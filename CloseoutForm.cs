@@ -159,6 +159,7 @@ internal sealed class CloseoutForm : PosForm
                 fields[Field.Closing].Text = AmountText(dialog.Counted);
         };
         LoadDay();
+        _=new LocalDataWatch(this,data,RefreshCalculated);
         PosView.ResumeLayoutTree(layout);
         ResumeLayout();
 
@@ -170,6 +171,19 @@ internal sealed class CloseoutForm : PosForm
     }
 
     private DateOnly Day => DateOnly.FromDateTime(date.Value);
+
+    private void RefreshCalculated()
+    {
+        if(loading || saved is not null) return;
+        if(data.ReadCloseout(Day) is not null) { LoadDay(); return; }
+        sales=data.GetDaySales(Day); var calculated=EndOfDayTotals.FromSales(sales);
+        calculatedSales.Text=Sale.Money(calculated.Sales); calculatedTax.Text=Sale.Money(calculated.SalesTax);
+        calculatedStateTax.Text=Sale.Money(calculated.StateTax); calculatedLottery.Text=Sale.Money(calculated.NetLottery);
+        calculatedTotal.Text=Sale.Money(calculated.Total);systemPayouts.Text=Sale.Money(sales.Expenses);
+        count.Enabled=sales.HasActivity;
+        feedback.Text="Store activity changed. Review calculated totals and your entered amounts before closing.";
+        RefreshReconciliation();
+    }
 
     private void LoadDay()
     {
@@ -237,9 +251,9 @@ internal sealed class CloseoutForm : PosForm
             if (input.Text.Trim().Length == 0 && (field == Field.Cash || (!requireDrawers && field == Field.Closing)))
                 continue;
             if (!decimal.TryParse(input.Text.Trim(), NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint,
-                    CultureInfo.InvariantCulture, out decimal value) || decimal.Round(value, 2) != value)
+                    CultureInfo.InvariantCulture, out decimal value))
                 return null;
-            values.Add(field, value);
+            values.Add(field, MoneyMath.Up(value));
         }
 
         decimal opening = values[Field.Opening];

@@ -21,9 +21,9 @@ internal sealed class ProductEditorForm : PosForm
 
     public Product? SavedProduct { get; private set; }
 
-    public ProductEditorForm(string barcode, Func<Product, string?> save, Product? existing = null, RegisterData? data = null)
+    public ProductEditorForm(string barcode, Func<Product, string?> save, Product? existing = null, RegisterData? data = null, bool clone = false)
     {
-        Text = existing is null ? "Add Product" : "Edit Product";
+        Text = existing is null || clone ? "Add Product" : "Edit Product";
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         ShowInTaskbar = false;
@@ -42,8 +42,8 @@ internal sealed class ProductEditorForm : PosForm
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 144));
         fields.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        barcodeInput.Text = barcode;
-        barcodeInput.ReadOnly = barcode.Length > 0;
+        barcodeInput.Text = clone ? "" : barcode;
+        barcodeInput.ReadOnly = !clone && barcode.Length > 0;
         AddField(barcodeInput.ReadOnly ? "Scanned barcode" : "Barcode", barcodeInput, 0);
         AddField("Item code (optional)", code, 1);
         AddField("Product name", description, 2);
@@ -76,8 +76,7 @@ internal sealed class ProductEditorForm : PosForm
             AddField("Supplier item code", vendorCode, footer++);
             AddField("Unit cost ($)", cost, footer++);
         }
-        fields.Controls.Add(feedback, 0, footer++);
-        fields.SetColumnSpan(feedback, 2);
+
 
         var saveButton = PosView.Button("&Save Product", primary: true);
         var cancel = PosView.Button("Cancel");
@@ -87,13 +86,27 @@ internal sealed class ProductEditorForm : PosForm
             Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false
         };
         buttons.Controls.AddRange([cancel, saveButton]);
-        fields.Controls.Add(buttons, 0, footer);
-        fields.SetColumnSpan(buttons, 2);
-        Controls.Add(fields);
+
+        ItemSetup setup = meta.Setup ?? new();
+        var itemClass = new TextBox { Text=setup.Class,MaxLength=60,Width=240 };
+        var bin = new TextBox { Text=setup.Bin,MaxLength=80,Width=240 };
+        var par = Counter(setup.Par); var reorder = Counter(setup.ReorderPoint); var shelfCapacity=Counter(setup.ShelfCapacity); var shelfQuantity=Counter(setup.ShelfQuantity);
+        var orderCases=new CheckBox { Text="Order quantities normally entered as cases",Checked=setup.OrderCases,AutoSize=true };
+        var discountAllowed=new CheckBox { Text="Allow discounts",Checked=setup.DiscountAllowed,AutoSize=true };
+        var notes=new TextBox { Text=setup.Notes,MaxLength=2000,Multiline=true,Height=120,Width=480,ScrollBars=ScrollBars.Vertical };
+        var tabs=new TabControl {Dock=DockStyle.Fill};var itemPage=new TabPage("Item / Pricing");itemPage.Controls.Add(PosView.Scroll(fields));tabs.TabPages.Add(itemPage);
+        var storage=HomeTerminalView.Layout();HomeTerminalView.Row(storage,HomeTerminalView.Fields(("Class",itemClass),("Bin / location",bin),("Par (selling units)",par),("Reorder point (units)",reorder),("Shelf capacity (units)",shelfCapacity),("On shelf (units)",shelfQuantity)));
+        HomeTerminalView.Row(storage,orderCases);HomeTerminalView.Row(storage,discountAllowed);HomeTerminalView.Row(storage,PosView.Label("Item notes",12,FontStyle.Bold));HomeTerminalView.Row(storage,notes);
+        if(data is not null){var storagePage=new TabPage("Storage / Notes");storagePage.Controls.Add(PosView.Scroll(storage));tabs.TabPages.Add(storagePage);}
+        var bottom = new TableLayoutPanel { Dock=DockStyle.Bottom, AutoSize=true, ColumnCount=1, Padding=new Padding(12,4,12,8) };
+        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100)); bottom.Controls.Add(feedback); bottom.Controls.Add(buttons);
+        Controls.Add(tabs); Controls.Add(bottom); AutoSize=false;ClientSize=new Size(900,760);MinimumSize=new Size(580,450);
+        static NumericUpDown Counter(long value)=>new(){Minimum=0,Maximum=999999,Value=value,Width=140};
+        ItemSetup CurrentSetup()=>new(itemClass.Text,bin.Text,(long)par.Value,(long)reorder.Value,(long)shelfCapacity.Value,(long)shelfQuantity.Value,orderCases.Checked,notes.Text,discountAllowed.Checked);
         AcceptButton = saveButton;
         CancelButton = cancel;
 
-        code.Text = existing is not null && existing.Code != existing.Barcode ? existing.Code : "";
+        code.Text = !clone && existing is not null && existing.Code != existing.Barcode ? existing.Code : "";
         description.Text = existing?.Description ?? "";
         size.Text = existing?.Size ?? "";
         unitPrice.Text = existing?.UnitPrice.ToString("F2", CultureInfo.InvariantCulture) ?? "";
@@ -131,7 +144,7 @@ internal sealed class ProductEditorForm : PosForm
             else if (string.IsNullOrWhiteSpace(description.Text))
                 ShowProblem("Enter a product name.", description);
             else if (!Sale.TryParseMoney(unitPrice.Text, out decimal unit))
-                ShowProblem("Enter a unit price with up to two decimal places.", unitPrice);
+                ShowProblem("Enter a unit price as a valid amount.", unitPrice);
             else
             {
                 int units = 0;
@@ -146,7 +159,7 @@ internal sealed class ProductEditorForm : PosForm
 
                     if (!Sale.TryParseMoney(casePrice.Text, out price))
                     {
-                        ShowProblem("Enter a case price with up to two decimal places.", casePrice);
+                        ShowProblem("Enter a case price as a valid amount.", casePrice);
                         return;
                     }
                 }
@@ -164,8 +177,8 @@ internal sealed class ProductEditorForm : PosForm
                         if (!Sale.TryParseMoney(cost.Text, out decimal parsed)) { ShowProblem("Enter a valid unit cost.", cost); return; }
                         unitCost = parsed;
                     }
-                    problem = data is null ? save(product) : data.SaveCatalogProduct(product, existing,
-                        new(brand.Text, type.Text, vendorCode.Text, unitCost, ((SupplierChoice)supplier.SelectedItem!).Id));
+                    problem = data is null ? save(product) : data.SaveCatalogProduct(product, clone ? null : existing,
+                        new(brand.Text, type.Text, vendorCode.Text, unitCost, ((SupplierChoice)supplier.SelectedItem!).Id, Setup:CurrentSetup()));
                 }
                 catch (SqliteException error)
                 {
@@ -185,6 +198,7 @@ internal sealed class ProductEditorForm : PosForm
 
         void ShowProblem(string message, TextBox input)
         {
+            tabs.SelectedTab=itemPage;
             feedback.Text = message;
             input.Focus();
             input.SelectAll();

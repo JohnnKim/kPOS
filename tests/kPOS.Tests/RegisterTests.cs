@@ -69,7 +69,7 @@ public sealed class RegisterTests
     [DataRow("11.99", false, "0")]
     [DataRow("12.34", true, "0")]
     [DataRow("20.00", true, "7.66")]
-    [DataRow("20.001", false, "0")]
+    [DataRow("20.001", true, "7.67")]
     [DataRow("cash", false, "0")]
     public void CashTenderUsesTheTaxInclusiveTotal(string amount, bool accepted, string change)
     {
@@ -100,16 +100,14 @@ public sealed class RegisterTests
         Assert.IsNull(saved);
         fields["Product name"].Text = "New product";
         fields["Unit price"].Text = "1.234";
-        ClickSave();
-        Assert.IsNull(saved);
-        fields["Unit price"].Text = "1.23";
+        fields["Unit price"].Text = "1.234";
         fields["Item code"].Text = "NEW-1";
         ClickSave();
 
         Assert.IsNotNull(saved);
         Assert.AreEqual("0006789", saved.Barcode);
         Assert.AreEqual("NEW-1", saved.Code);
-        Assert.AreEqual(1.23m, saved.UnitPrice);
+        Assert.AreEqual(1.24m, saved.UnitPrice);
         Assert.IsTrue(saved.IsTaxable);
         Assert.AreEqual(DialogResult.OK, editor.DialogResult);
     }

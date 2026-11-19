@@ -1,6 +1,6 @@
 # Remote Connection and client options
 
-Preview.28 · November 18, 2026
+Preview.31 · November 19, 2026
 
 ## Implemented in this preview
 
@@ -12,6 +12,19 @@ An operator at home can add up to 100 items to an order draft in **selling units
 
 Assumption for this foundation: “orders” means supplier purchase requests. Confirm whether the client instead means customer orders, transfers, or ringing sales from home before expanding the workflow. This preview does not transmit orders to suppliers, provide a customer storefront, or process payments remotely.
 
+## Purchasing and backup
+
+Open **Purchasing / Receiving** from Orders on either the host or Remote Connection. Both use the store's saved worksheet and purchase orders.
+
+1. Create or edit a vendor, select an item and use **Assign Vendor**. Enter an order quantity and **Save Draft**. **Cases** multiplies by the item's case units; tables show selling units.
+2. Select the vendor and choose **Place Vendor Draft**. Enter an order number, optional delivery date and notes. This saves the order and outstanding quantities at the store; send the exported HTML/CSV or printed copy to the vendor yourself.
+3. In **Purchase Orders / Receiving**, receive a selected line or all remaining units. Partial deliveries keep the order open. **Cancel Remaining** preserves stock already received.
+4. **Stock Count / Delivery** can enter opening counts or the day's total received. Existing values are checked before saving so another terminal's changes cannot be silently overwritten.
+
+The worksheet includes on hand, on order, draft quantities, 7/30/90-day sales, month/year totals, last sale/receipt, cost and margin. Unknown stock/cost remains unentered. Catalog setup adds class, bin, par/reorder values, shelf quantities, notes and discount eligibility. **Retry Unconfirmed** restores an interrupted placement/receiving request using its original ID; do not recreate the order while it is unconfirmed.
+
+**Download Backup** in Remote Connection saves a consistent store database ZIP to the home PC. Protect that file as store data. Remote management keys can change purchasing/inventory and download backups; give them only to trusted managers. Store checkout keys cannot use those write/backup endpoints. Software versions are still checked and installed only in **Settings → Updates**.
+
 ## Try the foundation
 
 1. Open the store register. Choose **Records > Host Terminal** (Ctrl+Shift+H).
@@ -19,13 +32,13 @@ Assumption for this foundation: “orders” means supplier purchase requests. C
 3. Choose **Copy Remote Pairing**. This key cannot record checkout sales.
 4. Put **Start-Remote-Connection.cmd** beside your extracted `kPOS.exe` and open it, run `kPOS.exe --remote`, or choose **Records > Remote Connection** (Ctrl+Shift+J). This window needs no register installation or local database. The old `--home` option and `Start-Home-Terminal.cmd` remain aliases. The update ZIP still contains only `kPOS.exe`; launchers/guides are separate release assets.
 5. Choose **Paste Pairing Details**, then **Connect / Refresh**. Search inventory, select an item, enter units, and choose **Request Order**, or build a draft with **Add to Order** and review it in Orders.
-6. At the store, choose **Refresh Requests**, select the request, then **Add to Order Draft**. Open Orders to continue the normal purchase-order process. Reopen Orders if it was already open so its displayed draft reloads.
+6. At the store, choose **Refresh Requests**, select the request, then **Add to Order Draft**. Open Orders to continue the normal purchase-order process. Data changes update open views automatically.
 
 For another PC on the same store network, select the store PC's private IPv4 address. For access from home, first establish a private VPN and select its IPv4 address. Tailscale's 100.64.0.0/10 addresses are accepted alongside RFC1918 private addresses. Configure access only between the intended devices, and scope a Windows Firewall inbound TCP rule to those devices and the selected port (default 17443). The app does not alter the firewall, configure a VPN, or forward router ports. Do not publish this preview API directly to the internet.
 
 Pairing verifies the exact server certificate rather than requiring a browser certificate exception or a system-wide trust change. HTTPS supports TLS 1.2 on Windows 10. The host binds only the selected address, rejects public/wildcard bindings, authenticates every endpoint, limits request sizes/connections, and does not log credentials. API calls use their own SQLite connections; the cashier connection stays on the UI thread. Stop/close the host to revoke access. Each start generates a new certificate and access key; credentials are held in memory, not saved to disk by kPOS. Certificates last 30 days; restart and re-pair for longer trials.
 
-The host is opt-in and does not run as a background service. Keep the store PC awake, the register running, and the host window open. Closing its window or the register asks before stopping hosting, then stops it asynchronously. Green means connected, amber means checking, red means disconnected and gray means off. **Auto refresh** checks every 15 seconds; it can be turned off. Failures replace totals with a disconnected message and disable remote tables. A request retry retains the same payload; use **Retry Request** before changing the draft. If closing after an unconfirmed request, check the store's pending requests before resubmitting from a new window. Only the sound preference is saved locally; pairing credentials remain in memory.
+The host is opt-in and does not run as a background service. Keep the store PC awake, the register running, and the host window open. Closing its window or the register asks before stopping hosting, then stops it asynchronously. Green means connected, amber means checking, red means disconnected and gray means off. **Live Data** uses authenticated server change notifications for sales, inventory, ordering and settings, with automatic reconnect. The connection heartbeat runs every 15 seconds. Failures replace totals with a disconnected message and disable remote tables. A request retry retains the same payload; use **Retry Request** before changing the draft. If closing after an unconfirmed request, check the store's pending requests before resubmitting from a new window. Only the sound preference is saved locally; pairing credentials remain in memory.
 
 ## Options to discuss with the client
 
@@ -46,7 +59,7 @@ Suggested planning hardware for the store-host route (engineering estimates, not
 - At each checkout station: suitable PC/display, USB barcode scanner, receipt printer, compatible cash drawer, and existing supported card terminal. Check exact models/drivers and printer/drawer interfaces before buying or promising reuse.
 - At home: existing Windows PC/laptop and internet. Receipt printer, cash drawer, scanner, and payment device are unnecessary for viewing and purchase requests.
 
-Three simultaneous checkout stations are **not implemented by this preview**. That phase needs central sale/inventory commands, terminal IDs, cashier permissions, retry-safe payment/sale commits, register-specific drawers/EOD, and network/outage tests. The router connects machines; it does not synchronize their records. Keep the SQLite database on the host's local disk and access it through the service, rather than sharing the database file through SMB, OneDrive, or a NAS.
+Three simultaneous checkout stations are covered by automated shared-checkout tests; an actual store network trial is still required. Staff permissions and separate drawer shifts/EOD remain to be implemented. The router connects machines; it does not synchronize their records. Keep the SQLite database on the host's local disk and access it through the service, rather than sharing the database file through SMB, OneDrive, or a NAS.
 
 ## Questions for the client
 

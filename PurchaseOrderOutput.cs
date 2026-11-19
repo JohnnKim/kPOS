@@ -6,7 +6,7 @@ namespace Kpos;
 
 internal sealed record PurchaseOrder(
     string Number, DateOnly Date, DateOnly? DeliveryDate, OrderContact Business, OrderContact Distributor,
-    string Account, string Notes, IReadOnlyList<OrderItem> Lines);
+    string Account, string Notes, IReadOnlyList<OrderItem> Lines, IReadOnlyDictionary<string,PurchaseLine>? Details = null);
 
 internal enum OrderFileType { Printable, Csv }
 
@@ -57,13 +57,16 @@ internal static class PurchaseOrderOutput
         WriteAddress("Distributor", order.Distributor);
         writer.WriteLine("""
             </section><table><thead><tr><th>Item Code</th><th>Barcode</th><th>Product</th><th>Size</th>
-            <th class="num">Order Units</th><th class="num">Units per Case</th></tr></thead><tbody>
+            <th class="num">Order Units</th><th class="num">Units per Case</th>
             """);
+        writer.WriteLine(order.Details is null ? "</tr></thead><tbody>" : "<th>Vendor Code</th><th>Unit Cost</th><th>Line Cost</th></tr></thead><tbody>");
         foreach (OrderItem line in order.Lines)
         {
             Product item = line.Product;
+            var detail=order.Details?.GetValueOrDefault(item.Barcode);
+            string extra=order.Details is null?"":$"<td>{Html(detail?.VendorCode??"")}</td><td>{(detail?.UnitCost is decimal cost?Sale.Money(cost):"Not set")}</td><td>{(detail?.UnitCost is decimal unit?Sale.Money(unit*line.Draft):"Not set")}</td>";
             writer.WriteLine($"<tr><td>{Html(item.Code)}</td><td>{Html(item.Barcode)}</td><td>{Html(item.Description)}</td><td>{Html(item.Size)}</td>" +
-                $"<td class=\"num\">{line.Draft:N0}</td><td class=\"num\">{CaseSize(item)}</td></tr>");
+                $"<td class=\"num\">{line.Draft:N0}</td><td class=\"num\">{CaseSize(item)}</td>{extra}</tr>");
         }
         writer.WriteLine($"</tbody></table><p><strong>{order.Lines.Count:N0} lines · {order.Lines.Sum(line => line.Draft):N0} units</strong></p>");
         if (order.Notes.Length > 0)
@@ -80,7 +83,7 @@ internal static class PurchaseOrderOutput
 
     private static void WriteCsv(TextWriter writer, PurchaseOrder order)
     {
-        writer.WriteLine("Order Number,Order Date,Delivery Date,Buyer,Buyer Contact,Buyer Phone,Buyer Email,Ship To,Distributor,Distributor Contact,Distributor Phone,Distributor Email,Distributor Address,Account,Notes,Item Code,Barcode,Product,Size,Order Units,Units per Case");
+        writer.WriteLine("Order Number,Order Date,Delivery Date,Buyer,Buyer Contact,Buyer Phone,Buyer Email,Ship To,Distributor,Distributor Contact,Distributor Phone,Distributor Email,Distributor Address,Account,Notes,Item Code,Barcode,Product,Size,Order Units,Units per Case" + (order.Details is null?"":",Vendor Code,Unit Cost,Line Cost"));
         string header = string.Join(',', new[] { order.Number, Day(order.Date), order.DeliveryDate is DateOnly delivery ? Day(delivery) : "",
             order.Business.Name, order.Business.Contact, order.Business.Phone, order.Business.Email, order.Business.Address,
             order.Distributor.Name, order.Distributor.Contact, order.Distributor.Phone, order.Distributor.Email, order.Distributor.Address,
@@ -88,9 +91,11 @@ internal static class PurchaseOrderOutput
         foreach (OrderItem line in order.Lines)
         {
             Product item = line.Product;
+            var detail=order.Details?.GetValueOrDefault(item.Barcode);
+            string extra=order.Details is null?"":","+RegisterData.CsvText(detail?.VendorCode??"")+","+(detail?.UnitCost?.ToString("F2",CultureInfo.InvariantCulture)??"")+","+(detail?.UnitCost is decimal unit?MoneyMath.Up(unit*line.Draft).ToString("F2",CultureInfo.InvariantCulture):"");
             writer.WriteLine(string.Join(',', header, RegisterData.CsvText(item.Code), RegisterData.CsvText(item.Barcode),
                 RegisterData.CsvText(item.Description), RegisterData.CsvText(item.Size),
-                line.Draft.ToString(CultureInfo.InvariantCulture), CaseSize(item)));
+                line.Draft.ToString(CultureInfo.InvariantCulture), CaseSize(item))+extra);
         }
     }
 

@@ -33,9 +33,9 @@ internal sealed record SaleLine(Product Product, bool IsCase, int Quantity = 1, 
 {
     public const int MaximumQuantity = 100;
     public decimal RegularPrice => IsCase ? Product.CasePrice : Product.UnitPrice;
-    public decimal Price => PriceOverride ?? RegularPrice;
+    public decimal Price => MoneyMath.Up(PriceOverride ?? RegularPrice);
     public decimal Gross => Price * Quantity;
-    public decimal Discount => decimal.Round(Gross * DiscountRate / 100, 2, MidpointRounding.AwayFromZero);
+    public decimal Discount => MoneyMath.Up(Gross * DiscountRate / 100);
     public decimal Extended => Gross - Discount;
 }
 
@@ -61,7 +61,7 @@ internal sealed class Sale
     public SaleTotals GetTotals(TaxSettings taxes)
     {
         var taxable = lines.Where(line => line.Product.IsTaxable && !line.TaxExempt && !TaxExempt).ToArray();
-        decimal tax = decimal.Round(taxable.Sum(line => line.Extended * (line.Kind == SaleLineKind.Misc ? taxes.MiscRate : taxes.SalesRate) / 100), 2, MidpointRounding.AwayFromZero);
+        decimal tax = MoneyMath.Up(taxable.Sum(line => line.Extended * (line.Kind == SaleLineKind.Misc ? taxes.MiscRate : taxes.SalesRate) / 100));
         decimal lottery = lines.Where(line => line.Kind == SaleLineKind.Lottery).Sum(line => line.Extended);
         return new SaleTotals(Subtotal, Discount, taxes.SalesRate, tax, lottery, taxes.MiscBase is null ? null : taxes.MiscRate,
             TaxBreakdown.Calculate(taxes, taxable.Where(line => line.Kind != SaleLineKind.Misc).Sum(line => line.Extended),
@@ -91,6 +91,7 @@ internal sealed class Sale
 
     private int AddOneTimeItem(string name, decimal price, bool taxable, SaleLineKind kind)
     {
+        price=MoneyMath.Up(price);
         if (price is <= 0 or > 999999.99m || decimal.Round(price, 2) != price)
             throw new ArgumentOutOfRangeException(nameof(price));
 
@@ -109,6 +110,7 @@ internal sealed class Sale
 
     public void EditLine(int index, int quantity, decimal price, decimal discountRate)
     {
+        price = MoneyMath.Up(price);
         SaleLine line = lines[index];
         if (quantity == 0 || quantity is < -SaleLine.MaximumQuantity or > SaleLine.MaximumQuantity)
             throw new ArgumentOutOfRangeException(nameof(quantity));
@@ -142,10 +144,10 @@ internal sealed class Sale
 
     public static bool TryParseMoney(string text, out decimal amount) =>
         decimal.TryParse(text.Trim(), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out amount) &&
-        decimal.Round(amount, 2) == amount;
+        amount >= 0 && (amount = MoneyMath.Up(amount)) >= 0;
 
     public static string Rate(decimal rate) => rate.ToString("0.####", CultureInfo.InvariantCulture) + "%";
 
     public static string Money(decimal amount) =>
-        amount.ToString("C2", CultureInfo.GetCultureInfo("en-US"));
+        MoneyMath.Up(amount).ToString("C2", CultureInfo.GetCultureInfo("en-US"));
 }

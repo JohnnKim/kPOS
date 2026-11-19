@@ -29,6 +29,7 @@ public sealed class WorkstationFeaturesTests
         using(var sql = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = store.Path, Pooling = false }.ToString()))
         {
             sql.Open(); sql.CreateCollation("ITEM_CODE", StringComparer.OrdinalIgnoreCase.Compare); using var command = sql.CreateCommand();
+            SchemaTestSupport.RemovePurchasing(sql);
             command.CommandText = """
                 ALTER TABLE register_settings DROP COLUMN taxes_json;
                 ALTER TABLE register_settings DROP COLUMN shortcuts_json;

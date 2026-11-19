@@ -15,7 +15,7 @@ internal sealed class HomeTerminalForm : PosForm
     private readonly TextBox catalogSearch = new() { Width = 210, MaxLength = 100, PlaceholderText = "Item, brand, or supplier" };
     private readonly NumericUpDown units = new() { Minimum = 1, Maximum = 999999, Value = 1, Width = 100 };
     private readonly CheckBox sound = new() { Text = "Order sound", AutoSize = true };
-    private readonly CheckBox refresh = new() { Text = "Auto refresh", AutoSize = true, Checked = true };
+    private readonly CheckBox refresh = new() { Text = "Live data", AutoSize = true, Checked = true, Enabled = false };
     private readonly Label connection = PosView.Label("● Off", 12, FontStyle.Bold, PosView.Muted);
     private readonly Label totals = PosView.Label("Connect to check the store.", 14, FontStyle.Bold);
     private readonly Label status = PosView.Label("Home / office PC: paste the store's pairing details, then Connect.", 11);
@@ -44,6 +44,8 @@ internal sealed class HomeTerminalForm : PosForm
     private HomeTerminalClient? client;
     private HomeOrderRequest[]? pending;
     private string? pendingEndpoint;
+    private CancellationTokenSource? live;
+    private bool livePending;
     private bool working;
     private bool refreshSelectedTab;
     private bool disposed;
@@ -89,6 +91,7 @@ internal sealed class HomeTerminalForm : PosForm
             catch { next.Dispose(); throw; }
             client?.Dispose();
             client = next; hostInfo = verified;
+            StartLive(next);
             if(connectionFields is not null) connectionFields.Visible = false;
             connectedEndpoint = new Uri(address).AbsoluteUri;
             inventoryPage = 0;
@@ -99,6 +102,7 @@ internal sealed class HomeTerminalForm : PosForm
         var disconnect = PosView.Button("Disconnect", size: 11);
         disconnect.Click += async (_, _) =>
         {
+            live?.Cancel();
             connectionGeneration++; var leaving = client; client = null; connectedEndpoint = null; SetConnection("Off", PosView.Muted); DisableData(); status.Text = "Disconnected. Connect when you want to check the store again.";
             if(leaving is not null)
             { try { await leaving.LeaveAsync(new(connectionId, terminalName.Text)); } catch(Exception error) when(error is HttpRequestException or OperationCanceledException or IOException) { } finally { leaving.Dispose(); } }
@@ -163,7 +167,7 @@ internal sealed class HomeTerminalForm : PosForm
         };
         HomeTerminalView.Row(orderLayout, PosView.Label("Order draft · selling units", 12, FontStyle.Bold));
         HomeTerminalView.Row(orderLayout, basketGrid, true);
-        HomeTerminalView.Row(orderLayout, HomeTerminalView.Actions(remove, Button("Send Order", SubmitAsync, true), Button("Refresh Status", LoadOrdersAsync)));
+        HomeTerminalView.Row(orderLayout, HomeTerminalView.Actions(Button("Purchasing / Receiving", OpenPurchasingAsync), remove, Button("Send Order", SubmitAsync, true), Button("Refresh Status", LoadOrdersAsync)));
         HomeTerminalView.Row(orderLayout, PosView.Label("Store review is required before requests enter the supplier order draft.", 11));
         HomeTerminalView.Row(orderLayout, history, true);
         HomeTerminalView.Row(orderLayout, HomeTerminalView.Actions(Button("Previous", async () => { orderPage = Math.Max(0, orderPage - 1); await LoadOrdersAsync(); }),
@@ -187,7 +191,7 @@ internal sealed class HomeTerminalForm : PosForm
         };
         var layout = HomeTerminalView.Layout();
         HomeTerminalView.Row(layout, PosView.Label("kPOS · Remote Connection", 20, FontStyle.Bold));
-        HomeTerminalView.Row(layout, HomeTerminalView.Actions(connection, connectionSetup, paste, connect, disconnect, refresh, sound));
+        HomeTerminalView.Row(layout, HomeTerminalView.Actions(connection, connectionSetup, paste, connect, disconnect, Button("Download Backup", BackupAsync), refresh, sound));
         HomeTerminalView.Row(layout, pairing);
         HomeTerminalView.Row(layout, totals);
         HomeTerminalView.Row(layout, status);
@@ -199,9 +203,31 @@ internal sealed class HomeTerminalForm : PosForm
             if(working) refreshSelectedTab = true;
             else await RunAsync(LoadCurrentAsync);
         };
-        poll.Tick += async (_, _) => { if(refresh.Checked && client is not null && !working) await RunAsync(async () => { hostInfo = await Connected.HeartbeatAsync(new(connectionId, terminalName.Text.Trim()), closing.Token); await LoadInventoryAsync(); await LoadCurrentAsync(); }); };
+        poll.Tick += async (_, _) => { if(client is not null && !working) await RunAsync(async () => { hostInfo = await Connected.HeartbeatAsync(new(connectionId, terminalName.Text.Trim()), closing.Token); }, quiet:true); };
         poll.Start();
         DisableData();
+    }
+
+    private void StartLive(HomeTerminalClient source)
+    {
+        live?.Cancel(); live?.Dispose(); live=CancellationTokenSource.CreateLinkedTokenSource(closing.Token);
+        _=source.WatchChangesAsync(revision=>
+        {
+            this.PostIfOpen(()=>
+            {
+                if(IsDisposed||!ReferenceEquals(source,client))return;
+                if(working)livePending=true;else _=RunAsync(RefreshLiveAsync, quiet: true);
+            });
+        },live.Token);
+    }
+    private async Task RefreshLiveAsync() { await LoadInventoryAsync(); await LoadCurrentAsync(); }
+    private Task OpenPurchasingAsync()
+    { var source=Connected; using var window=new PurchasingForm(PurchasingSource.Remote(source,hostInfo!.StoreId,closing.Token),remote:source);window.ShowDialog(this);return Task.CompletedTask; }
+    private async Task BackupAsync()
+    {
+        var source=Connected;using var picker=new SaveFileDialog { Filter="Backup ZIP (*.zip)|*.zip",FileName="kPOS-backup-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".zip" };
+        if(picker.ShowDialog(this)!=DialogResult.OK)return;
+        await source.DownloadBackupAsync(picker.FileName,closing.Token);status.Text="Store database backup saved to "+picker.FileName;
     }
 
     private Button Button(string text, Func<Task> action, bool primary = false)
@@ -220,10 +246,11 @@ internal sealed class HomeTerminalForm : PosForm
         if(IsDisposed || !ReferenceEquals(source, client)) return;
         items.DataSource = snapshot.Items;
         items.Enabled = true;
-        foreach(DataGridViewColumn column in items.Columns) column.Visible = column.Name is "Description" or "Size" or "OnHand" or "UnitPrice" or "Sold";
-        if(items.Columns["OnHand"] is DataGridViewColumn onHand) { onHand.DisplayIndex = 1; onHand.HeaderText = "On hand (units)"; onHand.DefaultCellStyle.NullValue = "Not counted"; }
+        foreach(DataGridViewColumn column in items.Columns) column.Visible = column.Name is "Barcode" or "Brand" or "Description" or "Size" or "OnHand" or "UnitPrice" or "Supplier";
+        if(items.Columns["OnHand"] is DataGridViewColumn onHand) { onHand.DisplayIndex = 5; onHand.HeaderText = "Qty"; onHand.DefaultCellStyle.NullValue = "Not counted"; }
         if(items.Columns["UnitPrice"] is DataGridViewColumn price) { price.HeaderText = "Unit price"; price.DefaultCellStyle.Format = "C2"; }
         if(items.Columns["Description"] is DataGridViewColumn name) { name.HeaderText = "Item"; name.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; name.MinimumWidth = 180; }
+        foreach(var (columnName,index) in new[]{("Barcode",0),("Brand",1),("Description",2),("Size",3),("UnitPrice",4),("OnHand",5),("Supplier",6)})if(items.Columns[columnName] is DataGridViewColumn column){column.DisplayIndex=index;if(columnName=="Supplier")column.HeaderText="Vendor";}
         int selectedRow = Array.FindIndex(snapshot.Items, item => item.Barcode == selectedBarcode);
         if(selectedRow >= 0)
         {
@@ -349,13 +376,13 @@ internal sealed class HomeTerminalForm : PosForm
         if(sound.Checked) System.Media.SystemSounds.Asterisk.Play();
     }
 
-    private async Task RunAsync(Func<Task> action)
+    private async Task RunAsync(Func<Task> action, bool quiet = false)
     {
         if(working) return;
         int generation = connectionGeneration;
         string previousState = connection.Text;
         Color previousColor = connection.ForeColor;
-        working = true; SetConnection("Checking…", Color.DarkGoldenrod);
+        working = true; if(!quiet) SetConnection("Checking…", Color.DarkGoldenrod);
         foreach(var button in operationButtons) button.Enabled = false;
         try { await action(); if(!IsDisposed && client is not null) SetConnection("Connected", Color.DarkGreen); }
         catch(Exception error) when(error is ArgumentException or InvalidOperationException)
@@ -377,6 +404,7 @@ internal sealed class HomeTerminalForm : PosForm
         {
             working = false;
             if(!IsDisposed) foreach(var button in operationButtons) button.Enabled = true;
+            if(livePending && !IsDisposed && client is not null) { livePending=false; await RunAsync(RefreshLiveAsync, quiet: true); }
             if(refreshSelectedTab && !IsDisposed && client is not null)
             { refreshSelectedTab = false; await RunAsync(LoadCurrentAsync); }
         }
@@ -410,7 +438,7 @@ internal sealed class HomeTerminalForm : PosForm
 
     protected override void Dispose(bool disposing)
     {
-        if(disposing && !disposed) { disposed = true; poll.Dispose(); closing.Cancel(); client?.Dispose(); closing.Dispose(); }
+        if(disposing && !disposed) { disposed = true; poll.Dispose(); live?.Cancel(); live?.Dispose(); closing.Cancel(); client?.Dispose(); closing.Dispose(); }
         base.Dispose(disposing);
     }
     private sealed record ReportChoice(RecordReport Kind, string Name) { public override string ToString() => Name; }

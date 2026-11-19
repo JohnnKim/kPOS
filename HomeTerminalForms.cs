@@ -141,6 +141,7 @@ internal sealed class HomeHostForm : PosForm
         Controls.Add(layout);
         connectionTimer.Tick += (_, _) => RefreshConnections(); connectionTimer.Start();
         RefreshOrders();
+        _=new LocalDataWatch(this,data,RefreshOrders);
     }
 
     private async Task ToggleAsync()

@@ -70,13 +70,15 @@ internal static class PurchaseOrderPrinting
             int itemWidth = (int)(bounds.Width * 0.25);
             int amountWidth = (int)(bounds.Width * 0.13);
             int descriptionWidth = bounds.Width - itemWidth - 2 * amountWidth;
-            Row("Item Code / Barcode", "Product / Size", "Order Units", "Case Qty", bold, 25);
+            Row(order.Details is null?"Item Code / Barcode":"Vendor Code / Barcode", "Product / Size", "Order Units", "Case Qty", bold, 25);
             int startLine = line;
             while (line < order.Lines.Count && y + 44 < bounds.Bottom)
             {
                 OrderItem orderLine = order.Lines[line++];
                 Product product = orderLine.Product;
-                Row($"{product.Code}\n{product.Barcode}", $"{product.Description}\n{product.Size}",
+                var detail=order.Details?.GetValueOrDefault(product.Barcode);
+                string description=product.Size+(detail?.UnitCost is decimal cost?$" · Cost {Sale.Money(cost)} / unit":"");
+                Row($"{(string.IsNullOrWhiteSpace(detail?.VendorCode)?product.Code:detail.VendorCode)}\n{product.Barcode}", $"{product.Description}\n{description}",
                     orderLine.Draft.ToString("N0", CultureInfo.InvariantCulture),
                     Math.Max(1, product.UnitsPerCase).ToString(CultureInfo.InvariantCulture), body, 44);
             }

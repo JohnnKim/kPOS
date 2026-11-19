@@ -1,4 +1,4 @@
-# Register controls and hardware testing — preview.30
+# Register controls and hardware testing — preview.31
 
 The register and LAN till show the current date, a live 24-hour clock, and numbered sale lines with a separate Size column. The main register keeps Legal Date separate from today's date.
 
@@ -57,7 +57,7 @@ Physical opening, paper layout and model compatibility still require the schedul
 
 ## Tax components
 
-Settings → Tax provides base, state, county, city, district and other add-on percentages, plus an optional Misc base override. The Misc override replaces the base for taxable Misc lines; add-on rates still apply. Current sale and checkout show each configured tax component below the combined sales tax. Components are allocated to the cent so they add up to the single tax charged, which is rounded once. Lottery retains its non-taxable treatment.
+Settings → Tax provides base, state, county, city, district and other add-on percentages, plus an optional Misc base override. The Misc override replaces the base for taxable Misc lines; add-on rates still apply. Current sale, checkout and receipts show one combined Sales Tax amount. Component rates remain in Settings and saved audit data. New tax amounts round upward to the next cent; refunds mirror the rounded charge. Lottery retains its non-taxable treatment.
 
 An upgrade preserves the previously configured combined rate as Base with zero add-ons. Split that existing rate into its components before adding rates to avoid double-counting. Rate configuration and tax-exempt treatment require the store's own approved setup. New receipts retain the component breakdown and tax-void flags. Earlier receipts keep their original combined tax; no historical breakdown is invented.
 

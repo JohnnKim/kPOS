@@ -1,10 +1,12 @@
-# Store terminals · preview.28
+# Store terminals · preview.31
 
 | Window | Where it runs | Purpose |
 | --- | --- | --- |
 | **Host Terminal** | Store PC holding the register data | Hosts the store, pairs clients, reviews purchase requests and shows connected terminals. |
 | **Remote Connection** | Home/office PC | Checks records, inventory, suppliers and order requests. Its key cannot ring sales. |
 | **Store Terminal (LAN)** | Additional store checkout PCs | Scans products and records shared sales through the host. Uses a separate checkout key. |
+
+Remote Connection includes the same purchasing worksheet and saved orders/receiving as the host, plus backup download. Server notifications update open inventory and management views automatically. Software updates remain manual in Settings → Updates.
 
 The original store register continues to run on the host PC. Extra tills do not open or copy its database. All shared checkout prices, tax, receipts and inventory effects are recorded at that host.
 

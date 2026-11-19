@@ -92,8 +92,8 @@ public sealed class SaleTests
 
         Assert.AreEqual(29.98m, totals.Subtotal);
         Assert.AreEqual(6.00m, totals.Discount);
-        Assert.AreEqual(0.17m, totals.Tax);
-        Assert.AreEqual(24.15m, totals.Total);
+        Assert.AreEqual(0.18m, totals.Tax);
+        Assert.AreEqual(24.16m, totals.Total);
     }
 
     [TestMethod]

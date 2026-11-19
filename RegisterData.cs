@@ -137,6 +137,7 @@ internal sealed partial class RegisterData : IDisposable
 
     private string? SaveProductInTransaction(Product product, Product? original, SqliteTransaction transaction)
     {
+        product=product with { UnitPrice=MoneyMath.Up(product.UnitPrice),CasePrice=MoneyMath.Up(product.CasePrice) };
         if (string.IsNullOrWhiteSpace(product.Code))
             product = product with { Code = product.Barcode };
         if (original is not null && product.Barcode != original.Barcode)
@@ -293,6 +294,8 @@ internal sealed partial class RegisterData : IDisposable
             CreateStoreTerminals(transaction);
         if (currentVersion < 14)
             AddWorkstationFeatures(transaction);
+        if (currentVersion < 15)
+            AddPurchasing(transaction);
 
         transaction.Commit();
     }
@@ -315,9 +318,9 @@ internal sealed partial class RegisterData : IDisposable
         command.Parameters.AddWithValue("$barcode", product.Barcode);
         command.Parameters.AddWithValue("$description", product.Description);
         command.Parameters.AddWithValue("$size", product.Size);
-        command.Parameters.AddWithValue("$unit", decimal.ToInt64(product.UnitPrice * 100));
+        command.Parameters.AddWithValue("$unit", Cents(product.UnitPrice));
         command.Parameters.AddWithValue("$units", product.UnitsPerCase);
-        command.Parameters.AddWithValue("$case", decimal.ToInt64(product.CasePrice * 100));
+        command.Parameters.AddWithValue("$case", Cents(product.CasePrice));
         command.Parameters.AddWithValue("$taxable", product.IsTaxable);
         command.ExecuteNonQuery();
     }

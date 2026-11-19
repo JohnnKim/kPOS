@@ -19,7 +19,7 @@ internal sealed class StoreTerminalForm : PosForm
     private readonly Label due = PosView.BannerAmount("$0.00", 40);
     private readonly Label caption = PosView.Label("TOTAL DUE", 14, FontStyle.Bold, Color.White);
     private readonly Label last = PosView.Label("", 12, FontStyle.Bold);
-    private readonly TaxBreakdownView taxDetails = new();
+    private readonly Label salesTax = PosView.Label("Sales Tax  $0.00", 12);
     private readonly DataGridView grid = HomeTerminalView.Grid();
     private readonly List<Button> actions = [];
     private readonly Queue<(string Code, bool Case)> scans = new();
@@ -40,9 +40,12 @@ internal sealed class StoreTerminalForm : PosForm
     private Sale sale = new();
     private Guid saleId = Guid.NewGuid();
     private string connectedUrl = "";
+    private CancellationTokenSource? live;
+    private bool livePending;
     private Task hardwareCompletion = Task.CompletedTask;
     internal Task HardwareCompletion => hardwareCompletion;
     private bool working;
+    private bool backgroundRefresh;
     private bool scanning;
     private bool heartbeatWorking;
     private bool disposed;
@@ -100,7 +103,7 @@ internal sealed class StoreTerminalForm : PosForm
         var banner = HomeTerminalView.Layout(); banner.BackColor = PosView.Navy; banner.AutoSize = true; banner.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         HomeTerminalView.Row(banner, caption); HomeTerminalView.Row(banner, due);
         HomeTerminalView.Row(summary, banner);
-        HomeTerminalView.Row(summary, taxDetails);
+        HomeTerminalView.Row(summary, salesTax);
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(Action("Checkout · F9", CheckoutAsync, true), Action("Retry Confirmation", CheckoutAsync)));
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(Action("Quantity · Q", QuantityAsync), Action("Refund · RF", RefundAsync), Action("Delete · F5", DeleteAsync)));
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(Action("Item Lookup · F3", LookupAsync), Action("Refresh Prices", RefreshPricesAsync), Action("Void Sale · F4", VoidAsync)));
@@ -163,13 +166,23 @@ internal sealed class StoreTerminalForm : PosForm
             if(connected.Role != "Store Terminal" || !connected.StoreCheckoutEnabled) throw new InvalidOperationException("Use Copy Store Pairing from Host Terminal with Allow Store Checkout enabled.");
             if(pending is not null && pending.StoreId != connected.StoreId) throw new InvalidOperationException("This checkout belongs to a different store. Reconnect to its original Host Terminal.");
             connected = await next.HeartbeatAsync(new(profile.Id, terminalName.Text.Trim()), closing.Token);
-            client?.Dispose(); client = next; next = null!; info = connected; connectedUrl = new Uri(address).AbsoluteUri;
+            client?.Dispose(); client = next;
+            StartLive(next); next = null!; info = connected; connectedUrl = new Uri(address).AbsoluteUri;
             profile = profile with { Name = terminalName.Text.Trim() }; TerminalRecovery.Write(profilePath, profile);
             if(connectionFields is not null) connectionFields.Visible = false;
             feedback.Text = pending is null ? "Connected. Ready to scan." : "Connected. Retry Confirmation without taking payment again.";
         }
         finally { next?.Dispose(); }
     }
+
+    private void StartLive(HomeTerminalClient source)
+    {
+        live?.Cancel();live?.Dispose();live=CancellationTokenSource.CreateLinkedTokenSource(closing.Token);
+        _=source.WatchChangesAsync(revision=> { this.PostIfOpen(()=>
+        { if(IsDisposed||!ReferenceEquals(source,client))return;if(working||pending is not null)livePending=true;else _=RunAsync(RefreshLiveAsync, quiet: true); }); },live.Token);
+    }
+    private async Task RefreshLiveAsync()
+    { await HeartbeatAsync(); if(pending is null&&sale.Lines.Count>0)await RefreshPricesAsync(); }
 
     private async Task HeartbeatAsync()
     {
@@ -274,10 +287,10 @@ internal sealed class StoreTerminalForm : PosForm
         }
     }
 
-    private async Task RunAsync(Func<Task> action)
+    private async Task RunAsync(Func<Task> action, bool quiet = false)
     {
         if(working || IsDisposed) return;
-        working = true; connection.Text = "● Checking…"; connection.ForeColor = Color.DarkGoldenrod; RenderEnabled();
+        working = true; backgroundRefresh=quiet; if(!quiet) { connection.Text = "● Checking…"; connection.ForeColor = Color.DarkGoldenrod; } RenderEnabled();
         try { await action(); if(!IsDisposed && Ready) { connection.Text = "● Connected"; connection.ForeColor = Color.DarkGreen; } }
         catch(Exception error) when(error is HttpRequestException or IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or OperationCanceledException or JsonException)
         {
@@ -286,7 +299,8 @@ internal sealed class StoreTerminalForm : PosForm
         }
         finally
         {
-            working = false;
+            working = false; backgroundRefresh=false;
+            if(!IsDisposed&&livePending&&Ready&&pending is null) { livePending=false; await RunAsync(RefreshLiveAsync, quiet: true); }
             if(!IsDisposed) { Render(); if(scans.Count > 0 && Ready && pending is null) await RunAsync(DrainScansAsync); }
         }
     }
@@ -308,7 +322,7 @@ internal sealed class StoreTerminalForm : PosForm
         }
         if(row >= 0 && row < grid.Rows.Count) grid.CurrentCell = grid.Rows[row].Cells[0];
         SaleTotals totals = pending?.Quote.Totals ?? sale.GetTotals(info?.Taxes ?? new(info?.TaxRate ?? 0));
-        taxDetails.SetTotals(totals);
+        salesTax.Text = "Sales Tax  " + Sale.Money(totals.Tax);
         due.Text = Sale.Money(Math.Abs(totals.Total)); caption.Text = totals.Total < 0 ? "REFUND DUE" : "TOTAL DUE";
         due.Parent!.BackColor = totals.Total < 0 ? PosView.Refund : PosView.Navy;
         store.Text = info is null ? "Connect this checkout station to the store host." : $"Store: {info.StoreName} · {info.BusinessDate:yyyy-MM-dd} · {profile?.Name} · Tax {Sale.Rate(info.TaxRate)}";
@@ -394,6 +408,7 @@ internal sealed class StoreTerminalForm : PosForm
     };
     private async Task DisconnectAsync()
     {
+        live?.Cancel();
         var leaving = client; client = null; info = null; scans.Clear(); connection.Text = "● Off"; connection.ForeColor = PosView.Muted; feedback.Text = "Disconnected. The current sale stays here.";
         if(leaving is not null)
         { try { await leaving.LeaveAsync(new(profile!.Id, profile.Name)); } catch(Exception error) when(error is HttpRequestException or OperationCanceledException or IOException) { } finally { leaving.Dispose(); } }
@@ -415,12 +430,12 @@ internal sealed class StoreTerminalForm : PosForm
             catch(Exception error) when(error is IOException or UnauthorizedAccessException)
             { e.Cancel = true; feedback.Text = "Recovery could not be saved. Retry confirmation or cancel at the store before closing."; base.OnFormClosing(e); return; }
         }
-        if(working) { e.Cancel = true; feedback.Text = "Wait for the store request to finish before closing."; }
+        if(working && !backgroundRefresh) { e.Cancel = true; feedback.Text = "Wait for the store request to finish before closing."; }
         else if(sale.Lines.Count > 0 && !(ConfirmClose?.Invoke() ?? Ask(pending is null ? "Close and discard this unpaid sale?" : "Close and keep this unconfirmed checkout for recovery? Do not take payment again.", "Close Store Terminal"))) e.Cancel = true;
         base.OnFormClosing(e);
     }
     protected override void Dispose(bool disposing)
-    { if(disposing && !disposed) { disposed = true; pulse.Dispose(); closing.Cancel(); client?.Dispose(); closing.Dispose(); lease?.Dispose(); } base.Dispose(disposing); }
+    { if(disposing && !disposed) { disposed = true; pulse.Dispose(); live?.Cancel();live?.Dispose(); closing.Cancel(); client?.Dispose(); closing.Dispose(); lease?.Dispose(); } base.Dispose(disposing); }
 }
 
 internal sealed class StoreLookupForm : PosForm
@@ -430,6 +445,10 @@ internal sealed class StoreLookupForm : PosForm
     private readonly Label status = PosView.Label("Search current store inventory.", 11);
     private int page;
     private bool loading;
+    private bool reloadPending;
+    private readonly CancellationTokenSource lookupClosing = new();
+    private bool lookupDisposed;
+    protected override void Dispose(bool disposing) { if(disposing&&!lookupDisposed){lookupDisposed=true;lookupClosing.Cancel();lookupClosing.Dispose();} base.Dispose(disposing); }
     internal Product? SelectedProduct { get; private set; }
     internal StoreLookupForm(HomeTerminalClient client, string initialSearch = "")
     {
@@ -449,10 +468,12 @@ internal sealed class StoreLookupForm : PosForm
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(previous, next, select, close)); HomeTerminalView.Row(layout, status);
         Controls.Add(layout); CancelButton = close;
         Shown += async (_, _) => await LoadAsync();
+        _=client.WatchChangesAsync(revision=>this.PostIfOpen(()=>{if(loading)reloadPending=true;else _=LoadAsync(true);}),lookupClosing.Token);
         search.KeyDown += (_, e) => { if(e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; find.PerformClick(); } };
         grid.CellDoubleClick += (_, e) => { if(e.RowIndex >= 0) SelectItem(); };
-        async Task LoadAsync()
+        async Task LoadAsync(bool preserve = false)
         {
+            string? selected=(grid.CurrentRow?.DataBoundItem as HomeStock)?.Barcode; int offset=preserve?grid.HorizontalScrollingOffset:0; int first=grid.FirstDisplayedScrollingRowIndex;
             if(loading) return; loading = true;
             try
             {
@@ -467,10 +488,12 @@ internal sealed class StoreLookupForm : PosForm
                 if(grid.Columns["Description"] is DataGridViewColumn name) { name.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; name.MinimumWidth = 200; }
                 if(grid.Columns["UnitPrice"] is DataGridViewColumn price) price.DefaultCellStyle.Format = "C2";
                 next.Enabled = (page+1)*100 < result.ItemCount; previous.Enabled = page > 0;
+                if(preserve&&selected is not null)foreach(DataGridViewRow row in grid.Rows)if(((HomeStock)row.DataBoundItem!).Barcode==selected)grid.CurrentCell=row.Cells["Description"];
+                grid.HorizontalScrollingOffset=offset; if(preserve&&first>=0&&grid.RowCount>0)grid.FirstDisplayedScrollingRowIndex=Math.Min(first,grid.RowCount-1);
                 status.Text = $"Page {page+1} · {result.ItemCount} matching items";
             }
             catch(Exception error) when(error is HttpRequestException or IOException or OperationCanceledException) { if(!IsDisposed) { status.Text = error.Message; grid.Enabled = false; } }
-            finally { loading = false; }
+            finally { loading = false; if(reloadPending&&!IsDisposed){reloadPending=false;await LoadAsync(true);} }
         }
         void SelectItem()
         {

@@ -23,7 +23,7 @@ internal sealed record HomeTable(string[] Columns, string?[][] Rows, bool More =
 }
 
 internal sealed record HomeItemDetails(Product Product, CatalogDetails Catalog, long? OnHand, long Draft,
-    OrderContact? Supplier, HomeTable StockHistory, HomeTable PriceHistory, HomeTable SalesHistory);
+    OrderContact? Supplier, HomeTable StockHistory, HomeTable PriceHistory, HomeTable SalesHistory, ItemActivity? Activity = null);
 internal sealed record HomeOrderHistory(HomeOrderReceipt[] Items, bool More, int Page);
 
 internal static class HomeManagement
@@ -39,7 +39,7 @@ internal static class HomeManagement
         return new(product, details, stock?.OnHand, stock?.Draft ?? 0, supplier,
             HomeTable.From(data.ReadStockHistory(product.Barcode), pageSize: 500),
             HomeTable.From(data.ReadReport(RecordReport.PriceHistory, DateOnly.MinValue, DateOnly.MaxValue, product.Barcode, limit: 501), pageSize: 500),
-            HomeTable.From(data.ReadReport(RecordReport.SaleLines, DateOnly.MinValue, DateOnly.MaxValue, product.Barcode, limit: 501), pageSize: 500));
+            HomeTable.From(data.ReadReport(RecordReport.SaleLines, DateOnly.MinValue, DateOnly.MaxValue, product.Barcode, limit: 501), pageSize: 500), data.ReadItemActivity().GetValueOrDefault(product.Barcode));
     }
 
     internal static void Map(WebApplication app, string databasePath)
@@ -65,7 +65,15 @@ internal static class HomeManagement
                 DateOnly day = data.CurrentBusinessDate();
                 var stock = data.ReadOrderItems(day, day, day).ToDictionary(item => item.Product.Barcode, item => item.OnHand);
                 table.Columns.Add("On hand", typeof(long));
-                foreach (DataRow row in table.Rows) row["On hand"] = stock.GetValueOrDefault((string)row["Barcode"]) is long units ? units : DBNull.Value;
+                var details=data.ReadCatalogDetails(); var activity=data.ReadItemActivity();
+                foreach(string field in new[]{"On order","Sold 7d","Sold 30d","Sold 90d","MTD","YTD","Last sale","Last received","Class","Bin","Par","Reorder point","Shelf capacity","On shelf","Order lot","Notes"})table.Columns.Add(field);
+                foreach (DataRow row in table.Rows)
+                {
+                    string code=(string)row["Barcode"]; row["On hand"] = stock.GetValueOrDefault(code) is long units ? units : DBNull.Value;
+                    var a=activity[code];var setup=details[code].Setup??new();
+                    object[] values=[a.OnOrder,a.Sold7,a.Sold30,a.Sold90,a.MonthToDate,a.YearToDate,a.LastSale?.ToString("yyyy-MM-dd")??"",a.LastReceived?.ToString("yyyy-MM-dd")??"",setup.Class,setup.Bin,setup.Par,setup.ReorderPoint,setup.ShelfCapacity,setup.ShelfQuantity,setup.OrderCases?"Cases":"Units",setup.Notes];
+                    for(int i=0;i<values.Length;i++)row[table.Columns.Count-values.Length+i]=values[i];
+                }
             }
             return Results.Ok(HomeTable.From(table, page ?? 0));
         });

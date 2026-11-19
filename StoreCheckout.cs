@@ -67,6 +67,7 @@ internal sealed partial class RegisterData
             using var reader = productQuery.ExecuteReader();
             Product product = reader.Read() ? ReadProduct(reader) : throw new InvalidOperationException("An item is no longer available. Refresh the sale.");
             if(line.IsCase && !product.HasCasePrice) throw new ArgumentException("This item has no case price.");
+            if(line.DiscountRate>0 && !CatalogDiscountAllowed(product.Barcode,transaction)) throw new ArgumentException("Discounts are disabled for this item.");
             lines.Add(new(product, line.IsCase, line.Quantity, line.DiscountRate, TaxExempt: line.TaxExempt));
         }
         Sale sale = Sale.FromLines(lines, request.TaxExempt);

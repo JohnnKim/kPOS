@@ -45,14 +45,11 @@ internal sealed class StorePaymentForm : PosForm
         HomeTerminalView.Row(layout, items);
         var tax = PosView.Label($"Sales tax   {Sale.Money(quote.Totals.Tax)}", 12, FontStyle.Bold);
         HomeTerminalView.Row(layout, tax);
-        var taxDetails = new TaxBreakdownView(); taxDetails.SetTotals(quote.Totals);
-        HomeTerminalView.Row(layout, taxDetails);
         var fields = HomeTerminalView.Fields(("Confirm item count", count), (pending?.Payment.Method == PaymentMethod.Card ? "Card amount" : "Cash received", received));
         HomeTerminalView.Row(layout, fields);
         HomeTerminalView.Row(layout, status);
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(cash, card, retry, cancel, back));
         Controls.Add(layout);
-        taxDetails.SetTotals(quote.Totals);
         back.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
         cash.Click += async (_, _) => await SubmitAsync(PaymentMethod.Cash);
         card.Click += async (_, _) => await SubmitAsync(PaymentMethod.Card);

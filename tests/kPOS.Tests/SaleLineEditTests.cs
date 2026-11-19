@@ -16,7 +16,7 @@ public sealed class SaleLineEditTests
         Assert.AreEqual(2, sale.Lines[edited].Quantity);
         Assert.AreEqual(9.99m, sale.Lines[edited].Price);
         Assert.AreEqual(2m, sale.Lines[edited].Discount);
-        Assert.AreEqual(18.50m, sale.GetTotals(2.9m).Total);
+        Assert.AreEqual(18.51m, sale.GetTotals(2.9m).Total);
 
         int regular = sale.Add(beer, false);
         Assert.AreNotEqual(edited, regular);
@@ -48,7 +48,6 @@ public sealed class SaleLineEditTests
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => sale.EditLine(edited, 0, 35m, 0));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => sale.EditLine(edited, 10000, 35m, 0));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => sale.EditLine(edited, 1, -1m, 0));
-        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => sale.EditLine(edited, 1, 10.001m, 0));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => sale.EditLine(edited, 1, 1000000m, 0));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => sale.EditLine(edited, 1, 35m, 101m));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => sale.EditLine(edited, 1, 35m, 0.001m));

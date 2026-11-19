@@ -22,6 +22,7 @@ internal sealed record HomeSnapshot(DateOnly BusinessDate, DateTimeOffset Checke
 internal sealed class HomeTerminalHost : IAsyncDisposable
 {
     private readonly WebApplication app;
+    private readonly Task changes;
     private readonly X509Certificate2 certificate;
     public string Url { get; }
     public string Token { get; }
@@ -29,8 +30,9 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
     public HostConnections Connections { get; }
     public string Fingerprint => certificate.GetCertHashString(HashAlgorithmName.SHA256);
 
-    private HomeTerminalHost(WebApplication app, X509Certificate2 certificate, string url, string token, string storeToken, HostConnections connections)
+    private HomeTerminalHost(WebApplication app, X509Certificate2 certificate, string url, string token, string storeToken, HostConnections connections, Task changes)
     {
+        this.changes=changes;
         this.app = app;
         this.certificate = certificate;
         Url = url;
@@ -76,9 +78,9 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
         builder.WebHost.ConfigureKestrel(options =>
         {
             options.AddServerHeader = false;
-            options.Limits.MaxRequestBodySize = 32768;
+            options.Limits.MaxRequestBodySize = 131072;
             options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10);
-            options.Limits.MaxConcurrentConnections = 16;
+            options.Limits.MaxConcurrentConnections = 64;
             options.Listen(address, port, listen =>
             {
                 listen.Protocols = HttpProtocols.Http1;
@@ -101,7 +103,7 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
             try { await next(context); }
             catch (Exception error) when (error is SqliteException or IOException)
             {
-                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                if(!context.Response.HasStarted)context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;else context.Abort();
             }
         });
         app.MapGet("/api/v1/overview", (string? search, int? page, string? stock) =>
@@ -131,11 +133,13 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
             catch (InvalidOperationException error) { return Results.Conflict(error.Message); }
         });
         HomeManagement.Map(app, databasePath);
+        PurchasingApi.Map(app, databasePath);
+        Task changes = StoreChanges.Map(app, databasePath);
         connections.Map(app, databasePath);
         try
         {
             await app.StartAsync(cancellationToken).ConfigureAwait(false);
-            return new(app, certificate, $"https://{(address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? $"[{address}]" : address)}:{port}/", token, storeToken, connections);
+            return new(app, certificate, $"https://{(address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? $"[{address}]" : address)}:{port}/", token, storeToken, connections, changes);
         }
         catch
         {
@@ -151,6 +155,7 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             await app.StopAsync(timeout.Token).ConfigureAwait(false);
+            await changes.ConfigureAwait(false);
         }
         finally
         {

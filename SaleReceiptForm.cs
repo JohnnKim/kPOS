@@ -76,8 +76,6 @@ internal sealed class SaleReceiptForm : PosForm
             .AppendLine($"Subtotal   {Money(sale, "Subtotal")}")
             .AppendLine($"Discounts  {Money(sale, "Discounts")}")
             .AppendLine($"Sales tax  {Money(sale, "Tax")}");
-        if(sale.Table.Columns.Contains("Tax detail") && sale["Tax detail"] is string json && JsonSerializer.Deserialize<TaxBreakdown>(json) is TaxBreakdown detail)
-            foreach(var row in detail.Rows()) text.AppendLine($"  {row.Name} ({Sale.Rate(row.Rate)}) {Sale.Money(row.Amount)}");
         text.AppendLine($"Total      {Money(sale, "Total")}");
         decimal total = Amount(sale, "Total");
         if (total < 0)

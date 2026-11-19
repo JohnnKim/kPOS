@@ -122,6 +122,7 @@ public sealed class CloseoutTests
             {
                 oldSchema.Open();
                 oldSchema.CreateCollation("ITEM_CODE", StringComparer.OrdinalIgnoreCase.Compare);
+                SchemaTestSupport.RemovePurchasing(oldSchema);
                 using var command = oldSchema.CreateCommand();
                 command.CommandText = """
                     DROP TABLE distributor_items;
