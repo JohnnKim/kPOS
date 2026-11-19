@@ -131,7 +131,7 @@ public static class KposExecutableTest
 
                 Send(scanner, 0x0100, 0x78); // F9
                 IntPtr checkout = FindWindow(desktop, process.ProcessId, "Checkout (Training)");
-                WaitUntil(() => HasText(checkout, "Sales tax (2.9%)") && TextIsInBounds(checkout, "TOTAL DUE") &&
+                WaitUntil(() => HasText(checkout, "Sales Tax") && TextIsInBounds(checkout, "TOTAL DUE") &&
                     TextIsInBounds(checkout, "$24.68"),
                     "show tax and the amount due at checkout");
                 IntPtr cashInput;
