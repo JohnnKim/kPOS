@@ -42,7 +42,7 @@ internal sealed class ProportionalLayout : IDisposable
     }
     private void Added(object? sender,ControlEventArgs e)
     {
-        if(applying||sender is DataGridView||e.Control is null||e.Control is HScrollBar or VScrollBar)return;
+        if(applying||sender is DataGridView||e.Control is null||e.Control is HScrollBar or VScrollBar||fonts.ContainsKey(e.Control))return;
         applying=true;
         try{e.Control.Scale(new SizeF(PosView.CompactScale,PosView.CompactScale));Capture(e.Control);e.Control.Scale(new SizeF((float)scale,(float)scale));ApplyFonts(e.Control);}
         finally{applying=false;}
@@ -88,7 +88,7 @@ internal sealed class ProportionalLayout : IDisposable
         if(control is AmountLabel amount)amount.SetViewScale(scale);
         else if(fonts.TryGetValue(control,out var original))
         {
-            var key=(original.Family,Math.Max(9.5f*96/root.DeviceDpi,(float)Math.Round(original.Size*scale,2)),original.Style);
+            var key=(original.Family,Math.Max((control.AccessibleName=="Register display message"?16f:9.5f)*96/root.DeviceDpi,(float)Math.Round(original.Size*scale,2)),original.Style);
             if(!owned.TryGetValue(key,out Font? font)){font=new Font(key.Family,key.Item2,key.Style);owned[key]=font;}
             control.Font=font;
             if(control is DataGridView grid)

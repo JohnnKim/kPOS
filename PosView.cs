@@ -35,7 +35,7 @@ internal static class PosView
     {
         var button = new Button
         {
-            Text = text, AutoSize = true, FlatStyle = FlatStyle.Flat, Font = Text(size, FontStyle.Bold),
+            Text = text, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlatStyle = FlatStyle.Flat, Font = Text(size, FontStyle.Bold),
             ForeColor = primary ? Color.White : Ink, BackColor = primary ? Blue : Color.White,
             Padding = new Padding(9, 4, 9, 4), UseVisualStyleBackColor = false,
             MinimumSize = new Size(0, 42), Cursor = Cursors.Hand

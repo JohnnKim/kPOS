@@ -38,6 +38,7 @@ internal sealed class RegisterForm : PosForm
     private readonly Label status = new()
     {
         Text = "Ready to scan",
+        AutoSize = true,
         TextAlign = ContentAlignment.MiddleLeft,
         AutoEllipsis = true,
         Dock = DockStyle.Fill
@@ -58,7 +59,7 @@ internal sealed class RegisterForm : PosForm
     };
     private readonly Label lastChangeCaption = PosView.Label("Last change", 12, color: PosView.Muted);
     private readonly Label lastChange = CreateAmountLabel();
-    private readonly Label displayMessage=new(){AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,ForeColor=PosView.Navy,Font=new Font("Segoe UI Semibold",22,FontStyle.Regular),Visible=false};
+    private readonly Label displayMessage=new(){AccessibleName="Register display message",AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,ForeColor=PosView.Navy,Font=new Font("Segoe UI Semibold",22,FontStyle.Regular),Visible=false};
     private bool nextItemIsCase;
     private bool exporting;
     public string? RequestedDirectory { get; private set; }
@@ -104,7 +105,7 @@ internal sealed class RegisterForm : PosForm
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 68));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 122));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 166));
         var header = CreateHeader();
@@ -131,7 +132,25 @@ internal sealed class RegisterForm : PosForm
         var sidebar = PosView.Scroll(side);
         sidebar.Margin = new Padding(0, 0, 3, 3);
         sidebar.Controls.Add(displayMessage);
-        sidebar.Layout+=(_,_)=>{int top=side.Bottom+8;int height=Math.Max(0,sidebar.ClientSize.Height-top);displayMessage.SetBounds(16,top,Math.Max(0,sidebar.ClientSize.Width-32),height);if(sidebar.IsHandleCreated)displayMessage.Visible=height>20&&displayMessage.Text.Length>0;};
+        sidebar.Layout+=(_,_)=>
+        {
+            int top=side.Bottom+8;int height=Math.Max(0,sidebar.ClientSize.Height-top);
+            // On taller displays use the spare space below the proportional canvas.
+            // The register itself keeps the same arrangement.
+            Control? canvas=layout.Parent;Control? viewport=canvas?.Parent;
+            if(height<36&&canvas is not null&&viewport is not null&&viewport.ClientSize.Height-canvas.Bottom>=48)
+            {
+                if(displayMessage.Parent!=viewport)viewport.Controls.Add(displayMessage);
+                Point position=viewport.PointToClient(sidebar.PointToScreen(new Point(16,0)));
+                displayMessage.SetBounds(position.X,canvas.Bottom+8,Math.Max(0,sidebar.ClientSize.Width-32),Math.Max(0,viewport.ClientSize.Height-canvas.Bottom-16));
+            }
+            else
+            {
+                if(displayMessage.Parent!=sidebar)sidebar.Controls.Add(displayMessage);
+                displayMessage.SetBounds(16,top,Math.Max(0,sidebar.ClientSize.Width-32),height);
+            }
+            if(sidebar.IsHandleCreated)displayMessage.Visible=displayMessage.Height>20&&displayMessage.Text.Length>0;
+        };
         layout.Controls.Add(sidebar, 1, 2);
         layout.SetRowSpan(sidebar, 2);
 
@@ -375,8 +394,8 @@ internal sealed class RegisterForm : PosForm
         void AddTotal(Label caption, Label amount, int row)
         {
             caption.Anchor = AnchorStyles.Left;
-            caption.Margin = new Padding(3, 3, 3, 3);
-            amount.Margin = new Padding(3, 3, 3, 3);
+            caption.Margin = new Padding(3, 2, 3, 2);
+            amount.Margin = new Padding(3, 2, 3, 2);
             amount.ForeColor = PosView.Ink;
             amount.Font = PosView.Text(13, FontStyle.Bold);
             totals.Controls.Add(caption, 0, row);
