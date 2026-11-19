@@ -10,6 +10,7 @@ internal sealed class ProportionalLayout : IDisposable
     private readonly Dictionary<DataGridViewCellStyle,(string Family,float Size,FontStyle Style)> cellFonts=[];
     private sealed record Metrics(Padding Margin,Padding Padding,Size Minimum,float[] Rows,float[] Columns);
     private readonly Dictionary<Control,Metrics> metrics=[];
+    private readonly Dictionary<Control,Size> fixedLabels=[];
     private double scale=1;
     private bool applying;
     private bool applied;
@@ -23,6 +24,7 @@ internal sealed class ProportionalLayout : IDisposable
             bool explicitFont=System.ComponentModel.TypeDescriptor.GetProperties(control)["Font"]?.ShouldSerializeValue(control)??false;
             fonts[control]=(font.FontFamily.Name,explicitFont?font.Size:(float)(font.Size/scale),font.Style);
             control.ControlAdded+=Added;
+            if(control is Label { AutoSize:false, Dock:DockStyle.None })fixedLabels[control]=control.Size;
             metrics[control]=new(control.Margin,control.Padding,control.MinimumSize,
                 control is TableLayoutPanel rows?rows.RowStyles.Cast<RowStyle>().Select(row=>row.SizeType==SizeType.Absolute?row.Height:-1).ToArray():[],
                 control is TableLayoutPanel columns?columns.ColumnStyles.Cast<ColumnStyle>().Select(column=>column.SizeType==SizeType.Absolute?column.Width:-1).ToArray():[]);
@@ -65,6 +67,7 @@ internal sealed class ProportionalLayout : IDisposable
                     for(int i=0;i<Math.Min(original.Columns.Length,table.ColumnStyles.Count);i++)if(original.Columns[i]>=0)table.ColumnStyles[i].Width=(float)(original.Columns[i]*scale);
                 }
             }
+            foreach(var (control,size) in fixedLabels.Where(pair=>!pair.Key.IsDisposed))control.Size=new((int)Math.Round(size.Width*scale),(int)Math.Round(size.Height*scale));
             ApplyFonts(root);
             foreach(var (style,font) in cellFonts)style.Font=FontFor(font.Family,Math.Max(9.5f*96/root.DeviceDpi,(float)(font.Size*scale)),font.Style);
             foreach(var (grid,size) in grids.Where(pair=>!pair.Key.IsDisposed))
@@ -97,6 +100,7 @@ internal sealed class ProportionalLayout : IDisposable
     {var key=(family,size,style);if(!owned.TryGetValue(key,out var font)){font=new Font(family,size,style);owned[key]=font;}return font;}
     internal void DpiChanged(double ratio)
     {
+        foreach(var control in fixedLabels.Keys.ToArray()){var size=fixedLabels[control];fixedLabels[control]=new((int)Math.Round(size.Width*ratio),(int)Math.Round(size.Height*ratio));}
         foreach(var control in metrics.Keys.ToArray())
         {
             var value=metrics[control];Padding Resize(Padding p)=>new((int)Math.Round(p.Left*ratio),(int)Math.Round(p.Top*ratio),(int)Math.Round(p.Right*ratio),(int)Math.Round(p.Bottom*ratio));

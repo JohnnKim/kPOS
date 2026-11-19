@@ -103,10 +103,10 @@ internal sealed class RegisterForm : PosForm
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 68));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 122));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 166));
         var header = CreateHeader();
         layout.Controls.Add(header, 0, 0);
         layout.SetColumnSpan(header, 2);
@@ -375,8 +375,8 @@ internal sealed class RegisterForm : PosForm
         void AddTotal(Label caption, Label amount, int row)
         {
             caption.Anchor = AnchorStyles.Left;
-            caption.Margin = new Padding(3, 4, 3, 4);
-            amount.Margin = new Padding(3, 4, 3, 4);
+            caption.Margin = new Padding(3, 3, 3, 3);
+            amount.Margin = new Padding(3, 3, 3, 3);
             amount.ForeColor = PosView.Ink;
             amount.Font = PosView.Text(13, FontStyle.Bold);
             totals.Controls.Add(caption, 0, row);
@@ -399,13 +399,13 @@ internal sealed class RegisterForm : PosForm
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
 
         for (int row = 0; row < functions.Length; row++)
-            tiles.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+            tiles.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         for (int i = 0; i < tilesToShow.Length; i++)
         {
             var tile = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1,
-                BackColor = PosView.Light, Margin = new Padding(2, 1, 2, 1)
+                BackColor = PosView.Light, Margin = new Padding(2, 0, 2, 0)
             };
             tile.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
             tile.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
