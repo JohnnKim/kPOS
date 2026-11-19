@@ -72,7 +72,7 @@ internal sealed class ProportionalLayout : IDisposable
             foreach(var (style,font) in cellFonts)style.Font=FontFor(font.Family,Math.Max(9.5f*96/root.DeviceDpi,(float)(font.Size*scale)),font.Style);
             foreach(var (grid,size) in grids.Where(pair=>!pair.Key.IsDisposed))
             {
-                grid.RowTemplate.Height=Math.Max(18,(int)Math.Round(size.Row*scale));grid.ColumnHeadersHeight=Math.Max(24,(int)Math.Round(size.Header*scale));
+                grid.RowTemplate.Height=Math.Max(18,(int)Math.Round(size.Row*scale));if(grid.ColumnHeadersHeightSizeMode!=DataGridViewColumnHeadersHeightSizeMode.AutoSize)grid.ColumnHeadersHeight=Math.Max(24,(int)Math.Round(size.Header*scale));
                 foreach(var (column,dimensions) in size.Columns.Where(pair=>pair.Key.DataGridView==grid))
                 {
                     column.MinimumWidth=Math.Max(2,(int)Math.Round(dimensions.Minimum*scale));

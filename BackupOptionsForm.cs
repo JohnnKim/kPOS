@@ -31,7 +31,7 @@ internal sealed class BackupOptionsForm : PosForm
     public BackupOptionsForm()
     {
         Text = "Export Backup";
-        ClientSize = new Size(750, 575);
+        ClientSize = new Size(810, 710);
         MinimumSize = new Size(695, 530);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
@@ -110,6 +110,7 @@ internal sealed class BackupOptionsForm : PosForm
         accept.DialogResult = DialogResult.OK;
         actions.Controls.AddRange([cancel, accept]);
         footer.Controls.Add(actions, 1, 0);
+        footer.Padding = new Padding(0, 3, 0, 8);
         layout.Controls.Add(footer, 0, 4);
         Controls.Add(layout);
         AcceptButton = accept;

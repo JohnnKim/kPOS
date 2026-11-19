@@ -12,7 +12,7 @@ internal sealed class RecordsForm : PosForm
     private readonly string? barcode;
     private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 105 };
     private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 105 };
-    private readonly TabControl tabs = new() { Dock = DockStyle.Fill };
+    private readonly TabControl tabs = new() { Multiline = true, Dock = DockStyle.Fill };
     private readonly Button previous = PosView.Button("&Previous", size: 10);
     private readonly Button next = PosView.Button("&Next", size: 10);
     private readonly Button archive = PosView.Button("&Archive Day", size: 10);

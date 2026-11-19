@@ -10,6 +10,7 @@ internal static class HomeTerminalView
     internal static DataGridView Grid() => new ProductGrid()
     {
         Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
+        ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
         AutoGenerateColumns = true, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells,
         RowHeadersVisible = false, MultiSelect = false, SelectionMode = DataGridViewSelectionMode.FullRowSelect,
         BackgroundColor = Color.White, BorderStyle = BorderStyle.FixedSingle, ScrollBars = ScrollBars.Both,

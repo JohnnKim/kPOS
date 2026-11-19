@@ -59,7 +59,7 @@ internal sealed class RegisterForm : PosForm
     };
     private readonly Label lastChangeCaption = PosView.Label("Last change", 12, color: PosView.Muted);
     private readonly Label lastChange = CreateAmountLabel();
-    private readonly Label displayMessage=new(){AccessibleName="Register display message",AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,ForeColor=PosView.Navy,Font=new Font("Segoe UI Semibold",22,FontStyle.Regular),Visible=false};
+    private readonly Label displayMessage=new(){AccessibleName="Register display message",AutoEllipsis=true,AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,ForeColor=PosView.Navy,Font=new Font("Segoe UI Semibold",22,FontStyle.Regular),Visible=false};
     private Action? arrangeDisplayMessage;
     internal void ArrangeDisplayMessage()=>arrangeDisplayMessage?.Invoke();
     private bool nextItemIsCase;

@@ -15,7 +15,7 @@ internal sealed class SettingsForm : PosForm
         AutoScaleMode = AutoScaleMode.Dpi;
         Text = "Settings";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(680, 500);
+        ClientSize = new Size(1180, 740);
         Font = PosView.Text(11);
         BackColor = PosView.Canvas;
         MinimumSize = new Size(580, 470);
@@ -33,7 +33,7 @@ internal sealed class SettingsForm : PosForm
         header.Padding = new Padding(10, 5, 10, 5);
         header.Dock = DockStyle.Fill;
         header.Margin = new Padding(0, 0, 0, 10);
-        var tabs = new TabControl { Dock = DockStyle.Fill };
+        var tabs = new TabControl { Multiline = true, Dock = DockStyle.Fill };
         var rate = new NumericUpDown
         {
             Minimum = 0, Maximum = 100, DecimalPlaces = 4, Increment = 0.1m, Value = data.ReadTaxes().Base, Width = 110
@@ -47,11 +47,11 @@ internal sealed class SettingsForm : PosForm
         var showKeys = Option("Show Register Keys on the sales screen", data.ShowRegisterKeys);
         var showChange = Option("Show last change on the sales screen", data.ShowLastChange);
         AddTab("Checkout", ("Change display duration (seconds)", duration), (null, requireCount));
-        var displayText=new TextBox{Text=data.DisplayMessage,MaxLength=160,Multiline=true,Dock=DockStyle.Top,Height=72,Width=400,AccessibleName="Register display text"};
+        var displayText=new TextBox{Text=data.DisplayMessage,MaxLength=RegisterData.RegisterMessageLimit,Multiline=false,Dock=DockStyle.Top,Height=72,Width=400,AccessibleName="Register display text"};
         var charactersLeft=PosView.Label("",10,color:PosView.Muted);charactersLeft.AccessibleName="Register text characters left";
         void UpdateCharactersLeft()=>charactersLeft.Text=$"{displayText.MaxLength-displayText.Text.Length} characters left";
         displayText.TextChanged+=(_,_)=>UpdateCharactersLeft();UpdateCharactersLeft();
-        AddTab("Display", (null, maximize), (null, showKeys), (null, showChange),(null,PosView.Label("Register text (optional, 160 characters)",11)),(null,displayText),(null,charactersLeft));
+        AddTab("Display", (null, maximize), (null, showKeys), (null, showChange),(null,PosView.Label("Register text (optional, 24 characters)",11)),(null,displayText),(null,charactersLeft));
         RegisterKeys keys = data.ReadRegisterKeys();
         var quantityKey = Shortcut(keys.Quantity);
         var lotteryKey = Shortcut(keys.Lottery);

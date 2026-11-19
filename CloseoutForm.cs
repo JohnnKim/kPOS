@@ -30,7 +30,7 @@ internal sealed class CloseoutForm : PosForm
     private readonly Label cashToDeposit = ValueLabel();
     private readonly Label difference = PosView.Label("", 17, FontStyle.Bold);
     private readonly Label feedback = PosView.Label("", 10);
-    private readonly TextBox notes = new() { Dock = DockStyle.Fill, MaxLength = 500, AccessibleName = "Closeout notes" };
+    private readonly TextBox notes = new() { Dock = DockStyle.Fill, Multiline = true, ScrollBars = ScrollBars.Vertical, MaxLength = 500, AccessibleName = "Closeout notes" };
     private readonly Button count = CloseoutButton("Count &Bills and Coins…");
     private readonly Button closeDay = CloseoutButton("&OK", primary: true);
     private readonly Button print = CloseoutButton("&Print Report…");
@@ -112,7 +112,7 @@ internal sealed class CloseoutForm : PosForm
         var right = Column();
         var tender = Section(2);
         AddField(tender, 0, "Cash", Field.Cash);
-        fields[Field.Cash].PlaceholderText = "From drawer counts";
+        fields[Field.Cash].PlaceholderText = "Drawer count";
         AddField(tender, 1, "Checks", Field.Checks);
         AddField(tender, 2, "MC/Visa", Field.VisaMastercard);
         AddField(tender, 3, "Amer Ex", Field.Amex);
@@ -136,6 +136,8 @@ internal sealed class CloseoutForm : PosForm
         noteRow.ColumnStyles[0] = new ColumnStyle(SizeType.AutoSize);
         noteRow.ColumnStyles[1] = new ColumnStyle(SizeType.Percent, 100);
         AddRow(noteRow, 0, "Notes", notes);
+        notes.Dock = DockStyle.Fill;
+        noteRow.RowStyles[0].Height = 66;
         Wide(noteRow, 2);
         feedback.MinimumSize = new Size(0, feedback.Font.Height);
         Wide(feedback, 3);
