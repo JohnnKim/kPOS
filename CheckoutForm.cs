@@ -272,7 +272,7 @@ internal sealed class CheckoutForm : PosForm
         var resultAmount=PosView.BannerAmount(Sale.Money(isRefund?-payment.Received:ChangeDue),82);
         resultAmount.Dock=DockStyle.None;resultAmount.TextAlign=ContentAlignment.MiddleCenter;
         result.Controls.AddRange([resultCaption,resultAmount]);
-        result.Layout+=(_,_)=>{var area=result.DisplayRectangle;resultCaption.SetBounds(area.Left,area.Top,area.Width,42);resultAmount.SetBounds(area.Left,area.Top+42,area.Width,Math.Max(0,area.Height-42));};
+        result.Layout+=(_,_)=>{int titleHeight=Math.Max(32,resultCaption.PreferredHeight);int required=result.Padding.Vertical+titleHeight+resultAmount.MinimumSize.Height+12;if(result.Height!=required)result.Height=required;var area=result.DisplayRectangle;resultCaption.SetBounds(area.Left,area.Top,area.Width,titleHeight);resultAmount.SetBounds(area.Left,area.Top+titleHeight,area.Width,Math.Max(0,area.Height-titleHeight));};
         result.Margin = new Padding(0, 0, 0, 22);
         summary.Controls.Add(result,0,0);summary.SetColumnSpan(result,2);
         var countdown = PosView.Label("", 13, FontStyle.Bold, PosView.Muted);

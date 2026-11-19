@@ -7,6 +7,7 @@ internal class PosForm : Form
     private Size minimumCanvas;
     private bool updatingLayout;
     private bool prepared;
+    private ProportionalLayout? proportional;
 
     protected virtual bool ScrollWholeWindow => true;
 
@@ -50,6 +51,8 @@ internal class PosForm : Form
                 natural.Width = Math.Max(natural.Width, preferred.Width);
                 natural.Height = Math.Max(natural.Height, preferred.Height);
             }
+        foreach(var tabs in Descendants(this).OfType<TabControl>())
+        { tabs.Font=PosView.Text(13,FontStyle.Bold);tabs.Padding=new Point(16,7); }
         AutoSize = false;
         ClientSize = natural;
         AutoScroll = false;
@@ -57,21 +60,11 @@ internal class PosForm : Form
         MinimumSize = Size.Empty;
         PosView.SuspendLayoutTree(this);
         Scale(new SizeF(PosView.CompactScale, PosView.CompactScale));
-        if (!ScrollWholeWindow)
-        {
-            MinimumSize = new Size((int)Math.Round(minimum.Width * PosView.CompactScale),
-                (int)Math.Round(minimum.Height * PosView.CompactScale));
-            PosView.ResumeLayoutTree(this);
-            PerformLayout();
-            FitWorkingArea();
-            WindowState = state;
-            return;
-        }
         var body = Controls.Cast<Control>().Where(control => control is not MenuStrip).ToArray();
         int menuHeight = Controls.OfType<MenuStrip>().Sum(menu => menu.Height);
         minimumCanvas = new Size(ClientSize.Width, Math.Max(1, ClientSize.Height - menuHeight));
-        canvas = new Panel { Size = minimumCanvas, TabStop = false };
-        viewport = new Panel { Dock = DockStyle.Fill, AutoScroll = true, TabStop = false };
+        canvas = new Panel { Size = minimumCanvas, TabStop = false, Margin=Padding.Empty };
+        viewport = new Panel { Dock = DockStyle.Fill, AutoScroll = ScrollWholeWindow, TabStop = false };
         foreach (Control control in body)
         {
             canvas.Controls.Add(control);
@@ -92,6 +85,10 @@ internal class PosForm : Form
             minimumCanvas = new Size(Math.Max(minimumCanvas.Width, preferred.Width),
                 Math.Max(minimumCanvas.Height, preferred.Height + 4));
         }
+        if(this is RegisterForm)minimumCanvas=new Size(1440,786);
+        if(this is CloseoutForm)minimumCanvas.Height+=32;
+        canvas.Size=minimumCanvas;canvas.PerformLayout();
+        proportional=new ProportionalLayout(canvas);
         FitContent();
         WindowState = state;
     }
@@ -102,7 +99,9 @@ internal class PosForm : Form
         if (canvas is null || e.Control is null || e.Control == viewport || e.Control is MenuStrip)
             return;
 
-        e.Control.Scale(new SizeF(PosView.CompactScale, PosView.CompactScale));
+        // The canvas handles scaling controls added after the initial layout.
+        if (proportional is null)
+            e.Control.Scale(new SizeF(PosView.CompactScale, PosView.CompactScale));
         canvas.Controls.Add(e.Control);
         UpdateCanvas();
     }
@@ -127,6 +126,7 @@ internal class PosForm : Form
         minimumCanvas = new Size(
             (int)Math.Ceiling(minimumCanvas.Width * (double)e.DeviceDpiNew / e.DeviceDpiOld),
             (int)Math.Ceiling(minimumCanvas.Height * (double)e.DeviceDpiNew / e.DeviceDpiOld));
+        proportional?.DpiChanged((double)e.DeviceDpiNew/e.DeviceDpiOld);
         base.OnDpiChanged(e);
         UpdateCanvas();
         FitWorkingArea();
@@ -171,6 +171,12 @@ internal class PosForm : Form
         FitWorkingArea();
     }
 
+    private static IEnumerable<Control> Descendants(Control root)
+    {foreach(Control child in root.Controls){yield return child;foreach(var nested in Descendants(child))yield return nested;}}
+
+    protected override void Dispose(bool disposing)
+    {base.Dispose(disposing);if(disposing)proportional?.Dispose();}
+
     private void UpdateCanvas()
     {
         if (canvas is null || viewport is null || updatingLayout || Disposing || IsDisposed)
@@ -179,11 +185,23 @@ internal class PosForm : Form
         updatingLayout = true;
         try
         {
-            // Keep the existing arrangement on a scrollable surface when the window becomes smaller.
-            Size size = new(Math.Max(minimumCanvas.Width, viewport.ClientSize.Width),
-                Math.Max(minimumCanvas.Height, viewport.ClientSize.Height));
-            if (canvas.Size != size)
-                canvas.Size = size;
+            // Scale one reference layout; use scrolling only below its readable minimum.
+            if(proportional is null)
+            {
+                canvas.Size=minimumCanvas;
+                return;
+            }
+            double fit=Math.Min((double)Math.Max(1,viewport.Width)/minimumCanvas.Width,(double)Math.Max(1,viewport.Height)/minimumCanvas.Height);
+            double smallest=this is RegisterForm?.75:.85;
+            viewport.AutoScroll=ScrollWholeWindow&&fit<smallest;
+            // One scale factor preserves the arrangement. Very small register windows retain scrolling.
+            double factor=ScrollWholeWindow?Math.Max(this is RegisterForm?.75:.85,fit):Math.Max(.25,fit);
+            if(this is not (RegisterForm or StoreTerminalForm or CheckoutForm))factor=Math.Min(1,factor);
+            proportional.Apply(factor);
+            canvas.Size=new Size((int)Math.Round(minimumCanvas.Width*factor),(int)Math.Round(minimumCanvas.Height*factor));
+            var offset=viewport.AutoScrollPosition;
+            canvas.Location=new Point(canvas.Width<=viewport.ClientSize.Width?(viewport.ClientSize.Width-canvas.Width)/2:offset.X,
+                canvas.Height<=viewport.ClientSize.Height?(viewport.ClientSize.Height-canvas.Height)/2:offset.Y);
         }
         finally
         {

@@ -420,7 +420,7 @@ internal sealed class CloseoutForm : PosForm
         label.Anchor = AnchorStyles.Left;
         label.Margin=new Padding(3,3,3,3);value.Margin=new Padding(3,3,3,3);value.Anchor=AnchorStyles.Right;
         if(calculated is not null){calculated.Margin=new Padding(3,3,3,3);calculated.Anchor=AnchorStyles.Right;}
-        section.RowStyles.Add(new RowStyle(SizeType.Absolute,26));
+        section.RowStyles.Add(new RowStyle(SizeType.Absolute,34));
         section.Controls.Add(label, 0, row);
         section.Controls.Add(value, 1, row);
         if (calculated is not null)

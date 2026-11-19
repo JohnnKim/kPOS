@@ -82,7 +82,7 @@ internal sealed class RegisterForm : PosForm
         AutoScaleMode = AutoScaleMode.Dpi;
         Text = "kPOS - Sales Entry (Training)";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(1280, 740);
+        ClientSize = new Size(1440, 810);
         MinimumSize = new Size(780, 515);
         if (data.StartMaximized)
             WindowState = FormWindowState.Maximized;
@@ -357,6 +357,8 @@ internal sealed class RegisterForm : PosForm
         totalBanner.Layout += (_, _) =>
         {
             // Fit large amounts to the banner's actual width, which is known after the sidebar is laid out.
+            int required=totalCaption.PreferredHeight+totalDue.MinimumSize.Height+totalBanner.Padding.Vertical+8;
+            if(totalBanner.Height!=required)totalBanner.Height=required;
             Rectangle area = totalBanner.DisplayRectangle;
             int top = area.Top + totalCaption.PreferredHeight;
             totalDue.SetBounds(area.Left, top, area.Width, Math.Max(0, area.Bottom - top));
@@ -499,6 +501,7 @@ internal sealed class RegisterForm : PosForm
     private void ConfigureTicket()
     {
         PosView.Grid(ticket, 14, 46);
+        ticket.ColumnHeadersDefaultCellStyle.WrapMode=DataGridViewTriState.False;
         ticket.Columns.Add("Line", "#");
         ticket.Columns["Line"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
         ticket.Columns["Line"]!.MinimumWidth = 38;

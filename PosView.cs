@@ -26,7 +26,7 @@ internal static class PosView
     public static readonly Color Error = Color.FromArgb(157, 34, 38);
 
     public static Font Text(float size, FontStyle style = FontStyle.Regular) =>
-        new(SystemFonts.MessageBoxFont!.FontFamily, Math.Max(8.5f, size * CompactScale), style);
+        new(SystemFonts.MessageBoxFont!.FontFamily, Math.Max(11f, size), style);
 
     public static Label Label(string text, float size, FontStyle style = FontStyle.Regular, Color? color = null) =>
         new() { Text = text, AutoSize = true, Font = Text(size, style), ForeColor = color ?? Ink };
@@ -83,39 +83,7 @@ internal static class PosView
         return viewport;
     }
 
-    public static Label BannerAmount(string text, float size)
-    {
-        Font fullSize = Text(size, FontStyle.Bold);
-        Font? fitted = null;
-        var label = new Label
-        {
-            Text = text, ForeColor = Color.White, Font = fullSize, TextAlign = ContentAlignment.MiddleRight,
-            Dock = DockStyle.Fill, Margin = new Padding(0), MinimumSize = new Size(0, fullSize.Height + 6)
-        };
-        label.SizeChanged += (_, _) => Fit();
-        label.TextChanged += (_, _) => Fit();
-        label.DpiChangedAfterParent += (_, _) => Fit();
-        label.HandleCreated += (_, _) => Fit();
-        label.Disposed += (_, _) => { fitted?.Dispose(); fullSize.Dispose(); };
-        return label;
-
-        void Fit()
-        {
-            if (!label.IsHandleCreated || label.ClientSize.Width < 1 || label.Text.Length == 0)
-                return;
-            using Graphics graphics = label.CreateGraphics();
-            int width = TextRenderer.MeasureText(graphics, label.Text, fullSize, Size.Empty,
-                TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;
-            float pointSize = width <= label.ClientSize.Width ? fullSize.Size
-                : Math.Max(8, (float)Math.Floor(fullSize.Size * (label.ClientSize.Width - 4) / width));
-            if (Math.Abs(label.Font.Size - pointSize) < 0.1f)
-                return;
-            Font? previous = fitted;
-            fitted = pointSize == fullSize.Size ? null : new Font(fullSize.FontFamily, pointSize, FontStyle.Bold);
-            label.Font = fitted ?? fullSize;
-            previous?.Dispose();
-        }
-    }
+    public static Label BannerAmount(string text, float size) => new AmountLabel(text,size);
 
     public static void FitTicketColumns(DataGridView grid, string description, params string[] numbers)
     {

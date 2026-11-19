@@ -83,7 +83,7 @@ public sealed class PurchasingWindowTests
         window.Show();window.Size=new(1280,720);Application.DoEvents();
         var caption=Controls(window).OfType<Label>().Single(label=>label.Text=="Register Keys");
         for(Control? parent=caption.Parent;parent is not null;parent=parent.Parent)
-            if(parent is ScrollableControl scroll)Assert.IsFalse(scroll.VerticalScroll.Visible,$"{parent.GetType().Name}: viewport {scroll.ClientSize}, content {scroll.DisplayRectangle}");
+            if(parent is ScrollableControl scroll)Assert.IsFalse(scroll.VerticalScroll.Visible,$"{parent.GetType().Name}: viewport {scroll.ClientSize}, content {scroll.DisplayRectangle}, children {string.Join(";",scroll.Controls.Cast<Control>().Select(child=>$"{child.GetType().Name} {child.Bounds} margin {child.Margin}"))}");
         if(Environment.GetEnvironmentVariable("KPOS_WINDOW_SCREENSHOTS") is string images){using var bitmap=new Bitmap(window.Width,window.Height);window.DrawToBitmap(bitmap,new Rectangle(Point.Empty,bitmap.Size));bitmap.Save(Path.Combine(images,"Register-720.png"));}
     }
     private static IEnumerable<Control> Controls(Control root){yield return root;foreach(Control child in root.Controls)foreach(Control nested in Controls(child))yield return nested;}

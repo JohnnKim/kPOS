@@ -1,6 +1,8 @@
 # kPOS
 Independent liquor store POS system
 
+Preview.36 preserves register proportions when resizing and increases text and tab sizes for readability.
+
 Preview.35 caps lottery entry at $1,000, adds right-click sale-item actions, and presents a larger centered change display.
 
 Preview.33 improves the optional register message styling and spacing, updates it immediately after saving, and adds a live characters-left counter.
@@ -22,7 +24,7 @@ and hardware/connection options are in [Home-Terminal.md](docs/Home-Terminal.md)
 November 19th 2026
 
 Windows oriented Point-Of-Sale and back office software for independent liquor retail
-Current Stage: Windows testing preview, v0.1.0-preview.35
+Current Stage: Windows testing preview, v0.1.0-preview.36
 
 ## Executive Summary
 kPOS is being built to replace an aging LiquorPOS system that the store uses to ring up sales, manage products, track inventory, place orders, and close the day. The current Windows XP based system contains years of work that would be expensive to recreate and easy to lose in a haphazard transition. The mission statement is to preserve that progress while also modernizing the current system.
