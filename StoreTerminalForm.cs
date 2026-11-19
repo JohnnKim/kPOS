@@ -80,6 +80,10 @@ internal sealed class StoreTerminalForm : PosForm
         var paste = PosView.Button("Paste Store Pairing", size: 11);
         paste.Click += (_, _) => { try { TerminalPairing.Paste(Clipboard.GetText(), true, url, pin, key); } catch(ArgumentException error) { feedback.Text = error.Message; } };
         var connect = PosView.Button("Connect to Host", true, 11);
+        SaleItemMenu.Attach(grid,()=>Ready&&!working&&pending is null,
+            ("Edit Quantity",()=>_=RunAsync(QuantityAsync)),("Discount",()=>_=RunAsync(DiscountAsync)),
+            ("Refund Item",()=>_=RunAsync(RefundAsync)),("Toggle Item Sales Tax",()=>_=RunAsync(()=>ToggleTaxAsync(true))),
+            ("Delete Item",()=>_=RunAsync(DeleteAsync)));
         connect.Click += async (_, _) => await RunAsync(ConnectAsync);
         var disconnect = PosView.Button("Disconnect", size: 11);
         disconnect.Click += async (_, _) =>

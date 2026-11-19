@@ -243,40 +243,47 @@ internal sealed class CheckoutForm : PosForm
     {
         var center = new TableLayoutPanel
         {
-            AutoSize = true, Dock = DockStyle.Top, Padding = new Padding(12), ColumnCount = 3, RowCount = 1
+            AutoSize = false, Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 3, RowCount = 3
         };
-        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 4));
-        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 92));
-        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 4));
+        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 10));
+        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 80));
+        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 10));
+        center.RowStyles.Add(new RowStyle(SizeType.Percent,50));
         center.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        center.RowStyles.Add(new RowStyle(SizeType.Percent,50));
 
         var summary = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, AutoSize = true, BackColor = Color.White, ColumnCount = 2, Padding = new Padding(12)
+            Dock = DockStyle.Fill, AutoSize = true, BackColor = Color.White, ColumnCount = 2, Padding = new Padding(28)
         };
         summary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         summary.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        AddAmountRow(summary, 0, "Subtotal", totals.Subtotal - totals.Discount, 16);
-        AddAmountRow(summary, 1, "Sales tax", totals.Tax, 16);
-        AddAmountRow(summary, 2, "Total", totals.Total, 18);
+        AddAmountRow(summary, 1, "Subtotal", totals.Subtotal - totals.Discount, 20);
+        AddAmountRow(summary, 2, "Sales tax", totals.Tax, 20);
+        AddAmountRow(summary, 3, "Total", totals.Total, 20);
         bool isRefund = totals.Total < 0;
         string paymentLabel = isRefund
             ? payment.Method == PaymentMethod.Cash ? "Cash refund" : "Card refund"
             : payment.Method == PaymentMethod.Cash ? "Cash received" : "Amount received";
-        AddAmountRow(summary, 3, paymentLabel, Math.Abs(payment.Received), 16);
-        var result = isRefund ? CreateAmountBanner("REFUND RECORDED", -payment.Received, PosView.Refund)
-            : CreateAmountBanner("CHANGE DUE", ChangeDue, size:48);
-        result.Margin = new Padding(0, 14, 0, 8);
-        AddWide(summary, 4, result);
+        AddAmountRow(summary, 4, paymentLabel, Math.Abs(payment.Received), 20);
+        var result=new Panel {Height=220,Dock=DockStyle.Fill,BackColor=isRefund?PosView.Refund:PosView.Navy,Padding=new Padding(20)};
+        var resultCaption=PosView.Label(isRefund?"REFUND RECORDED":"CHANGE DUE",22,FontStyle.Bold,Color.White);
+        resultCaption.AutoSize=false;resultCaption.TextAlign=ContentAlignment.MiddleCenter;
+        var resultAmount=PosView.BannerAmount(Sale.Money(isRefund?-payment.Received:ChangeDue),82);
+        resultAmount.Dock=DockStyle.None;resultAmount.TextAlign=ContentAlignment.MiddleCenter;
+        result.Controls.AddRange([resultCaption,resultAmount]);
+        result.Layout+=(_,_)=>{var area=result.DisplayRectangle;resultCaption.SetBounds(area.Left,area.Top,area.Width,42);resultAmount.SetBounds(area.Left,area.Top+42,area.Width,Math.Max(0,area.Height-42));};
+        result.Margin = new Padding(0, 0, 0, 22);
+        summary.Controls.Add(result,0,0);summary.SetColumnSpan(result,2);
         var countdown = PosView.Label("", 13, FontStyle.Bold, PosView.Muted);
         countdown.Anchor = AnchorStyles.Left;
-        var next = PosView.Button("&Next Sale", primary: true);
+        var next = PosView.Button("&Next Sale", primary: true,size:16);
         next.Anchor = AnchorStyles.Right;
         next.Click += (_, _) => Finish();
         summary.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         summary.Controls.Add(countdown, 0, 5);
         summary.Controls.Add(next, 1, 5);
-        center.Controls.Add(PosView.Frame(summary, Padding.Empty, fitContent: true), 1, 0);
+        center.Controls.Add(PosView.Frame(summary, Padding.Empty, fitContent: true), 1, 1);
         (changeSurface??this).Controls.Add(center);
         AcceptButton = next;
         next.Focus();

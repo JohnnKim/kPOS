@@ -84,7 +84,9 @@ internal sealed class Sale
         return lines.Count - 1;
     }
 
-    public int AddLottery(decimal price) => AddOneTimeItem("Lottery Sale", price, false, SaleLineKind.Lottery);
+    public const decimal MaximumLotteryAmount=1000m;
+    public int AddLottery(decimal price)
+    { if(MoneyMath.Up(price)>MaximumLotteryAmount)throw new ArgumentOutOfRangeException(nameof(price),"Lottery amount cannot exceed $1,000.00.");return AddOneTimeItem("Lottery Sale",price,false,SaleLineKind.Lottery); }
 
     public int AddMisc(string category, decimal price, bool taxable) =>
         AddOneTimeItem($"{category} misc item", price, taxable, SaleLineKind.Misc);

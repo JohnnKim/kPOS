@@ -90,6 +90,12 @@ internal sealed class RegisterForm : PosForm
         BackColor = PosView.Canvas;
 
         ConfigureTicket();
+        SaleItemMenu.Attach(ticket,()=>Enabled,
+            ("Edit Quantity",()=>RunRegisterAction(EditQuantity)),("Edit Item",()=>RunRegisterAction(EditLine)),
+            ("Discount",()=>RunRegisterAction(DiscountLine)),("Refund Item",()=>RunRegisterAction(RefundLine)),
+            ("Toggle Item Sales Tax",()=>RunRegisterAction(()=>ToggleTax(true))),
+            ("Delete Item",()=>RunRegisterAction(DeleteLine)));
+
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill, Padding = new Padding(17, 11, 17, 14),
@@ -139,7 +145,7 @@ internal sealed class RegisterForm : PosForm
         legalAgeTimer.Start();
         RefreshLegalAge();
         menu.MenuDeactivate += (_, _) => FocusScanner();
-        ticket.MouseUp += (_, _) => FocusScanner();
+        ticket.MouseUp += (_, e) => { if(e.Button==MouseButtons.Left)FocusScanner(); };
         RefreshTicket();
         ShowLastChange(data.LastChange());
         _=new LocalDataWatch(this,data,()=>{if(Enabled){taxes=data.ReadTaxes();RefreshTicket(ticket.CurrentRow?.Index??0);}});
@@ -758,7 +764,7 @@ internal sealed class RegisterForm : PosForm
     private void AddLottery()
     {
         using var dialog = new NumberEntryForm("Lottery Amount Input", "Lottery amount ($)",
-            0, 0.01m, 999999.99m, 2, amount => $"Lottery Sale: {Sale.Money(amount)}");
+            0, 0.01m, Sale.MaximumLotteryAmount, 2, amount => $"Lottery Sale: {Sale.Money(amount)}");
         if (dialog.ShowDialog(this) == DialogResult.OK)
             AddManualLine(sale.AddLottery(dialog.Value));
     }
