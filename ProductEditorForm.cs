@@ -21,7 +21,7 @@ internal sealed class ProductEditorForm : PosForm
 
     public Product? SavedProduct { get; private set; }
 
-    public ProductEditorForm(string barcode, Func<Product, string?> save, Product? existing = null)
+    public ProductEditorForm(string barcode, Func<Product, string?> save, Product? existing = null, RegisterData? data = null)
     {
         Text = existing is null ? "Add Product" : "Edit Product";
         StartPosition = FormStartPosition.CenterParent;
@@ -53,7 +53,30 @@ internal sealed class ProductEditorForm : PosForm
         AddField("Units per case", caseQuantity, 6);
         AddField("Case price ($)", casePrice, 7);
         fields.Controls.Add(taxable, 1, 8);
-        fields.Controls.Add(feedback, 0, 9);
+        var brand = new TextBox { Dock = DockStyle.Fill, MaxLength = 80, AccessibleName = "Brand" };
+        var type = new TextBox { Dock = DockStyle.Fill, MaxLength = 60, AccessibleName = "Product type" };
+        var vendorCode = new TextBox { Dock = DockStyle.Fill, MaxLength = 100, AccessibleName = "Supplier item code" };
+        var cost = new TextBox { Dock = DockStyle.Fill, MaxLength = 13, AccessibleName = "Purchase unit cost" };
+        var supplier = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "Supplier" };
+        CatalogDetails meta = existing is null ? new() : data?.ReadCatalogDetails().GetValueOrDefault(existing.Barcode) ?? new();
+        brand.Text = meta.Brand; type.Text = meta.Type; vendorCode.Text = meta.VendorCode;
+        cost.Text = meta.UnitCost?.ToString("0.00", CultureInfo.InvariantCulture) ?? "";
+        supplier.Items.Add(new SupplierChoice(null, "Not assigned"));
+        if (data is not null)
+            foreach (Distributor distributor in data.ReadDistributors()) supplier.Items.Add(new SupplierChoice(distributor.Id, distributor.Details.Name));
+        supplier.SelectedIndex = 0;
+        for (int i = 0; i < supplier.Items.Count; i++)
+            if (((SupplierChoice)supplier.Items[i]!).Id == meta.SupplierId) supplier.SelectedIndex = i;
+        int footer = 9;
+        if (data is not null)
+        {
+            AddField("Brand", brand, footer++);
+            AddField("Type / department", type, footer++);
+            AddField("Supplier", supplier, footer++);
+            AddField("Supplier item code", vendorCode, footer++);
+            AddField("Unit cost ($)", cost, footer++);
+        }
+        fields.Controls.Add(feedback, 0, footer++);
         fields.SetColumnSpan(feedback, 2);
 
         var saveButton = PosView.Button("&Save Product", primary: true);
@@ -64,7 +87,7 @@ internal sealed class ProductEditorForm : PosForm
             Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false
         };
         buttons.Controls.AddRange([cancel, saveButton]);
-        fields.Controls.Add(buttons, 0, 10);
+        fields.Controls.Add(buttons, 0, footer);
         fields.SetColumnSpan(buttons, 2);
         Controls.Add(fields);
         AcceptButton = saveButton;
@@ -135,7 +158,14 @@ internal sealed class ProductEditorForm : PosForm
                 string? problem;
                 try
                 {
-                    problem = save(product);
+                    decimal? unitCost = null;
+                    if (!string.IsNullOrWhiteSpace(cost.Text))
+                    {
+                        if (!Sale.TryParseMoney(cost.Text, out decimal parsed)) { ShowProblem("Enter a valid unit cost.", cost); return; }
+                        unitCost = parsed;
+                    }
+                    problem = data is null ? save(product) : data.SaveCatalogProduct(product, existing,
+                        new(brand.Text, type.Text, vendorCode.Text, unitCost, ((SupplierChoice)supplier.SelectedItem!).Id));
                 }
                 catch (SqliteException error)
                 {
@@ -160,4 +190,6 @@ internal sealed class ProductEditorForm : PosForm
             input.SelectAll();
         }
     }
+
+    private sealed record SupplierChoice(long? Id, string Name) { public override string ToString() => Name; }
 }

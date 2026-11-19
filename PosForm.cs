@@ -12,12 +12,20 @@ internal class PosForm : Form
 
     public PosForm()
     {
+        Icon = AppIcon.Value;
         HorizontalWheelRouter.Install();
         DoubleBuffered = true;
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
         Font = PosView.Text(11);
     }
+
+    private static readonly Lazy<Icon> AppIcon = new(() =>
+    {
+        using Stream stream = typeof(PosForm).Assembly.GetManifestResourceStream("Kpos.AppIcon")!;
+        using var icon = new Icon(stream);
+        return (Icon)icon.Clone();
+    });
 
     protected override void SetVisibleCore(bool value)
     {

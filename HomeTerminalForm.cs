@@ -1,0 +1,364 @@
+using System.Data;
+using System.Globalization;
+using System.Text.Json;
+
+namespace Kpos;
+
+internal sealed class HomeTerminalForm : PosForm
+{
+    private readonly TextBox url = new() { PlaceholderText = "https://store-private-ip:17443/" };
+    private readonly TextBox fingerprint = new();
+    private readonly TextBox key = new() { UseSystemPasswordChar = true };
+    private readonly TextBox search = new() { Width = 230, MaxLength = 100, PlaceholderText = "Name, barcode, or code" };
+    private readonly TextBox catalogSearch = new() { Width = 210, MaxLength = 100, PlaceholderText = "Item, brand, or supplier" };
+    private readonly NumericUpDown units = new() { Minimum = 1, Maximum = 999999, Value = 1, Width = 100 };
+    private readonly CheckBox sound = new() { Text = "Order sound", AutoSize = true };
+    private readonly CheckBox refresh = new() { Text = "Auto refresh", AutoSize = true, Checked = true };
+    private readonly Label connection = PosView.Label("● Off", 12, FontStyle.Bold, PosView.Muted);
+    private readonly Label totals = PosView.Label("Connect to check the store.", 14, FontStyle.Bold);
+    private readonly Label status = PosView.Label("Home PC: paste the store's pairing details, then Connect.", 11);
+    private readonly Label pages = PosView.Label("", 11);
+    private readonly DataGridView items = HomeTerminalView.Grid();
+    private readonly DataGridView catalog = HomeTerminalView.Grid();
+    private readonly DataGridView records = HomeTerminalView.Grid();
+    private readonly DataGridView history = HomeTerminalView.Grid();
+    private readonly DataGridView basketGrid = HomeTerminalView.Grid();
+    private readonly TabControl tabs = new() { Dock = DockStyle.Fill };
+    private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 110, Value = DateTime.Today.AddDays(-7) };
+    private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 110 };
+    private readonly ComboBox report = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170 };
+    private readonly Button submit = PosView.Button("Request Order", primary: true, size: 11);
+    private readonly List<(HomeStock Stock, HomeOrderRequest Request)> basket = [];
+    private readonly List<Button> operationButtons = [];
+    private readonly CancellationTokenSource closing = new();
+    private readonly System.Windows.Forms.Timer poll = new() { Interval = 15000 };
+    private readonly Dictionary<Guid, string> knownStatuses = [];
+    private HomeTerminalClient? client;
+    private HomeOrderRequest[]? pending;
+    private string? pendingEndpoint;
+    private bool working;
+    private bool refreshSelectedTab;
+    private bool disposed;
+    private int connectionGeneration;
+    private string? connectedEndpoint;
+    private int inventoryPage;
+    private int catalogPage;
+    private int reportPage;
+    private int orderPage;
+    private int itemCount;
+    private bool catalogMore;
+    private bool reportMore;
+    private bool ordersMore;
+    private string activeSearch = "";
+    private string activeCatalogSearch = "";
+
+    private static string Preferences => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "kPOS", "home-preferences.json");
+
+    public HomeTerminalForm()
+    {
+        Text = "kPOS — Home Terminal";
+        ClientSize = new Size(1140, 780);
+        StartPosition = FormStartPosition.CenterScreen;
+        BackColor = PosView.Canvas;
+        totals.MaximumSize = status.MaximumSize = new Size(1060, 0);
+        history.CellFormatting += (_, e) =>
+        {
+            if(e.Value is DateTimeOffset stamp) { e.Value = stamp.ToLocalTime().ToString("g"); e.FormattingApplied = true; }
+        };
+        var connect = Button("Connect / Refresh", async () =>
+        {
+            var next = new HomeTerminalClient(url.Text, key.Text, fingerprint.Text);
+            client?.Dispose();
+            client = next;
+            connectedEndpoint = new Uri(url.Text.Trim()).AbsoluteUri;
+            inventoryPage = 0;
+            activeSearch = search.Text.Trim();
+            await LoadInventoryAsync();
+            await LoadCurrentAsync();
+        }, true);
+        var disconnect = PosView.Button("Disconnect", size: 11);
+        disconnect.Click += (_, _) => { connectionGeneration++; client?.Dispose(); client = null; connectedEndpoint = null; SetConnection("Off", PosView.Muted); DisableData(); status.Text = "Disconnected. Connect when you want to check the store again."; };
+        var paste = PosView.Button("Paste Pairing Details", size: 11);
+        paste.Click += (_, _) => PastePairing();
+        var pairing = HomeTerminalView.Fields(("Store address", url), ("Certificate SHA256", fingerprint), ("Access key", key));
+        var connectionSetup = PosView.Button("Connection Setup", size: 11);
+        connectionSetup.Click += (_, _) => pairing.Visible = !pairing.Visible;
+        var searchButton = Button("Search", async () => { inventoryPage = 0; activeSearch = search.Text.Trim(); await LoadInventoryAsync(); });
+        search.KeyDown += (_, e) => { if(e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; searchButton.PerformClick(); } };
+        var details = Button("Item Details", () => ViewItemAsync(items));
+        items.CellDoubleClick += async (_, e) => { if(e.RowIndex >= 0) await RunAsync(() => ViewItemAsync(items)); };
+        var add = PosView.Button("Add to Order", size: 11);
+        add.Click += (_, _) => AddToOrder();
+        submit.Click += async (_, _) => await RunAsync(SubmitAsync);
+        operationButtons.Add(submit);
+        var inventory = HomeTerminalView.Layout();
+        HomeTerminalView.Row(inventory, HomeTerminalView.Actions(search, searchButton, details));
+        HomeTerminalView.Row(inventory, items, true);
+        HomeTerminalView.Row(inventory, HomeTerminalView.Actions(
+            Button("Previous", async () => { inventoryPage = Math.Max(0, inventoryPage - 1); await LoadInventoryAsync(); }),
+            Button("Next", async () => { if((inventoryPage + 1) * 100 < itemCount) inventoryPage++; await LoadInventoryAsync(); }), pages));
+        HomeTerminalView.Row(inventory, HomeTerminalView.Actions(PosView.Label("Order units", 11), units, add, submit));
+        Page("Availability", inventory);
+
+        var catalogLayout = HomeTerminalView.Layout();
+        var findCatalog = Button("Search Catalog", async () => { catalogPage = 0; activeCatalogSearch = catalogSearch.Text.Trim(); await LoadCatalogAsync(); });
+        catalogSearch.KeyDown += (_, e) => { if(e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; findCatalog.PerformClick(); } };
+        HomeTerminalView.Row(catalogLayout, HomeTerminalView.Actions(catalogSearch, findCatalog));
+        HomeTerminalView.Row(catalogLayout, HomeTerminalView.Actions(Button("Refresh Catalog", LoadCatalogAsync),
+            Button("Item Details", () => ViewItemAsync(catalog)),
+            Button("Previous", async () => { catalogPage = Math.Max(0, catalogPage - 1); await LoadCatalogAsync(); }),
+            Button("Next", async () => { if(catalogMore) catalogPage++; await LoadCatalogAsync(); }), ExportButton(catalog)));
+        HomeTerminalView.Row(catalogLayout, catalog, true);
+        Page("Catalog", catalogLayout);
+        catalog.CellDoubleClick += async (_, e) => { if(e.RowIndex >= 0) await RunAsync(() => ViewItemAsync(catalog)); };
+
+        report.Items.AddRange(new object[] { new ReportChoice(RecordReport.Sales, "Sales history"), new ReportChoice(RecordReport.Totals, "Daily totals"),
+            new ReportChoice(RecordReport.ItemTotals, "Item sales totals"), new ReportChoice(RecordReport.SaleLines, "Sale items"),
+            new ReportChoice(RecordReport.Closeout, "End of day"), new ReportChoice(RecordReport.Expenses, "Drawer expenses"),
+            new ReportChoice(RecordReport.LotterySales, "Lottery sales"), new ReportChoice(RecordReport.PriceHistory, "Price history") });
+        report.SelectedIndex = 0;
+        var recordLayout = HomeTerminalView.Layout();
+        HomeTerminalView.Row(recordLayout, HomeTerminalView.Actions(report, PosView.Label("From", 11), from, PosView.Label("Through", 11), through,
+            Button("Load Records", async () => { reportPage = 0; await LoadRecordsAsync(); })));
+        HomeTerminalView.Row(recordLayout, records, true);
+        HomeTerminalView.Row(recordLayout, HomeTerminalView.Actions(Button("Previous", async () => { reportPage = Math.Max(0, reportPage - 1); await LoadRecordsAsync(); }),
+            Button("Next", async () => { if(reportMore) reportPage++; await LoadRecordsAsync(); }), Button("Sale Details", SaleDetailsAsync), ExportButton(records)));
+        Page("Records", recordLayout);
+
+        var orderLayout = HomeTerminalView.Layout();
+        var remove = PosView.Button("Remove Item", size: 11);
+        remove.Click += (_, _) =>
+        {
+            if(pending is not null) { status.Text = "Retry the unconfirmed order first."; return; }
+            if(basketGrid.CurrentRow?.Cells["Id"].Value is Guid id) basket.RemoveAll(item => item.Request.Id == id);
+            RefreshBasket();
+        };
+        HomeTerminalView.Row(orderLayout, PosView.Label("Order draft · selling units", 12, FontStyle.Bold));
+        HomeTerminalView.Row(orderLayout, basketGrid, true);
+        HomeTerminalView.Row(orderLayout, HomeTerminalView.Actions(remove, Button("Send Order", SubmitAsync, true), Button("Refresh Status", LoadOrdersAsync)));
+        HomeTerminalView.Row(orderLayout, PosView.Label("Store review is required before requests enter the supplier order draft.", 11));
+        HomeTerminalView.Row(orderLayout, history, true);
+        HomeTerminalView.Row(orderLayout, HomeTerminalView.Actions(Button("Previous", async () => { orderPage = Math.Max(0, orderPage - 1); await LoadOrdersAsync(); }),
+            Button("Next", async () => { if(ordersMore) orderPage++; await LoadOrdersAsync(); }), ExportButton(history)));
+        Page("Orders", orderLayout);
+        RefreshBasket();
+
+        try { if(File.Exists(Preferences)) sound.Checked = JsonSerializer.Deserialize<HomePreferences>(File.ReadAllText(Preferences))?.OrderSound ?? false; }
+        catch(Exception error) when(error is IOException or UnauthorizedAccessException or JsonException) { }
+        sound.CheckedChanged += (_, _) =>
+        {
+            try { Directory.CreateDirectory(Path.GetDirectoryName(Preferences)!); File.WriteAllText(Preferences, JsonSerializer.Serialize(new HomePreferences(sound.Checked))); }
+            catch(Exception error) when(error is IOException or UnauthorizedAccessException) { status.Text = "Sound preference could not be saved."; }
+        };
+        var layout = HomeTerminalView.Layout();
+        HomeTerminalView.Row(layout, PosView.Label("kPOS · Home Terminal", 20, FontStyle.Bold));
+        HomeTerminalView.Row(layout, HomeTerminalView.Actions(connection, connectionSetup, paste, connect, disconnect, refresh, sound));
+        HomeTerminalView.Row(layout, pairing);
+        HomeTerminalView.Row(layout, totals);
+        HomeTerminalView.Row(layout, status);
+        HomeTerminalView.Row(layout, tabs, true);
+        Controls.Add(layout);
+        tabs.SelectedIndexChanged += async (_, _) =>
+        {
+            if(client is null) return;
+            if(working) refreshSelectedTab = true;
+            else await RunAsync(LoadCurrentAsync);
+        };
+        poll.Tick += async (_, _) => { if(refresh.Checked && client is not null && !working) await RunAsync(async () => { await LoadInventoryAsync(); await LoadCurrentAsync(); }); };
+        poll.Start();
+        DisableData();
+    }
+
+    private Button Button(string text, Func<Task> action, bool primary = false)
+    { var button = PosView.Button(text, primary, 11); button.Click += async (_, _) => await RunAsync(action); operationButtons.Add(button); return button; }
+    private void Page(string title, Control body) { var page = new TabPage(title); page.Controls.Add(body); tabs.TabPages.Add(page); }
+    private HomeTerminalClient Connected => client ?? throw new InvalidOperationException("Paste pairing details and connect to the store first.");
+    private void SetConnection(string text, Color color) { connection.Text = "● " + text; connection.ForeColor = color; }
+    private void DisableData() { foreach(var grid in new[] { items, catalog, records, history }) grid.Enabled = false; totals.Text = "Connect to check the store."; }
+
+    private async Task LoadInventoryAsync()
+    {
+        string? selectedBarcode = (items.CurrentRow?.DataBoundItem as HomeStock)?.Barcode;
+        int firstRow = items.FirstDisplayedScrollingRowIndex;
+        var source = Connected;
+        HomeSnapshot snapshot = await source.OverviewAsync(activeSearch, inventoryPage, closing.Token);
+        if(IsDisposed || !ReferenceEquals(source, client)) return;
+        items.DataSource = snapshot.Items;
+        items.Enabled = true;
+        foreach(DataGridViewColumn column in items.Columns) column.Visible = column.Name is "Description" or "Size" or "OnHand" or "UnitPrice" or "Sold";
+        if(items.Columns["OnHand"] is DataGridViewColumn onHand) { onHand.DisplayIndex = 1; onHand.HeaderText = "On hand (units)"; onHand.DefaultCellStyle.NullValue = "Not counted"; }
+        if(items.Columns["UnitPrice"] is DataGridViewColumn price) { price.HeaderText = "Unit price"; price.DefaultCellStyle.Format = "C2"; }
+        if(items.Columns["Description"] is DataGridViewColumn name) { name.HeaderText = "Item"; name.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; name.MinimumWidth = 180; }
+        int selectedRow = Array.FindIndex(snapshot.Items, item => item.Barcode == selectedBarcode);
+        if(selectedRow >= 0)
+        {
+            items.CurrentCell = items.Rows[selectedRow].Cells["Description"];
+            if(firstRow >= 0 && items.DisplayedRowCount(false) > 0)
+                items.FirstDisplayedScrollingRowIndex = Math.Min(firstRow, items.RowCount - 1);
+        }
+        itemCount = snapshot.ItemCount;
+        pages.Text = $"Page {snapshot.Page + 1} of {Math.Max(1, (itemCount + 99) / 100)} · {itemCount} items";
+        totals.Text = $"{snapshot.BusinessDate:yyyy-MM-dd}   Total {Sale.Money(snapshot.Sales.Total)}   Sales {snapshot.Sales.Count}   Refunds {snapshot.Sales.Refunds}   Cash {Sale.Money(snapshot.Sales.Cash)}   Card {Sale.Money(snapshot.Sales.Card)}";
+        status.Text = $"Updated {snapshot.CheckedAt.ToLocalTime():HH:mm:ss}.";
+    }
+
+    private Task LoadCurrentAsync() => tabs.SelectedIndex switch { 1 => LoadCatalogAsync(), 2 => LoadRecordsAsync(), 3 => LoadOrdersAsync(), _ => Task.CompletedTask };
+    private async Task LoadCatalogAsync()
+    {
+        var source = Connected;
+        HomeTable table = await source.ReportAsync(RecordReport.Products, DateOnly.MinValue, DateOnly.MinValue, catalogPage, null, null, closing.Token, activeCatalogSearch);
+        if(IsDisposed || !ReferenceEquals(source, client)) return; catalog.DataSource = table.ToDataTable(); catalog.Enabled = true; catalogMore = table.More;
+        status.Text = $"Catalog · page {catalogPage + 1}.";
+    }
+    private async Task LoadRecordsAsync()
+    {
+        var kind = ((ReportChoice)report.SelectedItem!).Kind;
+        if(from.Value.Date > through.Value.Date) throw new ArgumentException("From must be on or before Through.");
+        var source = Connected;
+        HomeTable table = await source.ReportAsync(kind, DateOnly.FromDateTime(from.Value), DateOnly.FromDateTime(through.Value), reportPage, null, null, closing.Token);
+        if(IsDisposed || !ReferenceEquals(source, client)) return; records.DataSource = table.ToDataTable(); records.Enabled = true; reportMore = table.More;
+        status.Text = $"{report.Text} · page {reportPage + 1}.";
+    }
+    private async Task LoadOrdersAsync()
+    {
+        var source = Connected;
+        HomeOrderHistory result = await source.OrdersAsync(orderPage, closing.Token);
+        if(IsDisposed || !ReferenceEquals(source, client)) return;
+        bool completed = result.Items.Any(order => knownStatuses.GetValueOrDefault(order.Id) == "Pending" && order.Status == "Added to draft");
+        foreach(var order in result.Items) knownStatuses[order.Id] = order.Status;
+        history.DataSource = result.Items; history.Enabled = true; ordersMore = result.More;
+        foreach(string name in new[] { "Id", "Barcode" })
+            if(history.Columns[name] is DataGridViewColumn column) column.Visible = false;
+        if(history.Columns["Product"] is DataGridViewColumn product)
+        { product.HeaderText = "Item"; product.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; product.MinimumWidth = 180; }
+        if(history.Columns["RequestedAt"] is DataGridViewColumn requested) requested.HeaderText = "Requested";
+        status.Text = $"Order requests · page {orderPage + 1}.";
+        if(completed && sound.Checked) System.Media.SystemSounds.Asterisk.Play();
+    }
+    private async Task ViewItemAsync(DataGridView grid)
+    {
+        string? barcode = grid.CurrentRow?.DataBoundItem is HomeStock stock ? stock.Barcode : grid.CurrentRow?.Cells["Barcode"].Value as string;
+        if(barcode is null) throw new InvalidOperationException("Select an item first.");
+        var source = Connected;
+        HomeItemDetails item = await source.ItemAsync(barcode, closing.Token);
+        if(IsDisposed || !ReferenceEquals(source, client)) return;
+        using var window = new CatalogDetailsForm(item); window.ShowDialog(this);
+    }
+    private async Task SaleDetailsAsync()
+    {
+        if(!records.Columns.Contains("Sale ID") || records.CurrentRow?.Cells["Sale ID"].Value is not string id) throw new InvalidOperationException("Load Sales history and select a sale first.");
+        var source = Connected;
+        HomeTable table = await source.ReportAsync(RecordReport.SaleLines, DateOnly.FromDateTime(from.Value), DateOnly.FromDateTime(through.Value), 0, null, id, closing.Token);
+        if(IsDisposed || !ReferenceEquals(source, client)) return;
+        using var window = new PosForm { Text = "Sale Details", ClientSize = new Size(950, 450), StartPosition = FormStartPosition.CenterParent, ShowInTaskbar = false };
+        var grid = HomeTerminalView.Grid(); grid.DataSource = table.ToDataTable(); window.Controls.Add(grid); window.ShowDialog(this);
+    }
+
+    private void AddToOrder()
+    {
+        if(pending is not null) { status.Text = "Retry the unconfirmed order before changing the draft."; return; }
+        if(items.CurrentRow?.DataBoundItem is not HomeStock stock) { status.Text = "Select an item in Availability first."; return; }
+        int index = basket.FindIndex(item => item.Stock.Barcode == stock.Barcode);
+        var request = new HomeOrderRequest(index < 0 ? Guid.NewGuid() : basket[index].Request.Id, stock.Barcode, (long)units.Value);
+        if(index >= 0) basket[index] = (stock, request); else if(basket.Count < 100) basket.Add((stock, request));
+        else { status.Text = "Send this 100-item order before adding more items."; return; }
+        RefreshBasket(); status.Text = $"Order draft: {basket.Count} items. Open Orders to review or send.";
+    }
+    private void RefreshBasket()
+    {
+        basketGrid.DataSource = basket.Select(item => new { item.Request.Id, Item = item.Stock.Description, item.Request.Units }).ToArray();
+        if(basketGrid.Columns["Id"] is DataGridViewColumn id) id.Visible = false;
+    }
+    private async Task SubmitAsync()
+    {
+        _ = Connected;
+        if(pending is null)
+        {
+            if(basket.Count == 0) AddToOrder();
+            if(basket.Count == 0) return;
+            pending = basket.Select(item => item.Request).ToArray(); pendingEndpoint = connectedEndpoint;
+        }
+        if(pendingEndpoint != connectedEndpoint) throw new InvalidOperationException("Reconnect to the original store to confirm the pending order.");
+        HomeOrderReceipt[] receipts;
+        try { receipts = await Connected.SendBatchAsync(pending, closing.Token); }
+        catch(HttpRequestException error) when(error.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Conflict)
+        { pending = null; submit.Text = "Request Order"; throw new InvalidOperationException(error.Message); }
+        if(IsDisposed) return;
+        pending = null; basket.Clear(); RefreshBasket(); submit.Text = "Request Order";
+        foreach(var receipt in receipts) knownStatuses[receipt.Id] = receipt.Status;
+        status.Text = $"Order received by store: {receipts.Length} items. Waiting for store review.";
+        if(sound.Checked) System.Media.SystemSounds.Asterisk.Play();
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        if(working) return;
+        int generation = connectionGeneration;
+        string previousState = connection.Text;
+        Color previousColor = connection.ForeColor;
+        working = true; SetConnection("Checking…", Color.DarkGoldenrod);
+        foreach(var button in operationButtons) button.Enabled = false;
+        try { await action(); if(!IsDisposed && client is not null) SetConnection("Connected", Color.DarkGreen); }
+        catch(Exception error) when(error is ArgumentException or InvalidOperationException)
+        {
+            if(!IsDisposed && generation == connectionGeneration)
+            { connection.Text = previousState; connection.ForeColor = previousColor; status.Text = error.Message; }
+        }
+        catch(Exception error) when(error is HttpRequestException or OperationCanceledException or IOException or JsonException)
+        {
+            if(!IsDisposed && generation == connectionGeneration)
+            {
+                SetConnection(client is null ? "Off" : "Disconnected", client is null ? PosView.Muted : PosView.Error);
+                DisableData();
+                status.Text = error.Message + (pending is null ? "" : " Order unconfirmed. Retry sends the same request.");
+                if(pending is not null) submit.Text = "Retry Request";
+            }
+        }
+        finally
+        {
+            working = false;
+            if(!IsDisposed) foreach(var button in operationButtons) button.Enabled = true;
+            if(refreshSelectedTab && !IsDisposed && client is not null)
+            { refreshSelectedTab = false; await RunAsync(LoadCurrentAsync); }
+        }
+    }
+
+    private void PastePairing()
+    {
+        foreach(string line in Clipboard.GetText().Split(['\r','\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            if(line.StartsWith("Store address: ")) url.Text = line[15..].Trim();
+            if(line.StartsWith("Certificate SHA256: ")) fingerprint.Text = line[20..].Trim();
+            if(line.StartsWith("Access key: ")) key.Text = line[12..].Trim();
+        }
+        status.Text = "Pairing details pasted. Choose Connect / Refresh.";
+    }
+    private Button ExportButton(DataGridView grid)
+    {
+        var button = PosView.Button("Export View", size: 11);
+        button.Click += (_, _) =>
+        {
+            if(!grid.Enabled || grid.Rows.Count == 0) return;
+            using var picker = new SaveFileDialog { Filter = "CSV files (*.csv)|*.csv", FileName = "kPOS-home-view.csv" };
+            if(picker.ShowDialog(this) != DialogResult.OK) return;
+            try
+            {
+                var columns = grid.Columns.Cast<DataGridViewColumn>().Where(column => column.Visible).ToArray();
+                var lines = new List<string> { string.Join(',', columns.Select(column => Csv(column.HeaderText))) };
+                lines.AddRange(grid.Rows.Cast<DataGridViewRow>().Select(row => string.Join(',', columns.Select(column => Csv(Convert.ToString(row.Cells[column.Index].Value, CultureInfo.InvariantCulture) ?? "")))));
+                File.WriteAllLines(picker.FileName, lines);
+            }
+            catch(Exception error) when(error is IOException or UnauthorizedAccessException) { status.Text = error.Message; }
+        };
+        return button;
+        static string Csv(string value) => "\"" + (value.Length > 0 && "=+-@".Contains(value[0]) ? "'" : "") + value.Replace("\"", "\"\"") + "\"";
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if(disposing && !disposed) { disposed = true; poll.Dispose(); closing.Cancel(); client?.Dispose(); closing.Dispose(); }
+        base.Dispose(disposing);
+    }
+    private sealed record ReportChoice(RecordReport Kind, string Name) { public override string ToString() => Name; }
+    private sealed record HomePreferences(bool OrderSound);
+}

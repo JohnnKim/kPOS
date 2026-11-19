@@ -12,7 +12,7 @@ internal enum RecordReport { Totals, Sales, SaleLines, ItemTotals, PriceHistory,
 
 internal sealed partial class RegisterData
 {
-    public const int SchemaVersion = 11;
+    public const int SchemaVersion = 12;
     public const int DefaultChangeSeconds = 8;
     public const int MaximumChangeSeconds = 120;
     private const string HasSoldItems = """
@@ -111,9 +111,9 @@ internal sealed partial class RegisterData
     }
 
     public DataTable ReadReport(RecordReport report, DateOnly start, DateOnly end, string? barcode = null,
-        string? saleId = null, int limit = 0, long offset = 0)
+        string? saleId = null, int limit = 0, long offset = 0, string? search = null)
     {
-        using var command = ReportCommand(report, start, end, barcode, saleId, limit, offset);
+        using var command = ReportCommand(report, start, end, barcode, saleId, limit, offset, search: search);
         using var reader = command.ExecuteReader();
         var table = new DataTable { Locale = CultureInfo.InvariantCulture };
         table.Load(reader);
@@ -121,7 +121,7 @@ internal sealed partial class RegisterData
     }
 
     private SqliteCommand ReportCommand(RecordReport report, DateOnly start, DateOnly end, string? barcode = null,
-        string? saleId = null, int limit = 0, long offset = 0, SqliteTransaction? transaction = null)
+        string? saleId = null, int limit = 0, long offset = 0, SqliteTransaction? transaction = null, string? search = null)
     {
         string sql = report switch
         {
@@ -197,10 +197,20 @@ internal sealed partial class RegisterData
                 ORDER BY business_date DESC, recorded_at DESC, id DESC
                 """,
             RecordReport.Products => """
-                SELECT barcode AS Barcode, code AS Code, description AS Product, size AS Size,
-                       unit_cents / 100.0 AS "Unit price", units_per_case AS "Units per case",
-                       CASE WHEN units_per_case > 1 THEN case_cents / 100.0 END AS "Case price", taxable AS Taxable
-                FROM products WHERE archived = 0 ORDER BY barcode
+                SELECT p.barcode AS Barcode, p.code AS Code, p.description AS Product, p.size AS Size,
+                       p.unit_cents / 100.0 AS "Unit price", p.units_per_case AS "Units per case",
+                       CASE WHEN p.units_per_case > 1 THEN p.case_cents / 100.0 END AS "Case price", p.taxable AS Taxable,
+                       coalesce(d.brand,'') AS Brand, coalesce(d.product_type,'') AS Type,
+                       coalesce(s.name,'') AS Supplier, coalesce(d.vendor_code,'') AS "Supplier item code",
+                       d.unit_cost_cents / 100.0 AS "Purchase unit cost"
+                FROM products p LEFT JOIN product_details d ON d.barcode=p.barcode
+                LEFT JOIN distributor_items i ON i.barcode=p.barcode
+                LEFT JOIN purchase_distributors s ON s.id=i.distributor_id
+                WHERE p.archived = 0 AND ($search IS NULL OR
+                    instr(lower(p.description), lower($search)) > 0 OR instr(lower(p.barcode), lower($search)) > 0 OR
+                    instr(lower(p.code), lower($search)) > 0 OR instr(lower(coalesce(d.brand,'')), lower($search)) > 0 OR
+                    instr(lower(coalesce(s.name,'')), lower($search)) > 0 OR instr(lower(coalesce(d.vendor_code,'')), lower($search)) > 0)
+                ORDER BY p.barcode
                 """,
             _ => throw new ArgumentOutOfRangeException(nameof(report))
         };
@@ -209,6 +219,7 @@ internal sealed partial class RegisterData
         command.Parameters.AddWithValue("$start", Day(start));
         command.Parameters.AddWithValue("$end", Day(end));
         command.Parameters.AddWithValue("$barcode", (object?)barcode ?? DBNull.Value);
+        command.Parameters.AddWithValue("$search", string.IsNullOrWhiteSpace(search) ? DBNull.Value : search.Trim());
         command.Parameters.AddWithValue("$sale", (object?)saleId ?? DBNull.Value);
         command.Parameters.AddWithValue("$lotteryOnly", report == RecordReport.LotterySales);
         if (limit > 0)

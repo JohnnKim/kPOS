@@ -49,7 +49,7 @@ internal sealed class RegisterForm : PosForm
     private readonly System.Windows.Forms.Timer legalAgeTimer = new() { Interval = 30000 };
     private readonly Label discounts = CreateAmountLabel();
     private readonly Label tax = CreateAmountLabel();
-    private readonly Label totalDue = PosView.BannerAmount("", 58);
+    private readonly Label totalDue = PosView.BannerAmount("", 54);
     private readonly Label totalCaption = PosView.Label("TOTAL DUE", 14, FontStyle.Bold, Color.White);
     private readonly Panel totalBanner = new()
     {
@@ -94,8 +94,8 @@ internal sealed class RegisterForm : PosForm
             Dock = DockStyle.Fill, Padding = new Padding(17, 11, 17, 14),
             ColumnCount = 2, RowCount = 4
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 68));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -507,7 +507,7 @@ internal sealed class RegisterForm : PosForm
             MessageBoxDefaultButton.Button1);
         if (choice == DialogResult.Yes)
         {
-            using var editor = new ProductEditorForm(code, product => data.SaveProduct(product));
+            using var editor = new ProductEditorForm(code, product => data.SaveProduct(product), data: data);
             if (editor.ShowDialog(this) == DialogResult.OK && editor.SavedProduct is Product added)
             {
                 AddItem(added);

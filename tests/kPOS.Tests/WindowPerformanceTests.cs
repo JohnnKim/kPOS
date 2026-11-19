@@ -16,14 +16,16 @@ public sealed class WindowPerformanceTests
         (string Name, Func<PosForm> Create)[] factories =
         [ ("Register", () => new RegisterForm(data, folders)), ("End of day", () => new CloseoutForm(data, folders)),
           ("Backup", () => new BackupOptionsForm()), ("Orders", () => new OrderForm(data)),
-          ("Reports", () => new RecordsForm(data, folders)) ];
+          ("Reports", () => new RecordsForm(data, folders)), ("Home", () => new HomeTerminalForm()),
+          ("Catalog", () => new ProductListForm(data.ListProducts(), false, data: data)),
+          ("Item Details", () => new CatalogDetailsForm(data, data.ListProducts()[0])) ];
         foreach (var (name, create) in factories)
         {
             var timer = Stopwatch.StartNew();
             using PosForm form = create();
             long construction = timer.ElapsedMilliseconds;
             int prematureHandles = Descendants(form).Count(control => control.IsHandleCreated);
-            Assert.AreEqual(0, prematureHandles, $"{name} must not create native windows during construction.");
+            Assert.AreEqual(0, prematureHandles, $"{name} must not create native windows during construction: " + string.Join(", ", Descendants(form).Where(control => control.IsHandleCreated).Select(control => control.GetType().Name + " " + control.AccessibleName)));
             form.ShowInTaskbar = false;
             form.Opacity = 0;
             form.Show();

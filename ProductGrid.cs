@@ -83,7 +83,7 @@ internal sealed class ProductGrid : DataGridView, IMessageFilter
             FirstDisplayedScrollingColumnIndex = Columns.Cast<DataGridViewColumn>()
                 .Where(column => column.Visible && !column.Frozen).OrderBy(column => column.DisplayIndex).First().Index;
         }
-        HorizontalScrollingOffset = 0;
+        if (IsHandleCreated) HorizontalScrollingOffset = 0;
     }
 
     private bool HandleWheel(int message, IntPtr parameters)

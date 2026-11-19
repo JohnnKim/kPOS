@@ -1,12 +1,14 @@
-# Home terminal foundation and client options
+# Home terminal and client options
 
-Preview.23 · November 18, 2026
+Preview.27 · November 18, 2026
 
 ## Implemented in this preview
 
 The store can host an optional HTTPS API while its register stays open. A separate home window connects to that host to retrieve the store's current business-day totals, cash/card totals, sale/refund counts, and inventory. Stock uses the same opening counts, deliveries, case conversions, sales, and returns as the register. Items without a starting count display **Not counted**. Search results are paginated at 100 items, with horizontal and vertical table scrolling.
 
-An operator at home can select an item and request a quantity in **selling units**, matching the existing Orders worksheet. Requests are stored in the store database as Pending. At the store, **Add to Order Draft** adds that quantity to the existing supplier order draft; **Decline Request** leaves the draft unchanged. Store approval is transactional and can only add a request once. Retrying an unconfirmed request in the home window reuses its ID, preventing duplicate submission after a lost response.
+Availability prioritizes current on-hand counts. Catalog shows scrollable product, pack, pricing, brand, department, supplier and purchase-cost fields; Item Details also shows supplier contacts, counts/deliveries and price history. Unentered metadata stays blank or **Not set**. Records supports dated sales, sale items, daily totals, closeouts, expenses, lottery and price history, with paging and CSV export of the displayed page.
+
+An operator at home can add up to 100 items to an order draft in **selling units**, review/remove lines in Orders, and send the whole request together. Requests are stored atomically in the store database as Pending. At the store, **Add to Order Draft** adds that quantity to the existing supplier order draft; **Decline Request** leaves the draft unchanged. Approval can only add a request once. Retrying an unconfirmed request reuses the same payload and IDs. Orders shows pending, accepted and declined requests; optional **Order sound** plays after submission and when a pending request is observed entering the store draft.
 
 Assumption for this foundation: “orders” means supplier purchase requests. Confirm whether the client instead means customer orders, transfers, or ringing sales from home before expanding the workflow. This preview does not transmit orders to suppliers, provide a customer storefront, or process payments remotely.
 
@@ -16,14 +18,14 @@ Assumption for this foundation: “orders” means supplier purchase requests. C
 2. Keep **127.0.0.1** selected for a same-PC trial. Choose **Start Host**.
 3. Copy the pairing details: store address, certificate SHA256, and access key.
 4. Download the optional **Start-Home-Terminal.cmd** release asset beside your extracted `kPOS.exe` and run it, run `kPOS.exe --home` directly, or choose **Records > Connect to Store** (Ctrl+Shift+J). This window can run without installing a register or creating a home copy of the store database. The update ZIP continues to contain only `kPOS.exe` for compatibility with existing installers; the launcher and this guide are separate release assets.
-5. Paste the three fields and choose **Connect / Refresh**. Search inventory, select an item, enter units, and choose **Request Order**.
+5. Choose **Paste Pairing Details**, then **Connect / Refresh**. Search inventory, select an item, enter units, and choose **Request Order**, or build a draft with **Add to Order** and review it in Orders.
 6. At the store, choose **Refresh Requests**, select the request, then **Add to Order Draft**. Open Orders to continue the normal purchase-order process. Reopen Orders if it was already open so its displayed draft reloads.
 
 For another PC on the same store network, select the store PC's private IPv4 address. For access from home, first establish a private VPN and select its IPv4 address. Tailscale's 100.64.0.0/10 addresses are accepted alongside RFC1918 private addresses. Configure access only between the intended devices, and scope a Windows Firewall inbound TCP rule to those devices and the selected port (default 17443). The app does not alter the firewall, configure a VPN, or forward router ports. Do not publish this preview API directly to the internet.
 
 Pairing verifies the exact server certificate rather than requiring a browser certificate exception or a system-wide trust change. HTTPS supports TLS 1.2 on Windows 10. The host binds only the selected address, rejects public/wildcard bindings, authenticates every endpoint, limits request sizes/connections, and does not log credentials. API calls use their own SQLite connections; the cashier connection stays on the UI thread. Stop/close the host to revoke access. Each start generates a new certificate and access key; credentials are held in memory, not saved to disk by kPOS. Certificates last 30 days; restart and re-pair for longer trials.
 
-The host is opt-in and does not run as a background service. Keep the store PC awake, the register running, and the host window open. Sales/stock refresh is manual with an explicit last-checked time. Connection failures replace the totals with a disconnected message and disable the stock table. A request retry retains the same payload; use **Retry Request** before submitting another item. If closing after an unconfirmed request, check the store's pending requests before resubmitting from a new window.
+The host is opt-in and does not run as a background service. Keep the store PC awake, the register running, and the host window open. Closing its window or the register asks before stopping hosting, then stops it asynchronously. Green means connected, amber means checking, red means disconnected and gray means off. **Auto refresh** checks every 15 seconds; it can be turned off. Failures replace totals with a disconnected message and disable remote tables. A request retry retains the same payload; use **Retry Request** before changing the draft. If closing after an unconfirmed request, check the store's pending requests before resubmitting from a new window. Only the sound preference is saved locally; pairing credentials remain in memory.
 
 ## Options to discuss with the client
 

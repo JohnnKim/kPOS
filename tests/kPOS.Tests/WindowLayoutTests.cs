@@ -36,7 +36,7 @@ public sealed class WindowLayoutTests
         Product[] products = Enumerable.Range(0, 240).Select(index => new Product(
             $"ITEM-{index}", $"000000{index:D6}", new string('W', 100) + $" Product {index}",
             "12 x 750 mL", 123.45m, 12, 1234.50m)).ToArray();
-        using var window = new ProductListForm(products, false, data: data);
+        using var window = new ProductListForm(products, true, data: data);
         window.Opacity = 0;
         window.ShowInTaskbar = false;
         window.Show();
@@ -79,6 +79,8 @@ public sealed class WindowLayoutTests
             () => new ProductListForm(Product.TrainingCatalog, false, data: data, folders: folders),
             () => new ProductListForm(Product.TrainingCatalog, true, data: data, folders: folders, allowAddCode: true),
             () => new ProductEditorForm(product.Barcode, _ => null, product),
+            () => new ProductEditorForm(product.Barcode, _ => null, product, data),
+            () => new CatalogDetailsForm(data, product),
             () => new CatalogImportForm(data),
             () => new NumberEntryForm("Quantity", "Quantity", 1, 1, 9999, 0, _ => ""),
             () => new SaleLineEditorForm(sale.Lines[0]),

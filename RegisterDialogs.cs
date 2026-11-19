@@ -10,6 +10,7 @@ internal sealed class ProductListForm : PosForm
     private IReadOnlyList<Product> products;
     private Product[] matches = [];
     private IReadOnlyDictionary<string, long?> stock = new Dictionary<string, long?>();
+    private IReadOnlyDictionary<string, CatalogDetails> catalog = new Dictionary<string, CatalogDetails>();
     private readonly CheckBox deleted = new() { Text = "Show &Deleted", AutoSize = true };
     private readonly Button delete = PosView.Button("&Delete Product", size: 10);
     private readonly RegisterData? data;
@@ -86,7 +87,7 @@ internal sealed class ProductListForm : PosForm
             var create = PosView.Button("&Add Item", primary: true, size: 10);
             create.Click += (_, _) =>
             {
-                using var editor = new ProductEditorForm("", product => data.SaveProduct(product));
+                using var editor = new ProductEditorForm("", product => data.SaveProduct(product), data: data);
                 if (editor.ShowDialog(this) == DialogResult.OK && editor.SavedProduct is Product added)
                 {
                     search.Clear();
@@ -100,6 +101,13 @@ internal sealed class ProductListForm : PosForm
             var edit = PosView.Button("&Edit Product", size: 10);
             edit.Click += (_, _) => OpenSelectedProduct();
             footer.Controls.Add(edit);
+            var breakdown = PosView.Button("Full &Details", size: 10);
+            breakdown.Click += (_, _) =>
+            {
+                if (CurrentProduct is Product product)
+                { using var details = new CatalogDetailsForm(data, product); details.ShowDialog(this); }
+            };
+            footer.Controls.Add(breakdown);
             var history = PosView.Button("Item &History", size: 10);
             history.Click += (_, _) => ShowItemHistory();
             footer.Controls.Add(history);
@@ -121,6 +129,7 @@ internal sealed class ProductListForm : PosForm
                 delete.Text = deleted.Checked ? "&Restore Product" : "&Delete Product";
                 create.Enabled = edit.Enabled = !deleted.Checked;
                 image.Enabled = !deleted.Checked;
+                breakdown.Enabled = !deleted.Checked;
                 ReloadProducts();
             };
         }
@@ -150,7 +159,7 @@ internal sealed class ProductListForm : PosForm
         PosView.Grid(grid, 12, 38);
         grid.Columns.Add("Code", "Item Code");
         grid.Columns.Add("Barcode", "Barcode");
-        grid.Columns.Add("Description", "Name");
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Description", HeaderText = "Name", MinimumWidth = 200 });
         grid.Columns.Add("Size", "Size / Pack");
         grid.Columns.Add("Price", "Unit Price");
         grid.Columns.Add("CasePrice", "Case Price");
@@ -183,10 +192,22 @@ internal sealed class ProductListForm : PosForm
         grid.Columns["Barcode"]!.Visible = false;
         if (grid.Columns["OnHand"] is DataGridViewColumn onHand)
             onHand.DisplayIndex = 3;
+        if (selectItem)
+        {
+            grid.Columns.Add("Availability", "Availability");
+            grid.Columns["Availability"]!.Width = 120;
+            grid.Columns["Availability"]!.DisplayIndex = 4;
+            grid.Columns["CasePrice"]!.Visible = false;
+        }
+        else
+        {
+            foreach (var (name, caption) in new[] { ("Brand", "Brand"), ("Type", "Type"), ("Supplier", "Supplier"),
+                ("VendorCode", "Supplier item code"), ("UnitCost", "Unit cost"), ("CaseUnits", "Units per case"), ("Taxable", "Taxable") })
+            { grid.Columns.Add(name, caption); grid.Columns[name]!.Width = name == "Supplier" ? 160 : 120; }
+        }
         grid.Columns["Description"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
-        grid.Columns["Description"]!.MinimumWidth = 200;
         grid.Columns["Description"]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
-        grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders;
+        grid.HandleCreated += (_, _) => grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders;
         grid.ScrollBars = ScrollBars.Both;
         grid.Columns["Size"]!.Width = 121;
         grid.Columns["Price"]!.Width = 111;
@@ -206,6 +227,19 @@ internal sealed class ProductListForm : PosForm
             if ((uint)e.RowIndex >= (uint)matches.Length)
                 return;
             Product item = matches[e.RowIndex];
+            if (e.ColumnIndex >= (data is null ? 6 : 7))
+            {
+                CatalogDetails meta = catalog.GetValueOrDefault(item.Barcode) ?? new();
+                long? count = stock.GetValueOrDefault(item.Barcode);
+                e.Value = grid.Columns[e.ColumnIndex].Name switch
+                {
+                    "Availability" => count is null ? "Not counted" : count > 0 ? "In stock" : "Out of stock",
+                    "Brand" => meta.Brand, "Type" => meta.Type, "Supplier" => meta.Supplier, "VendorCode" => meta.VendorCode,
+                    "UnitCost" => meta.UnitCost is decimal price ? Sale.Money(price) : "Not set",
+                    "CaseUnits" => item.UnitsPerCase, "Taxable" => item.IsTaxable ? "Yes" : "No", _ => null
+                };
+                return;
+            }
             e.Value = e.ColumnIndex switch
             {
                 0 => item.Code, 1 => item.Barcode, 2 => item.Description, 3 => item.Size,
@@ -276,7 +310,7 @@ internal sealed class ProductListForm : PosForm
         }).ToArray();
 
         grid.RowCount = matches.Length;
-        if (matches.Length > 0)
+        if (matches.Length > 0 && grid.IsHandleCreated)
             grid.CurrentCell = grid.Rows[0].Cells["Description"];
         grid.Invalidate();
         grid.ResetScrollPosition();
@@ -300,6 +334,7 @@ internal sealed class ProductListForm : PosForm
         DateOnly today = data.CurrentBusinessDate();
         stock = data.ReadOrderItems(today, today, today).ToDictionary(item => item.Product.Barcode, item => item.OnHand,
             StringComparer.OrdinalIgnoreCase);
+        if (!selectItem) catalog = data.ReadCatalogDetails();
     }
 
     private void ReloadProducts()
@@ -352,11 +387,12 @@ internal sealed class ProductListForm : PosForm
         }
         else if (data is not null && !deleted.Checked)
         {
-            using var editor = new ProductEditorForm(product.Barcode, updated => data.SaveProduct(updated, product), product);
+            using var editor = new ProductEditorForm(product.Barcode, updated => data.SaveProduct(updated, product), product, data);
             if (editor.ShowDialog(this) == DialogResult.OK && editor.SavedProduct is Product updated)
             {
                 products = products.Select(item => item == product ? updated : item)
                     .OrderBy(item => item.Description, StringComparer.OrdinalIgnoreCase).ToArray();
+                LoadStock();
                 Filter();
             }
         }

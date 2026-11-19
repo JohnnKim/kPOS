@@ -14,7 +14,8 @@ using Microsoft.Extensions.Logging;
 namespace Kpos;
 
 internal sealed record HomeStock(string Barcode, string Code, string Description, string Size,
-    long? OnHand, long Sold, string Supplier);
+    long? OnHand, long Sold, string Supplier, decimal UnitPrice = 0, int UnitsPerCase = 0, decimal CasePrice = 0, bool Taxable = true,
+    long Draft = 0);
 internal sealed record HomeSnapshot(DateOnly BusinessDate, DateTimeOffset CheckedAt, DaySales Sales,
     HomeStock[] Items, int ItemCount, int Page);
 
@@ -68,7 +69,7 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
         builder.WebHost.ConfigureKestrel(options =>
         {
             options.AddServerHeader = false;
-            options.Limits.MaxRequestBodySize = 4096;
+            options.Limits.MaxRequestBodySize = 32768;
             options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10);
             options.Limits.MaxConcurrentConnections = 16;
             options.Listen(address, port, listen =>
@@ -106,7 +107,8 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
                 item.Product.Barcode.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                 item.Product.Code.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
             HomeStock[] stock = items.Skip(index * 100).Take(100).Select(item => new HomeStock(item.Product.Barcode,
-                item.Product.Code, item.Product.Description, item.Product.Size, item.OnHand, item.Sold, item.DistributorName)).ToArray();
+                item.Product.Code, item.Product.Description, item.Product.Size, item.OnHand, item.Sold, item.DistributorName,
+                item.Product.UnitPrice, item.Product.UnitsPerCase, item.Product.CasePrice, item.Product.IsTaxable, item.Draft)).ToArray();
             return Results.Ok(new HomeSnapshot(day, DateTimeOffset.UtcNow, data.GetDaySales(day), stock, items.Length, index));
         });
         app.MapPost("/api/v1/order-requests", (HomeOrderRequest order) =>
@@ -116,6 +118,7 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
             catch (ArgumentException error) { return Results.BadRequest(error.Message); }
             catch (InvalidOperationException error) { return Results.Conflict(error.Message); }
         });
+        HomeManagement.Map(app, databasePath);
         try
         {
             await app.StartAsync(cancellationToken).ConfigureAwait(false);
@@ -181,4 +184,27 @@ internal sealed class HomeTerminalClient : IDisposable
     }
 
     public void Dispose() => http.Dispose();
+
+    private async Task<T> ReadAsync<T>(string path, CancellationToken token)
+    {
+        using var response = await http.GetAsync(path, token).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<T>(token).ConfigureAwait(false) ?? throw new IOException("The store returned an empty response.");
+    }
+    public Task<HomeItemDetails> ItemAsync(string barcode, CancellationToken token) =>
+        ReadAsync<HomeItemDetails>("api/v1/item?barcode=" + Uri.EscapeDataString(barcode), token);
+    public Task<HomeOrderHistory> OrdersAsync(int page, CancellationToken token) =>
+        ReadAsync<HomeOrderHistory>("api/v1/order-requests?page=" + page, token);
+    public Task<HomeTable> ReportAsync(RecordReport kind, DateOnly start, DateOnly end, int page, string? barcode, string? saleId, CancellationToken token, string? search = null) =>
+        ReadAsync<HomeTable>($"api/v1/reports?kind={kind}&start={start:yyyy-MM-dd}&end={end:yyyy-MM-dd}&page={page}" +
+            (barcode is null ? "" : "&barcode=" + Uri.EscapeDataString(barcode)) + (saleId is null ? "" : "&saleId=" + Uri.EscapeDataString(saleId)) +
+            (search is null ? "" : "&search=" + Uri.EscapeDataString(search)), token);
+    public async Task<HomeOrderReceipt[]> SendBatchAsync(HomeOrderRequest[] requests, CancellationToken token)
+    {
+        using var response = await http.PostAsJsonAsync("api/v1/order-requests/batch", requests, token).ConfigureAwait(false);
+        if (response.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Conflict)
+            throw new HttpRequestException("Store: " + (await response.Content.ReadAsStringAsync(token).ConfigureAwait(false)).Trim('"'), null, response.StatusCode);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<HomeOrderReceipt[]>(token).ConfigureAwait(false) ?? throw new IOException("The store returned an empty response.");
+    }
 }

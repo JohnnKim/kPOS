@@ -11,7 +11,7 @@ public sealed class SetupAndLayoutChangesTests
         using var data = new RegisterData(":memory:");
         Assert.IsNull(data.SaveProduct(new("", "901234567890", "Barcode only", "Unit", 5, 0, 0)));
         Assert.AreEqual("901234567890", data.FindProduct("901234567890")!.Code);
-        using var window = new ProductListForm(data.ListProducts(), false, data: data) { Opacity = 0, ShowInTaskbar = false };
+        using var window = new ProductListForm(data.ListProducts(), true, data: data) { Opacity = 0, ShowInTaskbar = false };
         window.Show();
         Application.DoEvents();
         var grid = Descendants(window).OfType<DataGridView>().Single();

@@ -7,7 +7,7 @@ namespace Kpos;
 
 internal static class HomeTerminalView
 {
-    internal static DataGridView Grid() => new()
+    internal static DataGridView Grid() => new ProductGrid()
     {
         Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
         AutoGenerateColumns = true, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells,
@@ -71,6 +71,11 @@ internal sealed class HomeHostForm : PosForm
     private readonly DataGridView orders = HomeTerminalView.Grid();
     private readonly Button toggle = PosView.Button("Start Host", primary: true, size: 11);
     private bool resourcesDisposed;
+    private bool closeApproved;
+    private bool stoppingForClose;
+    private Task? transition;
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Func<bool>? ConfirmStop { get; set; }
 
     public HomeHostForm(RegisterData data)
     {
@@ -88,7 +93,12 @@ internal sealed class HomeHostForm : PosForm
             .Select(ip => ip.ToString()).Distinct().Where(ip => ip != "127.0.0.1"))
             address.Items.Add(ip);
         address.SelectedIndex = 0;
-        toggle.Click += async (_, _) => await ToggleAsync();
+        toggle.Click += async (_, _) =>
+        {
+            if (host is not null && !AskToStop()) return;
+            transition = ToggleAsync();
+            await transition;
+        };
         var copy = PosView.Button("Copy Pairing Details", size: 11);
         copy.Click += (_, _) =>
         {
@@ -103,7 +113,7 @@ internal sealed class HomeHostForm : PosForm
         decline.Click += (_, _) => Review(false);
         var layout = HomeTerminalView.Layout();
         HomeTerminalView.Row(layout, PosView.Label("Home Terminal", 20, FontStyle.Bold));
-        HomeTerminalView.Row(layout, PosView.Label("Keep this window and kPOS open. For home access, use a private VPN address.", 11));
+        HomeTerminalView.Row(layout, PosView.Label("Store PC: choose network/VPN address → Start Host → Copy Pairing Details to the home PC.", 11));
         HomeTerminalView.Row(layout, HomeTerminalView.Fields(("Bind address", address), ("Port", port),
             ("Store address", url), ("Certificate SHA256", fingerprint), ("Access key", key)));
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(toggle, copy));
@@ -129,7 +139,8 @@ internal sealed class HomeHostForm : PosForm
                 url.Text = host.Url;
                 fingerprint.Text = host.Fingerprint;
                 key.Text = host.Token;
-                status.Text = "Running. Pair the home terminal with these three values. Starting again creates a new key and certificate.";
+                status.Text = "● Hosting · Copy pairing details to the home PC. Keep this window open.";
+                status.ForeColor = Color.DarkGreen;
                 address.Enabled = port.Enabled = false;
                 toggle.Text = "Stop Host";
             }
@@ -141,6 +152,7 @@ internal sealed class HomeHostForm : PosForm
                 if (IsDisposed) return;
                 url.Clear(); fingerprint.Clear(); key.Clear();
                 status.Text = "Stopped. Home terminals are disconnected.";
+                status.ForeColor = PosView.Muted;
                 address.Enabled = port.Enabled = true;
                 toggle.Text = "Start Host";
             }
@@ -148,9 +160,51 @@ internal sealed class HomeHostForm : PosForm
         catch (Exception error) when (error is IOException or InvalidOperationException or ArgumentException or
             System.Net.Sockets.SocketException or OperationCanceledException or CryptographicException or SqliteException)
         {
-            if (!IsDisposed) status.Text = "Host could not start or stop: " + error.Message;
+            if (!IsDisposed) { status.Text = "Host could not start or stop: " + error.Message; status.ForeColor = PosView.Error; }
         }
-        finally { if (!IsDisposed) toggle.Enabled = true; }
+        finally { if (!IsDisposed && !stoppingForClose) toggle.Enabled = true; }
+    }
+
+    private bool AskToStop() => ConfirmStop?.Invoke() ?? MessageBox.Show(this,
+        "Stop hosting and disconnect home terminals?", "Stop Host", MessageBoxButtons.YesNo,
+        MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) == DialogResult.Yes;
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (!closeApproved && (host is not null || transition is { IsCompleted: false }))
+        {
+            e.Cancel = true;
+            if (!stoppingForClose && AskToStop())
+            {
+                stoppingForClose = true;
+                Form? ownerToClose = e.CloseReason == CloseReason.FormOwnerClosing ? Owner : null;
+                _ = StopAndCloseAsync(ownerToClose);
+            }
+        }
+        base.OnFormClosing(e);
+    }
+
+    private async Task StopAndCloseAsync(Form? ownerToClose)
+    {
+        toggle.Enabled = false;
+        status.Text = "● Stopping host…";
+        status.ForeColor = Color.DarkGoldenrod;
+        closing.Cancel();
+        try
+        {
+            if (transition is not null) await transition;
+            HomeTerminalHost? stopped = host;
+            host = null;
+            if (stopped is not null) await stopped.DisposeAsync();
+        }
+        catch (Exception error) when (error is IOException or OperationCanceledException or InvalidOperationException)
+        { status.Text = error.Message; }
+        finally
+        {
+            closeApproved = true;
+            if (!IsDisposed) Close();
+            if (ownerToClose is { IsDisposed: false }) ownerToClose.Close();
+        }
     }
 
     private void RefreshOrders()
@@ -176,132 +230,11 @@ internal sealed class HomeHostForm : PosForm
         {
             resourcesDisposed = true;
             closing.Cancel();
-            host?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            if (host is HomeTerminalHost remaining)
+                _ = Task.Run(async () => await remaining.DisposeAsync());
             host = null;
             closing.Dispose();
         }
-        base.Dispose(disposing);
-    }
-}
-
-internal sealed class HomeTerminalForm : PosForm
-{
-    private readonly TextBox url = new() { PlaceholderText = "https://store-private-ip:17443/" };
-    private readonly TextBox fingerprint = new();
-    private readonly TextBox key = new() { UseSystemPasswordChar = true };
-    private readonly TextBox search = new() { Width = 260, MaxLength = 100, PlaceholderText = "Barcode, code, or item name" };
-    private readonly NumericUpDown units = new() { Minimum = 1, Maximum = 999999, Value = 1, Width = 100 };
-    private readonly Label totals = PosView.Label("Connect to view the store's current business day.", 15, FontStyle.Bold);
-    private readonly Label status = PosView.Label("Disconnected. Enter the store's pairing details.", 11);
-    private readonly Label pages = PosView.Label("", 11);
-    private readonly DataGridView items = HomeTerminalView.Grid();
-    private readonly Button submit = PosView.Button("Request Order", size: 11);
-    private readonly CancellationTokenSource closing = new();
-    private HomeTerminalClient? client;
-    private HomeOrderRequest? pending;
-    private bool working;
-    private int page;
-    private int itemCount;
-    private string activeSearch = "";
-    private bool resourcesDisposed;
-
-    public HomeTerminalForm()
-    {
-        Text = "kPOS — Home Terminal";
-        ClientSize = new Size(1040, 680);
-        StartPosition = FormStartPosition.CenterScreen;
-        BackColor = PosView.Canvas;
-        var connect = PosView.Button("Connect / Refresh", primary: true, size: 11);
-        connect.Click += async (_, _) => await RunAsync(async () =>
-        {
-            client?.Dispose();
-            client = new HomeTerminalClient(url.Text, key.Text, fingerprint.Text);
-            page = 0;
-            activeSearch = search.Text.Trim();
-            await LoadAsync();
-        });
-        var find = PosView.Button("Search", size: 11);
-        find.Click += async (_, _) => await RunAsync(async () =>
-        { page = 0; activeSearch = search.Text.Trim(); await LoadAsync(); });
-        search.KeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; find.PerformClick(); } };
-        var previous = PosView.Button("Previous", size: 11);
-        previous.Click += async (_, _) => await RunAsync(async () => { page = Math.Max(0, page - 1); await LoadAsync(); });
-        var next = PosView.Button("Next", size: 11);
-        next.Click += async (_, _) => await RunAsync(async () =>
-        { if ((page + 1) * 100 < itemCount) page++; await LoadAsync(); });
-        submit.Click += async (_, _) => await RunAsync(async () =>
-        {
-            if (client is null) throw new InvalidOperationException("Connect to the store first.");
-            if (pending is null)
-            {
-                if (items.CurrentRow?.DataBoundItem is not HomeStock stock)
-                    throw new InvalidOperationException("Select an item first.");
-                pending = new(Guid.NewGuid(), stock.Barcode, (long)units.Value);
-            }
-            // Retain the same ID and payload after a timeout: retrying must never place a duplicate.
-            HomeOrderReceipt receipt = await client.SendAsync(pending, closing.Token);
-            if (IsDisposed) return;
-            pending = null;
-            submit.Text = "Request Order";
-            status.Text = $"{receipt.Status}: {receipt.Product}, {receipt.Units} units. Request {receipt.Id:N}. Store review is required.";
-        });
-        var layout = HomeTerminalView.Layout();
-        HomeTerminalView.Row(layout, PosView.Label("kPOS · Home Terminal", 20, FontStyle.Bold));
-        HomeTerminalView.Row(layout, HomeTerminalView.Fields(("Store address", url), ("Certificate SHA256", fingerprint), ("Access key", key)));
-        HomeTerminalView.Row(layout, HomeTerminalView.Actions(connect, search, find));
-        HomeTerminalView.Row(layout, totals);
-        HomeTerminalView.Row(layout, status);
-        HomeTerminalView.Row(layout, items, fill: true);
-        HomeTerminalView.Row(layout, HomeTerminalView.Actions(previous, next, pages));
-        HomeTerminalView.Row(layout, HomeTerminalView.Actions(PosView.Label("Order units", 11), units, submit));
-        HomeTerminalView.Row(layout, PosView.Label("Orders go to the store for review. Refresh to retrieve current sales and stock.", 11));
-        Controls.Add(layout);
-    }
-
-    private async Task LoadAsync()
-    {
-        if (client is null) throw new InvalidOperationException("Connect to the store first.");
-        HomeSnapshot snapshot = await client.OverviewAsync(activeSearch, page, closing.Token);
-        if (IsDisposed) return;
-        items.DataSource = snapshot.Items;
-        items.Enabled = true;
-        if (items.Columns["OnHand"] is DataGridViewColumn onHand)
-        {
-            onHand.HeaderText = "On hand (units)";
-            onHand.DefaultCellStyle.NullValue = "Not counted";
-        }
-        itemCount = snapshot.ItemCount;
-        pages.Text = $"Page {snapshot.Page + 1} of {Math.Max(1, (snapshot.ItemCount + 99) / 100)} · {snapshot.ItemCount} items";
-        totals.Text = $"{snapshot.BusinessDate:yyyy-MM-dd}   Total {Sale.Money(snapshot.Sales.Total)}   Sales {snapshot.Sales.Count}   Refunds {snapshot.Sales.Refunds}   Cash {Sale.Money(snapshot.Sales.Cash)}   Card {Sale.Money(snapshot.Sales.Card)}";
-        status.Text = $"Updated {snapshot.CheckedAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}." +
-            (pending is null ? "" : $" Retry the unconfirmed request for {pending.Barcode}, {pending.Units} units.");
-    }
-
-    private async Task RunAsync(Func<Task> operation)
-    {
-        if (working) return;
-        working = true;
-        status.Text = "Contacting store…";
-        try { await operation(); }
-        catch (Exception error) when (error is System.Net.Http.HttpRequestException or OperationCanceledException or
-            IOException or ArgumentException or InvalidOperationException or System.Text.Json.JsonException)
-        {
-            if (!IsDisposed)
-            {
-                items.Enabled = false;
-                totals.Text = "Connection not verified — refresh to check current totals.";
-                status.Text = "Could not complete: " + error.Message + (pending is null ? "" :
-                    $" Request unconfirmed: {pending.Barcode}, {pending.Units} units. Retry sends the same request.");
-                if (pending is not null) submit.Text = "Retry Request";
-            }
-        }
-        finally { working = false; }
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing && !resourcesDisposed)
-        { resourcesDisposed = true; closing.Cancel(); client?.Dispose(); closing.Dispose(); }
         base.Dispose(disposing);
     }
 }

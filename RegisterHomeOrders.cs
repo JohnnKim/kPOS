@@ -31,17 +31,34 @@ internal sealed partial class RegisterData
 
     public HomeOrderReceipt SubmitHomeOrder(HomeOrderRequest request)
     {
-        if (request.Id == Guid.Empty || string.IsNullOrWhiteSpace(request.Barcode) ||
+        using var transaction = connection.BeginTransaction(deferred: false);
+        HomeOrderReceipt result = SubmitHomeOrder(request, transaction);
+        transaction.Commit();
+        return result;
+    }
+
+    public HomeOrderReceipt[] SubmitHomeOrders(HomeOrderRequest[] requests)
+    {
+        if (requests is null || requests.Length is < 1 or > 100 || requests.Any(request => request is null) || requests.Select(request => request.Id).Distinct().Count() != requests.Length ||
+            requests.Select(request => request.Barcode).Distinct(StringComparer.OrdinalIgnoreCase).Count() != requests.Length)
+            throw new ArgumentException("Choose between 1 and 100 different items.");
+        using var transaction = connection.BeginTransaction(deferred: false);
+        HomeOrderReceipt[] result = requests.Select(request => SubmitHomeOrder(request, transaction)).ToArray();
+        transaction.Commit();
+        return result;
+    }
+
+    private HomeOrderReceipt SubmitHomeOrder(HomeOrderRequest request, SqliteTransaction transaction)
+    {
+        if (request is null || request.Id == Guid.Empty || string.IsNullOrWhiteSpace(request.Barcode) ||
             request.Barcode.Length > 100 || request.Units is < 1 or > 999999)
             throw new ArgumentException("Choose an item and enter between 1 and 999999 units.");
 
-        using var transaction = connection.BeginTransaction(deferred: false);
         HomeOrderReceipt? previous = FindHomeOrder(request.Id, transaction);
         if (previous is not null)
         {
             if (previous.Barcode != request.Barcode || previous.Units != request.Units)
                 throw new InvalidOperationException("This request ID was already used for a different order.");
-            transaction.Commit();
             return previous;
         }
         using var product = Command("SELECT description FROM products WHERE barcode = $barcode AND archived = 0", transaction);
@@ -60,16 +77,19 @@ internal sealed partial class RegisterData
         insert.Parameters.AddWithValue("$units", request.Units);
         insert.Parameters.AddWithValue("$at", now.ToString("O"));
         insert.ExecuteNonQuery();
-        transaction.Commit();
         return new(request.Id, request.Barcode, description, request.Units, now, "Pending");
     }
 
-    public IReadOnlyList<HomeOrderReceipt> ReadHomeOrders()
+    public IReadOnlyList<HomeOrderReceipt> ReadHomeOrders(bool pendingOnly = true, int limit = 500, int offset = 0)
     {
         using var command = Command("""
             SELECT id, barcode, product, units, requested_at, status FROM home_order_requests
-            WHERE status = 'Pending' ORDER BY requested_at, id LIMIT 500
+            WHERE $pending = 0 OR status = 'Pending'
+            ORDER BY CASE WHEN $pending = 1 THEN requested_at END, requested_at DESC, id LIMIT $limit OFFSET $offset
             """);
+        command.Parameters.AddWithValue("$pending", pendingOnly);
+        command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 501));
+        command.Parameters.AddWithValue("$offset", Math.Max(0, offset));
         using var reader = command.ExecuteReader();
         var result = new List<HomeOrderReceipt>();
         while (reader.Read())
