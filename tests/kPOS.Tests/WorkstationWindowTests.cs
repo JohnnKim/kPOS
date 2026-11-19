@@ -147,7 +147,7 @@ public sealed class WorkstationWindowTests
         Assert.ThrowsExactly<ArgumentException>(()=>data.DisplayMessage=new string('x',161));
         Assert.AreEqual("Welcome to the store",data.DisplayMessage);
         using var register=new RegisterForm(data,new RegisterFolders(Path.GetTempPath())){Opacity=0,ShowInTaskbar=false};register.Show();Application.DoEvents();
-        Assert.IsTrue(Descendants(register).OfType<Label>().Any(label=>label.Text==data.DisplayMessage));
+        Assert.IsTrue(Descendants(register).OfType<Label>().Any(label=>label.Text==data.DisplayMessage && label.Visible));
         var sale=new Sale();sale.Add(data.FindProduct("101")!,false);var totals=sale.GetTotals(data.ReadTaxes());data.RecordSale(Guid.NewGuid(),DateTimeOffset.Now,sale,totals,new(PaymentMethod.Card,totals.Total));
         using var closeout=new CloseoutForm(data,new RegisterFolders(Path.GetTempPath()));
         Assert.IsTrue(Descendants(closeout).OfType<Button>().Single(button=>button.Text=="&OK").Enabled);

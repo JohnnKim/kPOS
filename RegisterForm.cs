@@ -274,7 +274,7 @@ internal sealed class RegisterForm : PosForm
         identity.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var version = PosView.Label($"v{ReleaseVersion.RunningVersion}", 9, color: Color.LightGray);
         version.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
-        version.Margin = new Padding(12, 0, 0, 9);
+        version.Margin = new Padding(12, 0, 0, 15);
         identity.Controls.Add(title, 0, 0); identity.Controls.Add(version, 1, 0);
         header.Controls.Add(identity, 0, 0);
         var dateAndTime = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
@@ -283,7 +283,7 @@ internal sealed class RegisterForm : PosForm
         legalAge.Anchor = AnchorStyles.Right;
         legalAge.Margin=new Padding(0);
         dateAndTime.Controls.Add(legalAge, 0, 0);
-        dateAndTime.Controls.Add(new RegisterClock { Anchor = AnchorStyles.Right, Margin = new Padding(0) }, 0, 1);
+        dateAndTime.Controls.Add(new RegisterClock { Anchor = AnchorStyles.Right, Margin = new Padding(0), Padding=new Padding(0,0,6,0) }, 0, 1);
         header.Controls.Add(dateAndTime, 1, 0);
         return header;
     }
