@@ -12,7 +12,7 @@ internal sealed class OrderForm : PosForm
     private readonly Keys stockShortcut;
     private readonly string stockCommand;
     private readonly DateTimePicker through = new() { Width = 132, Format = DateTimePickerFormat.Short, AccessibleName = "Sales through" };
-    private readonly NumericUpDown coverage = new() { Minimum = 1, Maximum = 365, Value = 7, Width = 64, AccessibleName = "Days to cover" };
+    private readonly NumericUpDown coverage = new() { Minimum = 1, Maximum = 365, Value = 7, Width = 64, Anchor=AnchorStyles.Left, Margin=new Padding(3,6,3,3), AccessibleName = "Days to cover" };
     private readonly TextBox search = new() { Width = 218, AccessibleName = "Find item", PlaceholderText = "Name, code, or barcode" };
     private readonly ComboBox sort = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 121, AccessibleName = "Sort items" };
     private readonly CheckBox draftOnly = new() { Text = "&Draft only", AutoSize = true };

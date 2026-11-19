@@ -18,6 +18,7 @@ internal sealed class CheckoutForm : PosForm
     private bool unlocked;
     private bool amountEdited;
     private bool recorded;
+    private Control? changeSurface;
 
     public decimal ChangeDue { get; private set; }
 
@@ -186,9 +187,14 @@ internal sealed class CheckoutForm : PosForm
             ChangeDue = payment.Received - totals.Total;
             AcceptButton = null;
             CancelButton = null;
-            Controls.Remove(layout);
+            changeSurface=layout.Parent??this;
+            changeSurface.SuspendLayout();
+            SuspendLayout();
+            changeSurface.Controls.Remove(layout);
             layout.Dispose();
             ShowChange(totals, payment, Math.Clamp(changeSeconds, 1, RegisterData.MaximumChangeSeconds));
+            changeSurface.ResumeLayout(true);
+            ResumeLayout(true);
         }
     }
 
@@ -239,9 +245,9 @@ internal sealed class CheckoutForm : PosForm
         {
             AutoSize = true, Dock = DockStyle.Top, Padding = new Padding(12), ColumnCount = 3, RowCount = 1
         };
-        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 12));
-        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 76));
-        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 12));
+        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 4));
+        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 92));
+        center.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 4));
         center.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         var summary = new TableLayoutPanel
@@ -259,7 +265,7 @@ internal sealed class CheckoutForm : PosForm
             : payment.Method == PaymentMethod.Cash ? "Cash received" : "Amount received";
         AddAmountRow(summary, 3, paymentLabel, Math.Abs(payment.Received), 16);
         var result = isRefund ? CreateAmountBanner("REFUND RECORDED", -payment.Received, PosView.Refund)
-            : CreateAmountBanner("CHANGE DUE", ChangeDue);
+            : CreateAmountBanner("CHANGE DUE", ChangeDue, size:48);
         result.Margin = new Padding(0, 14, 0, 8);
         AddWide(summary, 4, result);
         var countdown = PosView.Label("", 13, FontStyle.Bold, PosView.Muted);
@@ -271,7 +277,7 @@ internal sealed class CheckoutForm : PosForm
         summary.Controls.Add(countdown, 0, 5);
         summary.Controls.Add(next, 1, 5);
         center.Controls.Add(PosView.Frame(summary, Padding.Empty, fitContent: true), 1, 0);
-        Controls.Add(center);
+        (changeSurface??this).Controls.Add(center);
         AcceptButton = next;
         next.Focus();
 
@@ -373,7 +379,7 @@ internal sealed class CheckoutForm : PosForm
         return summary;
     }
 
-    private static Control CreateAmountBanner(string caption, decimal value, Color? background = null)
+    private static Control CreateAmountBanner(string caption, decimal value, Color? background = null, float size = 28)
     {
         var banner = new TableLayoutPanel
         {
@@ -384,7 +390,7 @@ internal sealed class CheckoutForm : PosForm
         banner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         banner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         banner.Controls.Add(PosView.Label(caption, 12, FontStyle.Bold, Color.White), 0, 0);
-        banner.Controls.Add(PosView.BannerAmount(Sale.Money(value), 28), 0, 1);
+        banner.Controls.Add(PosView.BannerAmount(Sale.Money(value), size), 0, 1);
         return banner;
     }
 

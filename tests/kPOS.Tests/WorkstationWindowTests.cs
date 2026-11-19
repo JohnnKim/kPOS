@@ -140,6 +140,21 @@ public sealed class WorkstationWindowTests
         finally { Directory.Delete(root, true); }
     }
 
+    [TestMethod]
+    public void OptionalRegisterMessagePersistsAndZeroDrawerCanProceedToCloseout()
+    {
+        using var data=new RegisterData(":memory:");data.DisplayMessage="Welcome to the store";
+        Assert.ThrowsExactly<ArgumentException>(()=>data.DisplayMessage=new string('x',161));
+        Assert.AreEqual("Welcome to the store",data.DisplayMessage);
+        using var register=new RegisterForm(data,new RegisterFolders(Path.GetTempPath())){Opacity=0,ShowInTaskbar=false};register.Show();Application.DoEvents();
+        Assert.IsTrue(Descendants(register).OfType<Label>().Any(label=>label.Text==data.DisplayMessage));
+        var sale=new Sale();sale.Add(data.FindProduct("101")!,false);var totals=sale.GetTotals(data.ReadTaxes());data.RecordSale(Guid.NewGuid(),DateTimeOffset.Now,sale,totals,new(PaymentMethod.Card,totals.Total));
+        using var closeout=new CloseoutForm(data,new RegisterFolders(Path.GetTempPath()));
+        Assert.IsTrue(Descendants(closeout).OfType<Button>().Single(button=>button.Text=="&OK").Enabled);
+        Assert.AreEqual("0.00",Descendants(closeout).OfType<TextBox>().Single(box=>box.AccessibleName=="Closing Drawers").Text);
+        data.DisplayMessage="";Assert.AreEqual("",data.DisplayMessage);
+    }
+
     private static IEnumerable<Control> Descendants(Control parent)
     { foreach(Control child in parent.Controls) { yield return child; foreach(Control nested in Descendants(child)) yield return nested; } }
 }

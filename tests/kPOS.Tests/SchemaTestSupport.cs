@@ -7,6 +7,6 @@ internal static class SchemaTestSupport
         using var query=connection.CreateCommand();query.CommandText="SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'revision_%'";
         using var row=query.ExecuteReader();var names=new List<string>();while(row.Read())names.Add(row.GetString(0));row.Close();
         foreach(string name in names){using var drop=connection.CreateCommand();drop.CommandText=$"DROP TRIGGER \"{name}\"";drop.ExecuteNonQuery();}
-        query.CommandText="DROP TABLE purchase_receivings; DROP TABLE purchase_lines; DROP TABLE purchase_orders; DROP TABLE data_revision; ALTER TABLE product_details DROP COLUMN settings_json; ALTER TABLE product_details DROP COLUMN edited_at;";query.ExecuteNonQuery();
+        query.CommandText="ALTER TABLE register_settings DROP COLUMN display_message; DROP TABLE purchase_receivings; DROP TABLE purchase_lines; DROP TABLE purchase_orders; DROP TABLE data_revision; ALTER TABLE product_details DROP COLUMN settings_json; ALTER TABLE product_details DROP COLUMN edited_at;";query.ExecuteNonQuery();
     }
 }

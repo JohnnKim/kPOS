@@ -48,6 +48,8 @@ public sealed class BackupExportTests
 
             RegisterData.ExportBackup(database, backup, directory.FullName, choices with { IncludeDatabase = true });
             using var full = ZipFile.OpenRead(backup);
+            Assert.IsNotNull(full.GetEntry("Purchasing/purchasing.json"));
+            Assert.IsNotNull(full.GetEntry("Catalog/item-details.json"));
             using var snapshot = full.GetEntry("Database/register.db")!.Open();
             using var manifestStream = full.GetEntry("manifest.json")!.Open();
             using var manifest = JsonDocument.Parse(manifestStream);

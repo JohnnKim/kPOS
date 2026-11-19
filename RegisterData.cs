@@ -9,6 +9,11 @@ internal sealed partial class RegisterData : IDisposable
     private const string ProductColumns = "code, barcode, description, size, unit_cents, units_per_case, case_cents, taxable";
     private readonly SqliteConnection connection;
     public string DatabasePath { get; }
+    internal string DisplayMessage
+    {
+        get {using var query=Command("SELECT display_message FROM register_settings WHERE id=1");return (string)query.ExecuteScalar()!;}
+        set {if(value.Length>160)throw new ArgumentException("Display text accepts up to 160 characters.");using var query=Command("UPDATE register_settings SET display_message=$text WHERE id=1");query.Parameters.AddWithValue("$text",value);query.ExecuteNonQuery();}
+    }
 
     public RegisterData(string databasePath) : this(databasePath, readOnly: false) { }
 
@@ -297,6 +302,7 @@ internal sealed partial class RegisterData : IDisposable
         if (currentVersion < 15)
             AddPurchasing(transaction);
 
+        if(currentVersion < 16) { using var display=Command("ALTER TABLE register_settings ADD COLUMN display_message TEXT NOT NULL DEFAULT ''; PRAGMA user_version=16;",transaction);display.ExecuteNonQuery(); }
         transaction.Commit();
     }
 

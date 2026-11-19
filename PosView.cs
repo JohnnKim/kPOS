@@ -135,7 +135,7 @@ internal static class PosView
         grid.BackgroundColor = Color.White;
         grid.GridColor = Line;
         grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
-        grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+        grid.CellBorderStyle = DataGridViewCellBorderStyle.Single;
         grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
         grid.ColumnHeadersHeight = 41;
         grid.ColumnHeadersDefaultCellStyle.BackColor = Navy;

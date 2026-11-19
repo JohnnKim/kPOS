@@ -58,6 +58,7 @@ internal sealed class RegisterForm : PosForm
     };
     private readonly Label lastChangeCaption = PosView.Label("Last change", 12, color: PosView.Muted);
     private readonly Label lastChange = CreateAmountLabel();
+    private readonly Label displayMessage=new(){AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,ForeColor=PosView.Muted,Visible=false};
     private bool nextItemIsCase;
     private bool exporting;
     public string? RequestedDirectory { get; private set; }
@@ -119,7 +120,9 @@ internal sealed class RegisterForm : PosForm
         side.Controls.Add(registerKeyPanel, 0, 1);
         ApplyDisplaySettings();
         var sidebar = PosView.Scroll(side);
-        sidebar.Margin = new Padding(0, 3, 3, 3);
+        sidebar.Margin = new Padding(0, 0, 3, 3);
+        sidebar.Controls.Add(displayMessage);
+        sidebar.Layout+=(_,_)=>{int top=side.Bottom+8;int height=Math.Max(0,sidebar.ClientSize.Height-top);displayMessage.SetBounds(8,top,Math.Max(0,sidebar.ClientSize.Width-16),height);if(sidebar.IsHandleCreated)displayMessage.Visible=height>20&&displayMessage.Text.Length>0;};
         layout.Controls.Add(sidebar, 1, 2);
         layout.SetRowSpan(sidebar, 2);
 
@@ -270,16 +273,17 @@ internal sealed class RegisterForm : PosForm
         identity.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); identity.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         identity.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var version = PosView.Label($"v{ReleaseVersion.RunningVersion}", 9, color: Color.LightGray);
-        version.Anchor = AnchorStyles.Left;
-        version.Margin = new Padding(12, 0, 0, 0);
+        version.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+        version.Margin = new Padding(12, 0, 0, 9);
         identity.Controls.Add(title, 0, 0); identity.Controls.Add(version, 1, 0);
         header.Controls.Add(identity, 0, 0);
         var dateAndTime = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
         dateAndTime.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         dateAndTime.RowStyles.Add(new RowStyle(SizeType.AutoSize)); dateAndTime.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         legalAge.Anchor = AnchorStyles.Right;
+        legalAge.Margin=new Padding(0);
         dateAndTime.Controls.Add(legalAge, 0, 0);
-        dateAndTime.Controls.Add(new RegisterClock { Anchor = AnchorStyles.Right, Margin = new Padding(3, 0, 3, 0) }, 0, 1);
+        dateAndTime.Controls.Add(new RegisterClock { Anchor = AnchorStyles.Right, Margin = new Padding(0) }, 0, 1);
         header.Controls.Add(dateAndTime, 1, 0);
         return header;
     }
@@ -382,8 +386,7 @@ internal sealed class RegisterForm : PosForm
         var tiles = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        tiles.Controls.Add(PosView.Label("Function keys",10,FontStyle.Bold),0,0);tiles.Controls.Add(PosView.Label("Type + Enter",10,FontStyle.Bold),1,0);
-        tiles.RowStyles.Add(new RowStyle(SizeType.Absolute,18));
+
         for (int row = 0; row < functions.Length; row++)
             tiles.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
         for (int i = 0; i < tilesToShow.Length; i++)
@@ -409,7 +412,7 @@ internal sealed class RegisterForm : PosForm
             action.Margin = new Padding(5, 0, 3, 0);
             tile.Controls.Add(key, 0, 0);
             tile.Controls.Add(action, 1, 0);
-            tiles.Controls.Add(tile, i<functions.Length?0:1, i<functions.Length?i+1:i-functions.Length+1);
+            tiles.Controls.Add(tile, i<functions.Length?0:1, i<functions.Length?i:i-functions.Length);
         }
         section.Controls.Add(tiles, 0, 1);
         var frame = PosView.Frame(section, new Padding(6, 4, 6, 4), fitContent: true, stretchWidth: true);
@@ -966,6 +969,7 @@ internal sealed class RegisterForm : PosForm
         lottery.Text = Sale.Money(totals.Lottery);
         discounts.Text = Sale.Money(totals.Discount);
         tax.Text = Sale.Money(totals.Tax);
+        displayMessage.Text=data.DisplayMessage;
         totalCaption.Text = totals.Total < 0 ? "REFUND DUE" : "TOTAL DUE";
         totalBanner.BackColor = totals.Total < 0 ? PosView.Refund : PosView.Navy;
         totalDue.Text = Sale.Money(Math.Abs(totals.Total));

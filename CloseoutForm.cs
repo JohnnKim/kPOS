@@ -225,7 +225,7 @@ internal sealed class CloseoutForm : PosForm
         Set(Field.Returns, adjustments?.Returns ?? 0m);
         decimal previousBank = data.LastBankBefore(Day);
         Set(Field.Opening, saved?.Opening ?? previousBank);
-        Set(Field.Closing, saved?.CashCounted);
+        Set(Field.Closing, saved?.CashCounted ?? 0m);
         Set(Field.NextBank, saved?.NextBank ?? previousBank);
         notes.Text = saved?.Notes ?? "";
         notes.ReadOnly = saved is not null;
@@ -298,7 +298,7 @@ internal sealed class CloseoutForm : PosForm
     private void SaveCloseout()
     {
         if (Draft(requireDrawers: true) is not DayCloseout closeout ||
-            MessageBox.Show(this, $"Close {Day:d} with these amounts?", Text, MessageBoxButtons.YesNo,
+            MessageBox.Show(this, "Finish count and closeout?", Text, MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes)
             return;
 
@@ -418,6 +418,9 @@ internal sealed class CloseoutForm : PosForm
     {
         var label = PosView.Label(name, 10);
         label.Anchor = AnchorStyles.Left;
+        label.Margin=new Padding(3,3,3,3);value.Margin=new Padding(3,3,3,3);value.Anchor=AnchorStyles.Right;
+        if(calculated is not null){calculated.Margin=new Padding(3,3,3,3);calculated.Anchor=AnchorStyles.Right;}
+        section.RowStyles.Add(new RowStyle(SizeType.Absolute,26));
         section.Controls.Add(label, 0, row);
         section.Controls.Add(value, 1, row);
         if (calculated is not null)

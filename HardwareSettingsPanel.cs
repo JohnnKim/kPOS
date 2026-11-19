@@ -2,14 +2,14 @@ namespace Kpos;
 
 internal sealed class HardwareSettingsPanel : TableLayoutPanel
 {
-    private readonly ComboBox output = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
+    private readonly ComboBox output = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 280 };
     private readonly TextBox printer = new() { Width = 230, MaxLength = 260 };
     private readonly TextBox host = new() { Width = 180, MaxLength = 253 };
     private readonly NumericUpDown port = new() { Minimum = 1, Maximum = 65535, Width = 90 };
     private readonly CheckBox print = new() { Text = "Print receipt after payment", AutoSize = true };
     private readonly CheckBox drawer = new() { Text = "Open drawer after payment", AutoSize = true };
     private readonly CheckBox cash = new() { Text = "Open automatically for cash only", AutoSize = true };
-    private readonly ComboBox pin = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 150 };
+    private readonly ComboBox pin = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
     private readonly NumericUpDown on = new() { Minimum = 2, Maximum = 510, Increment = 2, Width = 90 };
     private readonly NumericUpDown off = new() { Minimum = 2, Maximum = 510, Increment = 2, Width = 90 };
     internal HardwareSettings Value => new((ReceiptOutput)output.SelectedIndex, printer.Text.Trim(), host.Text.Trim(), (int)port.Value,
@@ -50,7 +50,8 @@ internal sealed class HardwareSettingsPanel : TableLayoutPanel
         }
         void Add(string? label, Control input)
         {
-            int row = RowCount++; RowStyles.Add(new RowStyle(SizeType.AutoSize)); input.Margin = new Padding(3, 4, 3, 4);
+            int row = RowCount++; RowStyles.Add(new RowStyle(SizeType.AutoSize)); input.Margin = new Padding(3, 4, 3, 4); input.Anchor=AnchorStyles.Left;
+            if(input is ComboBox combo){combo.MinimumSize=new Size(combo.Width,combo.PreferredHeight);combo.DropDownWidth=320;}
             if(input is TextBoxBase or UpDownBase) input.MinimumSize = new Size(input.Width, input.Height);
             if(label is null) { Controls.Add(input, 0, row); SetColumnSpan(input, 2); }
             else
