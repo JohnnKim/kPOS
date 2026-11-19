@@ -12,6 +12,7 @@ internal sealed class ProportionalLayout : IDisposable
     private readonly Dictionary<Control,Metrics> metrics=[];
     private double scale=1;
     private bool applying;
+    private bool applied;
     private sealed record GridSize(int Row,int Header, Dictionary<DataGridViewColumn,(int Width,int Minimum)> Columns);
     internal ProportionalLayout(Control root){this.root=root;Capture(root);}
     private void Capture(Control control)
@@ -26,8 +27,10 @@ internal sealed class ProportionalLayout : IDisposable
                 control is TableLayoutPanel rows?rows.RowStyles.Cast<RowStyle>().Select(row=>row.SizeType==SizeType.Absolute?row.Height:-1).ToArray():[],
                 control is TableLayoutPanel columns?columns.ColumnStyles.Cast<ColumnStyle>().Select(column=>column.SizeType==SizeType.Absolute?column.Width:-1).ToArray():[]);
         }
+        // DataGridView columns do not follow the initial compact Control.Scale.
+        // Keep their reference widths in the same coordinate system as the canvas.
         if(control is DataGridView grid&&!grids.ContainsKey(grid))
-            grids[grid]=new(grid.RowTemplate.Height,grid.ColumnHeadersHeight,grid.Columns.Cast<DataGridViewColumn>().ToDictionary(column=>column,column=>(column.Width,column.MinimumWidth)));
+            grids[grid]=new(grid.RowTemplate.Height,grid.ColumnHeadersHeight,grid.Columns.Cast<DataGridViewColumn>().ToDictionary(column=>column,column=>((int)Math.Round(column.Width*PosView.CompactScale),(int)Math.Round(column.MinimumWidth*PosView.CompactScale))));
         if(control is DataGridView table)
         {
             foreach(var style in new[]{table.DefaultCellStyle,table.ColumnHeadersDefaultCellStyle}.Concat(table.Columns.Cast<DataGridViewColumn>().SelectMany(column=>new[]{column.DefaultCellStyle,column.HeaderCell.Style})))
@@ -44,13 +47,13 @@ internal sealed class ProportionalLayout : IDisposable
     }
     internal void Apply(double factor)
     {
-        if(applying||Math.Abs(scale-factor)<.002)return;
+        if(applying||applied&&Math.Abs(scale-factor)<.002)return;
         applying=true;
         PosView.SuspendLayoutTree(root);
         try
         {
             Capture(root);
-            float relative=(float)(factor/scale);root.Scale(new SizeF(relative,relative));scale=factor;
+            float relative=(float)(factor/scale);root.Scale(new SizeF(relative,relative));scale=factor;applied=true;
             foreach(var (control,original) in metrics.Where(pair=>!pair.Key.IsDisposed))
             {
                 Padding Resize(Padding padding)=>new((int)Math.Round(padding.Left*scale),(int)Math.Round(padding.Top*scale),(int)Math.Round(padding.Right*scale),(int)Math.Round(padding.Bottom*scale));
