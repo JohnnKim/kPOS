@@ -66,6 +66,22 @@ public sealed class InstallationTests
     }
 
     [TestMethod]
+    public void MissingSavedDirectoryFallsBackToFreshSetupAndValidInstallationsAreFound()
+    {
+        using var fixture = new Folders();
+        string settings = Path.Combine(fixture.Root, "installation-folder.txt");
+        File.WriteAllText(settings, Path.Combine(fixture.Root, "deleted-register"));
+        Assert.IsNull(RegisterFolders.FindExisting(settings, []));
+        fixture.Source.Create();
+        using (var data = new RegisterData(fixture.Source.Database)) { }
+        Assert.AreEqual(fixture.Source.Root, RegisterFolders.FindExisting(settings, [fixture.Source.Root])?.Root);
+        fixture.Source.Remember(settings);
+        Assert.AreEqual(fixture.Source.Root, RegisterFolders.FindExisting(settings, [])?.Root);
+        Assert.AreEqual(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "kPOS"),
+            RegisterInstallation.DefaultDirectory);
+    }
+
+    [TestMethod]
     public void InstallationCreatesAWorkingRegisterAndRemembersOnlyItsCompletedFolder()
     {
         using var fixture = new Folders();

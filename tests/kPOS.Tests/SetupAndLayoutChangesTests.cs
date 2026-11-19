@@ -36,6 +36,8 @@ public sealed class SetupAndLayoutChangesTests
         {
             string target = Path.Combine(root, "register");
             string settings = Path.Combine(root, "profile", "installation-folder.txt");
+            Directory.CreateDirectory(Path.GetDirectoryName(settings)!);
+            File.WriteAllText(settings, Path.Combine(root, "deleted-register"));
             using var window = new InstallationForm(settings, null, initialDirectory: target) { Opacity = 0, ShowInTaskbar = false };
             window.Show();
             Button next = Descendants(window).OfType<Button>().Single(button => button.Text == "&Next");

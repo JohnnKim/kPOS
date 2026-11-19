@@ -22,19 +22,32 @@ internal sealed class RegisterFolders(string root)
         if (!string.IsNullOrWhiteSpace(overridePath))
             return new RegisterFolders(overridePath);
 
-        if (File.Exists(settings))
-        {
-            var saved = new RegisterFolders(File.ReadAllText(settings).Trim());
-            if (File.Exists(saved.Database))
-                return saved;
+        if (FindExisting(settings) is RegisterFolders existing)
+            return existing;
 
-            MessageBox.Show($"The register database could not be found at:\n{saved.Database}\n\nChoose the folder that contains your existing kPOS installation.",
-                "Locate kPOS", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-        }
-
-        using var setup = new InstallationForm(settings, Program.InstallationExecutable, locate: File.Exists(settings));
+        using var setup = new InstallationForm(settings, Program.InstallationExecutable);
         install = setup.ShowDialog() == DialogResult.OK;
         return install ? setup.InstalledFolders : null;
+    }
+
+    internal static RegisterFolders? FindExisting(string settings, IEnumerable<string>? scanDirectories = null)
+    {
+        var candidates = new List<string>();
+        try { if (File.Exists(settings)) candidates.Add(File.ReadAllText(settings).Trim()); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        candidates.AddRange(scanDirectories ?? new[] { RegisterInstallation.DefaultDirectory,
+            Path.Combine(Path.GetDirectoryName(settings)!, "Register"),
+            Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory)!, AppContext.BaseDirectory });
+        foreach (string candidate in candidates.Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var folder = new RegisterFolders(candidate);
+                if (File.Exists(folder.Database)) return folder;
+            }
+            catch (Exception error) when (error is ArgumentException or IOException or UnauthorizedAccessException) { }
+        }
+        return null;
     }
 
     public void Install(string settings)

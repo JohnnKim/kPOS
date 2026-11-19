@@ -25,7 +25,7 @@ internal static class RegisterInstallation
 
     public static string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "kPOS", "installation-folder.txt");
-    public static string DefaultDirectory => Path.Combine(Path.GetDirectoryName(SettingsPath)!, "Register");
+    public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "kPOS");
 
     public static void Install(RegisterFolders folders, string settings, string? executable)
     {
