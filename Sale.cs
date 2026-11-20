@@ -133,6 +133,8 @@ internal sealed class Sale
 
     public void SetDiscount(int index, decimal rate)
     {
+        if (rate is < 0 or > 100 || decimal.Round(rate, 2) != rate)
+            throw new ArgumentOutOfRangeException(nameof(rate));
         if (lines[index].Kind != SaleLineKind.Lottery)
             lines[index] = lines[index] with { DiscountRate = rate };
     }
