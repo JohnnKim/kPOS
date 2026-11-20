@@ -67,6 +67,18 @@ public sealed class SaleTests
     }
 
     [TestMethod]
+    public void InvalidDiscountRatesThrowAndLeaveTheLineIntact()
+    {
+        var sale = new Sale();
+        int beer = sale.Add(Beer, isCase: false);
+        sale.SetDiscount(beer, 10m);
+        SaleLine before = sale.Lines[beer];
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => sale.SetDiscount(beer, -1m));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => sale.SetDiscount(beer, 100.01m));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => sale.SetDiscount(beer, 12.345m));
+        Assert.AreEqual(before, sale.Lines[beer]);
+    }
+    [TestMethod]
     public void ScanStartsAnotherLineWhenTheQuantityLimitIsReached()
     {
         var sale = new Sale();
