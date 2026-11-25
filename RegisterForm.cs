@@ -50,12 +50,12 @@ internal sealed class RegisterForm : PosForm
     private readonly System.Windows.Forms.Timer legalAgeTimer = new() { Interval = 30000 };
     private readonly Label discounts = CreateAmountLabel();
     private readonly Label tax = CreateAmountLabel();
-    private readonly Label totalDue = PosView.BannerAmount("", 54);
+    private readonly Label totalDue = PosView.BannerAmount("", 44);
     private readonly Label totalCaption = PosView.Label("TOTAL DUE", 14, FontStyle.Bold, Color.White);
     private readonly Panel totalBanner = new()
     {
         Dock = DockStyle.Fill, BackColor = PosView.Navy,
-        Margin = new Padding(0, 0, 0, 4), Padding = new Padding(12, 7, 12, 5)
+        Margin = new Padding(0, 0, 0, 4), Padding = new Padding(10, 5, 10, 4)
     };
     private readonly Label lastChangeCaption = PosView.Label("Last change", 12, color: PosView.Muted);
     private readonly Label lastChange = CreateAmountLabel();
@@ -101,15 +101,15 @@ internal sealed class RegisterForm : PosForm
 
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill, Padding = new Padding(17, 11, 17, 14),
+            Dock = DockStyle.Fill, Padding = new Padding(8, 6, 8, 8),
             ColumnCount = 2, RowCount = 4
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 68));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 122));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 74));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 166));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 140));
         var header = CreateHeader();
         layout.Controls.Add(header, 0, 0);
         layout.SetColumnSpan(header, 2);
@@ -126,8 +126,8 @@ internal sealed class RegisterForm : PosForm
         side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         side.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var totalsFrame=CreateTotals();
-        totalsFrame.Margin=new Padding(3,3,3,6);
-        registerKeyPanel.Margin=new Padding(0,6,0,0);
+        totalsFrame.Margin = new Padding(3, 2, 3, 4);
+        registerKeyPanel.Margin = new Padding(0, 3, 0, 0);
         side.Controls.Add(totalsFrame, 0, 0);
         side.Controls.Add(registerKeyPanel, 0, 1);
         ApplyDisplaySettings();
@@ -313,13 +313,13 @@ internal sealed class RegisterForm : PosForm
         var header = new TableLayoutPanel
         {
             Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
-            BackColor = PosView.Navy, Padding = new Padding(10, 6, 10, 6), AutoSize = true
+            BackColor = PosView.Navy, Padding = new Padding(10, 4, 10, 4), AutoSize = true
         };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var title = PosView.Label("kPOS", 40, FontStyle.Bold, Color.White);
+        var title = PosView.Label("kPOS", 34, FontStyle.Bold, Color.White);
         title.Anchor = AnchorStyles.Left;
-        legalAge.Font = PosView.Text(18, FontStyle.Bold);
+        legalAge.Font = PosView.Text(16, FontStyle.Bold);
         legalAge.ForeColor = Color.White;
         legalAge.Anchor = AnchorStyles.Right;
         var identity = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = PosView.Navy };
@@ -327,7 +327,7 @@ internal sealed class RegisterForm : PosForm
         identity.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var version = PosView.Label($"v{ReleaseVersion.RunningVersion}", 9, color: Color.LightGray);
         version.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
-        version.Margin = new Padding(12, 0, 0, 15);
+        version.Margin = new Padding(10, 0, 0, 10);
         identity.Controls.Add(title, 0, 0); identity.Controls.Add(version, 1, 0);
         header.Controls.Add(identity, 0, 0);
         var dateAndTime = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
@@ -401,7 +401,7 @@ internal sealed class RegisterForm : PosForm
         totalBanner.Layout += (_, _) =>
         {
             // Fit large amounts to the banner's actual width, which is known after the sidebar is laid out.
-            int required=totalCaption.PreferredHeight+totalDue.MinimumSize.Height+totalBanner.Padding.Vertical+8;
+            int required=totalCaption.PreferredHeight+totalDue.MinimumSize.Height+totalBanner.Padding.Vertical+4;
             if(totalBanner.Height!=required)totalBanner.Height=required;
             Rectangle area = totalBanner.DisplayRectangle;
             int top = area.Top + totalCaption.PreferredHeight;
@@ -414,13 +414,13 @@ internal sealed class RegisterForm : PosForm
         AddTotal(PosView.Label("Discounts", 12, color: PosView.Muted), discounts, 3);
         AddTotal(PosView.Label("Sales Tax", 12, color: PosView.Muted), tax, 4);
         AddTotal(lastChangeCaption, lastChange, 5);
-        return PosView.Frame(totals, new Padding(8), fitContent: true, stretchWidth: true);
+        return PosView.Frame(totals, new Padding(6), fitContent: true, stretchWidth: true);
 
         void AddTotal(Label caption, Label amount, int row)
         {
             caption.Anchor = AnchorStyles.Left;
-            caption.Margin = new Padding(3, 2, 3, 2);
-            amount.Margin = new Padding(3, 2, 3, 2);
+            caption.Margin = new Padding(3, 1, 3, 1);
+            amount.Margin = new Padding(3, 1, 3, 1);
             amount.ForeColor = PosView.Ink;
             amount.Font = PosView.Text(13, FontStyle.Bold);
             totals.Controls.Add(caption, 0, row);
@@ -437,13 +437,13 @@ internal sealed class RegisterForm : PosForm
         section.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         section.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         section.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        section.Controls.Add(PosView.Label("Register Keys", 14, FontStyle.Bold), 0, 0);
+        section.Controls.Add(PosView.Label("Register Keys", 12, FontStyle.Bold), 0, 0);
         var tiles = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
 
         for (int row = 0; row < functions.Length; row++)
-            tiles.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            tiles.RowStyles.Add(new RowStyle(SizeType.Absolute, 25));
         for (int i = 0; i < tilesToShow.Length; i++)
         {
             var tile = new TableLayoutPanel
@@ -470,7 +470,7 @@ internal sealed class RegisterForm : PosForm
             tiles.Controls.Add(tile, i<functions.Length?0:1, i<functions.Length?i:i-functions.Length);
         }
         section.Controls.Add(tiles, 0, 1);
-        var frame = PosView.Frame(section, new Padding(6, 4, 6, 4), fitContent: true, stretchWidth: true);
+        var frame = PosView.Frame(section, new Padding(5, 3, 5, 3), fitContent: true, stretchWidth: true);
         frame.Dock = DockStyle.Top;
         return frame;
     }
@@ -850,20 +850,61 @@ internal sealed class RegisterForm : PosForm
         if (picker.ShowDialog(this) != DialogResult.OK) return;
         string inventory = picker.FileName;
         picker.Title = "Select vendor.txt"; picker.FileName = "vendor.txt";
-        if (picker.ShowDialog(this) != DialogResult.OK) return;
-        var day = data.CurrentBusinessDate();
-        if (MessageBox.Show(this,$"Import these products and vendors with opening stock on {day:d}?", "Import catalog",
-                MessageBoxButtons.OKCancel) != DialogResult.OK) return;
-        try
-        {
-            UseWaitCursor = true;
-            var result = data.ImportLegacyCatalog(inventory,picker.FileName,day);
-            MessageBox.Show(this,$"{result.Products:N0} products, {result.Vendors:N0} vendors, {result.ScanCodes:N0} scan codes.\n" +
-                string.Join(Environment.NewLine,result.Review), "Catalog imported");
-        }
-        catch(Exception ex) when(ex is IOException or InvalidDataException or FormatException or InvalidOperationException or UnauthorizedAccessException)
-        { MessageBox.Show(this,ex.Message,"Import failed"); }
-        finally { UseWaitCursor = false; }
+    if (picker.ShowDialog(this) != DialogResult.OK) return;
+    var day = data.CurrentBusinessDate();
+using var dialog = new PosForm { Text = "Import catalog", StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(16) };
+var layout = new TableLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, Dock = DockStyle.Fill };
+var prompt = new Label { AutoSize = true, MaximumSize = new Size(460, 0), Text = $"Import these products and vendors with opening stock on {day:d}?", Margin = new Padding(0, 0, 0, 10) };
+var deleteAll = new CheckBox { AutoSize = true, MaximumSize = new Size(460, 0), Text = "Delete all current data before importing (products, sales, vendors, orders, and history)", Margin = new Padding(0, 0, 0, 8) };
+var confirmLabel = new Label { AutoSize = true, MaximumSize = new Size(460, 0), Text = "Type DELETE ALL DATA to enable replacing all current data.", Visible = false, Margin = new Padding(0, 4, 0, 4) };
+var confirmation = new TextBox { Width = 460, Visible = false, Margin = new Padding(0, 0, 0, 12) };
+var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 0) };
+var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
+var import = new Button { Text = "Import", DialogResult = DialogResult.OK, AutoSize = true };
+buttons.Controls.Add(cancel);
+buttons.Controls.Add(import);
+void UpdateConfirmState()
+{
+bool replace = deleteAll.Checked;
+confirmLabel.Visible = replace;
+confirmation.Visible = replace;
+if (!replace) confirmation.Clear();
+import.Enabled = !replace || confirmation.Text == "DELETE ALL DATA";
+}
+deleteAll.CheckedChanged += (_, _) => UpdateConfirmState();
+confirmation.TextChanged += (_, _) => UpdateConfirmState();
+layout.Controls.Add(prompt);
+layout.Controls.Add(deleteAll);
+layout.Controls.Add(confirmLabel);
+layout.Controls.Add(confirmation);
+layout.Controls.Add(buttons);
+dialog.Controls.Add(layout);
+dialog.AcceptButton = import;
+dialog.CancelButton = cancel;
+if (dialog.ShowDialog(this) != DialogResult.OK) return;
+bool replaceAllData = deleteAll.Checked;
+if (replaceAllData && MessageBox.Show(this, "Permanently delete all current products, sales, closeouts, vendors, orders, and history before importing? A recovery backup will be saved first.", "Import catalog", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+try
+{
+UseWaitCursor = true;
+string? backupPath = null;
+if (replaceAllData)
+{
+Directory.CreateDirectory(folders.Backups);
+backupPath = Path.Combine(folders.Backups, $"before-catalog-replace-{day:yyyy-MM-dd}-{Guid.NewGuid():N}.zip");
+RegisterData.ExportBackup(data.DatabasePath, backupPath, folders.DailyArchives, new BackupExportOptions());
+}
+var result = data.ImportLegacyCatalog(inventory, picker.FileName, day, replaceAllData: replaceAllData);
+sale.Clear();
+RefreshTicket();
+ShowLastChange(data.LastChange());
+string message = $"{result.Products:N0} products, {result.Vendors:N0} vendors, {result.ScanCodes:N0} scan codes.\n" + string.Join(Environment.NewLine, result.Review);
+if (backupPath is not null) message = $"Recovery backup saved to:\n{backupPath}\n\n" + message;
+MessageBox.Show(this, message, "Catalog imported");
+}
+catch (Exception ex) when (ex is IOException or InvalidDataException or FormatException or InvalidOperationException or UnauthorizedAccessException)
+{ MessageBox.Show(this, ex.Message, "Import failed"); }
+finally { UseWaitCursor = false; }
     }
 
     private void ViewOrders()
