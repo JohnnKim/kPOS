@@ -16,7 +16,7 @@ internal sealed class StoreTerminalForm : PosForm
     private readonly Label connection = PosView.Label("● Off", 12, FontStyle.Bold, PosView.Muted);
     private readonly Label store = PosView.Label("Connect this checkout station to the store host.", 11);
     private readonly Label feedback = PosView.Label("Use Copy Store Pairing on Host Terminal.", 11);
-    private readonly Label due = PosView.BannerAmount("$0.00",20);
+    private readonly Label due = PosView.BannerAmount("$0.00", 18);
     private readonly Label caption = PosView.Label("TOTAL DUE",10, FontStyle.Bold, Color.White);
     private readonly Label last = PosView.Label("", 10 ,FontStyle.Bold);
     private readonly Label salesTax = PosView.Label("Sales Tax  $0.00", 10);
@@ -107,17 +107,16 @@ internal sealed class StoreTerminalForm : PosForm
         HomeTerminalView.Row(saleArea, grid, true);
         body.Controls.Add(saleArea, 0, 0);
         var summary = HomeTerminalView.Layout(); summary.Padding = new Padding(2); summary.BackColor = PosView.Light;
-        var banner = HomeTerminalView.Layout(); banner.BackColor = PosView.Navy; banner.AutoSize = true; banner.AutoSizeMode = AutoSizeMode.GrowAndShrink; banner.Padding = new Padding(4, 2, 4, 2);
+        var banner = HomeTerminalView.Layout(); banner.BackColor = PosView.Navy; banner.AutoSize = true; banner.AutoSizeMode = AutoSizeMode.GrowAndShrink; banner.Padding = new Padding(4, 1, 4, 1);
         HomeTerminalView.Row(banner, caption); HomeTerminalView.Row(banner, due);
         HomeTerminalView.Row(summary, banner);
-        HomeTerminalView.Row(summary, salesTax);
+        HomeTerminalView.Row(summary, HomeTerminalView.Actions(salesTax, cases));
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(Action("Checkout · F9", CheckoutAsync, true, true), Action("Retry Confirmation", CheckoutAsync, compact: true)));
         HomeTerminalView.Row(saleArea, HomeTerminalView.Actions(Action("Quantity · Q", QuantityAsync), Action("Refund · RF", RefundAsync), Action("Delete · F5", DeleteAsync)));
         HomeTerminalView.Row(saleArea, HomeTerminalView.Actions(Action("Item Lookup · F3", LookupAsync), Action("Refresh Prices", RefreshPricesAsync), Action("Void Sale · F4", VoidAsync)));
-        HomeTerminalView.Row(summary, cases);
         HomeTerminalView.Row(summary, last);
-        var receipt = PosView.Button("Last Receipt", size:9); receipt.Click += (_, _) => ShowReceipt(); receipt.Padding = new Padding(3, 1, 3, 1);
-        var printerSettings = PosView.Button("Printer / Drawer", size: 9); printerSettings.Click += (_, _) => ShowHardwareSettings(); printerSettings.Padding = new Padding(3, 1, 3, 1);
+        var receipt = PosView.Button("Last Receipt", size: 9); receipt.MinimumSize = Size.Empty; receipt.Click += (_, _) => ShowReceipt(); receipt.Padding = new Padding(4, 2, 4, 2);
+        var printerSettings = PosView.Button("Printer / Drawer", size: 9); printerSettings.MinimumSize = Size.Empty; printerSettings.Click += (_, _) => ShowHardwareSettings(); printerSettings.Padding = new Padding(4, 2, 4, 2);
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(receipt, printerSettings));
         foreach(Control row in summary.Controls) row.Margin = new Padding(0, 0, 0, 1);
         summary.Dock = DockStyle.Fill; summary.AutoScroll = false; body.Controls.Add(summary, 1, 0);
@@ -159,7 +158,7 @@ internal sealed class StoreTerminalForm : PosForm
         pulse.Start(); Render();
 
         Button Action(string text, Func<Task> action, bool primary = false, bool compact = false)
-        { var button = PosView.Button(text, primary, compact ? 9 : 11); if (compact) button.Padding = new Padding(3, 1, 3, 1); button.Click += async (_, _) => await RunAsync(action); actions.Add(button); return button; }
+        { var button = PosView.Button(text, primary, compact ? 9 : 11); if (compact) { button.MinimumSize = Size.Empty; button.Padding = new Padding(4, 2, 4, 2); } button.Click += async (_, _) => await RunAsync(action); actions.Add(button); return button; }
     }
 
     private async Task ConnectAsync()
