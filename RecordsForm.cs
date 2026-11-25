@@ -365,6 +365,6 @@ internal sealed class RecordsForm : PosForm
                 column.DefaultCellStyle.FormatProvider = CultureInfo.GetCultureInfo("en-US");
                 column.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
             }
-        }
+        } grid.AutoSizeColumnsMode = report is RecordReport.Closeout or RecordReport.PriceHistory ? DataGridViewAutoSizeColumnsMode.AllCells : DataGridViewAutoSizeColumnsMode.Fill;
     }
 }
