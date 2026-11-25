@@ -115,8 +115,8 @@ internal sealed class StoreTerminalForm : PosForm
         HomeTerminalView.Row(saleArea, HomeTerminalView.Actions(Action("Quantity · Q", QuantityAsync), Action("Refund · RF", RefundAsync), Action("Delete · F5", DeleteAsync)));
         HomeTerminalView.Row(saleArea, HomeTerminalView.Actions(Action("Item Lookup · F3", LookupAsync), Action("Refresh Prices", RefreshPricesAsync), Action("Void Sale · F4", VoidAsync)));
         HomeTerminalView.Row(summary, last);
-        var receipt = PosView.Button("Last Receipt", size: 9); receipt.AutoSize = true; receipt.AutoSizeMode = AutoSizeMode.GrowAndShrink; receipt.MinimumSize = Size.Empty; receipt.Click += (_, _) => ShowReceipt(); receipt.Padding = new Padding(6, 2, 6, 2);
-        var printerSettings = PosView.Button("Printer / Drawer", size: 9); printerSettings.AutoSize = true; printerSettings.AutoSizeMode = AutoSizeMode.GrowAndShrink; printerSettings.MinimumSize = Size.Empty; printerSettings.Click += (_, _) => ShowHardwareSettings(); printerSettings.Padding = new Padding(6, 2, 6, 2);
+        var receipt = PosView.Button("Last Receipt", size: 9); receipt.AutoSize = true; receipt.AutoSizeMode = AutoSizeMode.GrowAndShrink; receipt.MinimumSize = Size.Empty; receipt.Click += (_, _) => ShowReceipt(); receipt.MaximumSize = new Size(0, 26); receipt.Padding = new Padding(6, 1, 6, 1);
+        var printerSettings = PosView.Button("Printer / Drawer", size: 9); printerSettings.AutoSize = true; printerSettings.AutoSizeMode = AutoSizeMode.GrowAndShrink; printerSettings.MinimumSize = Size.Empty; printerSettings.Click += (_, _) => ShowHardwareSettings(); printerSettings.MaximumSize = new Size(0, 26); printerSettings.Padding = new Padding(6, 1, 6, 1);
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(receipt, printerSettings));
         foreach(Control row in summary.Controls) { row.Margin = Padding.Empty; row.Padding = Padding.Empty; }
         summary.Dock = DockStyle.Fill; summary.AutoScroll = false; body.Controls.Add(summary, 1, 0);
@@ -158,7 +158,7 @@ internal sealed class StoreTerminalForm : PosForm
         pulse.Start(); Render();
 
         Button Action(string text, Func<Task> action, bool primary = false, bool compact = false)
-        { var button = PosView.Button(text, primary, compact ? 9 : 11); if (compact) { button.AutoSize = true; button.AutoSizeMode = AutoSizeMode.GrowAndShrink; button.MinimumSize = Size.Empty; button.Padding = new Padding(6, 2, 6, 2); } button.Click += async (_, _) => await RunAsync(action); actions.Add(button); return button; }
+        { var button = PosView.Button(text, primary, compact ? 9 : 11); if (compact) { button.AutoSize = true; button.AutoSizeMode = AutoSizeMode.GrowAndShrink; button.MinimumSize = Size.Empty; button.MaximumSize = new Size(0, 26); button.Padding = new Padding(6, 1, 6, 1); } button.Click += async (_, _) => await RunAsync(action); actions.Add(button); return button; }
     }
 
     private async Task ConnectAsync()
