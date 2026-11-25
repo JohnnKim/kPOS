@@ -162,11 +162,11 @@ internal sealed class ProductListForm : PosForm
         Controls.Add(layout);
 
         PosView.Grid(grid, 11, 38);
-        foreach(var (name, caption, width) in new[] { ("Barcode", "Barcode", 210), ("Brand", "Brand", 110),
-            ("Description", "Description", 200), ("Size", "Size", 100), ("Price", "Price", 105),
-            ("OnHand", "Qty", 70), ("Supplier", "Vendor", 150) })
+        foreach(var (name, caption, width) in new[] { ("Barcode", "Barcode", 155), ("Brand", "Brand", 175),
+            ("Description", "Description", 220), ("Size", "Size", 95), ("Price", "Price", 100),
+            ("OnHand", "Qty", 70), ("Supplier", "Vendor", 155) })
             grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = caption, Width = width,
-                MinimumWidth = selectItem && name == "Description" ? 135 : width });
+                MinimumWidth = selectItem && name == "Description" ? 150 : width });
         grid.Columns["OnHand"]!.ToolTipText = "Selling units on hand from saved counts, deliveries, sales and returns. N/A means no inventory baseline exists.";
         if(!selectItem)
         {
