@@ -58,7 +58,7 @@ internal sealed class StoreTerminalForm : PosForm
     public StoreTerminalForm(string? profilePath = null)
     {
         this.profilePath = profilePath ?? StoreTerminalProfile.DefaultPath;
-        Text = "kPOS — Store Terminal (LAN)"; ClientSize = new Size(1240, 760); StartPosition = FormStartPosition.CenterScreen;
+        Text = "kPOS — Store Terminal (LAN)"; ClientSize = new Size(1240, 680); StartPosition = FormStartPosition.CenterScreen;
         BackColor = PosView.Canvas; store.MaximumSize = feedback.MaximumSize = new Size(1080, 0); last.MaximumSize = new Size(310, 0);
         try
         {
@@ -118,7 +118,7 @@ internal sealed class StoreTerminalForm : PosForm
         var receipt = PosView.Button("Last Receipt", size: 9); receipt.AutoSize = false; receipt.MinimumSize = Size.Empty; receipt.Height = 26; receipt.Click += (_, _) => ShowReceipt(); receipt.Padding = new Padding(4, 2, 4, 2);
         var printerSettings = PosView.Button("Printer / Drawer", size: 9); printerSettings.AutoSize = false; printerSettings.MinimumSize = Size.Empty; printerSettings.Height = 26; printerSettings.Click += (_, _) => ShowHardwareSettings(); printerSettings.Padding = new Padding(4, 2, 4, 2);
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(receipt, printerSettings));
-        foreach(Control row in summary.Controls) row.Margin = new Padding(0, 0, 0, 1);
+        foreach(Control row in summary.Controls) { row.Margin = Padding.Empty; row.Padding = Padding.Empty; }
         summary.Dock = DockStyle.Fill; summary.AutoScroll = false; body.Controls.Add(summary, 1, 0);
         var layout = HomeTerminalView.Layout(); layout.Padding = new Padding(8, 4, 8, 4);
         var heading = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Padding = new Padding(0, 0, 0, 4) };
