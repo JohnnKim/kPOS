@@ -243,7 +243,7 @@ public static class KposExecutableTest
                 IntPtr closeout = FindWindow(desktop, process.ProcessId, "End of Day Closeout");
                 WaitUntil(() => RevealText(closeout, "End-of-Day Totals") && RevealText(closeout, "Revised") &&
                     RevealText(closeout, "Calculated") && RevealText(closeout, "State Tax") && RevealText(closeout, "Net Deposits") &&
-                    RevealText(closeout, "Bank Should") && RevealText(closeout, "MC/Visa") && RevealText(closeout, "Notes") &&
+                    RevealText(closeout, "Bank Should") && RevealText(closeout, "Credit/Debit") && RevealText(closeout, "Notes") &&
                     RevealText(closeout, "Count &Bills and Coins…") && RevealText(closeout, "&OK") &&
                     RevealText(closeout, "&Cancel"), "reach every closeout control");
                 Send(closeout, 0x0010, 0); // WM_CLOSE

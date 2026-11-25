@@ -10,9 +10,9 @@ internal sealed class RecordsForm : PosForm
     private readonly RegisterData data;
     private readonly RegisterFolders folders;
     private readonly string? barcode;
-    private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 105 };
-    private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 105 };
-    private readonly TabControl tabs = new() { Multiline = true, Dock = DockStyle.Fill };
+    private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 160 };
+    private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 160 };
+    private readonly TabControl tabs = new() { Multiline = true, Appearance = TabAppearance.Buttons, Dock = DockStyle.Fill };
     private readonly Button previous = PosView.Button("&Previous", size: 10);
     private readonly Button next = PosView.Button("&Next", size: 10);
     private readonly Button archive = PosView.Button("&Archive Day", size: 10);
@@ -45,6 +45,23 @@ internal sealed class RecordsForm : PosForm
         filters.Controls.AddRange([
             new Label { Text = "From", AutoSize = true, Margin = new Padding(3, 8, 3, 3) }, from,
             new Label { Text = "Through", AutoSize = true, Margin = new Padding(8, 8, 3, 3) }, through]);
+        if (product is null)
+        {
+            var period = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170 };
+            period.Items.AddRange(["Today", "Month to date", "Date period"]);
+            period.SelectedIndexChanged += (_, _) =>
+            {
+                bool custom = period.SelectedIndex == 2;
+                from.Enabled = through.Enabled = custom;
+                if (custom) return;
+                var day = data.CurrentBusinessDate().ToDateTime(TimeOnly.MinValue);
+                from.Value = period.SelectedIndex == 0 ? day : new DateTime(day.Year, day.Month, 1);
+                through.Value = day;
+            };
+            filters.Controls.Add(period);
+            filters.Controls.SetChildIndex(period, 0);
+            period.SelectedIndex = 0;
+        }
         layout.Controls.Add(filters, 0, 0);
         layout.Controls.Add(tabs, 0, 1);
         if (product is null)
@@ -65,6 +82,22 @@ internal sealed class RecordsForm : PosForm
         close.DialogResult = DialogResult.Cancel;
         CancelButton = close;
         actions.Controls.AddRange([previous, next, details, archive, close, status]);
+        if (product is null)
+        {
+            var reportKind = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 245 };
+            reportKind.Items.AddRange(["Sales Period Report", "Department Gross Profit", "Both reports"]);
+            reportKind.SelectedIndex = 0;
+            var print = PosView.Button("Detailed report…", size: 10);
+            print.Click += (_, _) =>
+            {
+                var (start, end) = Dates();
+                if (end < start) { status.Text = "Choose a valid date period."; return; }
+                try { PeriodReport.Open(data.BuildPeriodReport(start, end, reportKind.SelectedIndex), folders); }
+                catch (Exception ex) when (ex is SqliteException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+                { MessageBox.Show(this, ex.Message, "Detailed report"); }
+            };
+            filters.Controls.AddRange([reportKind, print]);
+        }
         details.Click += (_, _) => OpenSelectedSale();
         archive.Visible = product is null;
         layout.Controls.Add(actions, 0, 2);

@@ -56,7 +56,7 @@ internal class PosForm : Form
         AutoSize = false;
         ClientSize = natural;
         AutoScroll = false;
-        Size minimum = MinimumSize;
+
         MinimumSize = Size.Empty;
         PosView.SuspendLayoutTree(this);
         Scale(new SizeF(PosView.CompactScale, PosView.CompactScale));
@@ -89,6 +89,13 @@ internal class PosForm : Form
         if(this is CloseoutForm)minimumCanvas.Height+=32;
         canvas.Size=minimumCanvas;canvas.PerformLayout();
         proportional=new ProportionalLayout(canvas);
+        if (this is not RegisterForm)
+        {
+            Rectangle work = Screen.FromControl(Owner ?? this).WorkingArea;
+            Size frame = Size - ClientSize;
+            ClientSize = new Size(Math.Min((int)Math.Ceiling(minimumCanvas.Width * 1.5), work.Width - frame.Width),
+                Math.Min((int)Math.Ceiling(minimumCanvas.Height * 1.5) + menuHeight, work.Height - frame.Height));
+        }
         FitContent();
         WindowState = state;
     }
@@ -192,11 +199,11 @@ internal class PosForm : Form
                 return;
             }
             double fit=Math.Min((double)Math.Max(1,viewport.Width)/minimumCanvas.Width,(double)Math.Max(1,viewport.Height)/minimumCanvas.Height);
-            double smallest=this is RegisterForm?.65:.85;
+            double smallest=this is RegisterForm ? 0 : .85;
             viewport.AutoScroll=ScrollWholeWindow&&fit<smallest;
             // One scale factor preserves the arrangement. Very small register windows retain scrolling.
-            double factor=ScrollWholeWindow?Math.Max(this is RegisterForm?.65:.85,fit):Math.Max(.25,fit);
-            if(this is not (RegisterForm or StoreTerminalForm or CheckoutForm))factor=Math.Min(1,factor);
+            double factor=ScrollWholeWindow?Math.Max(smallest,fit):Math.Max(.25,fit);
+
             proportional.Apply(factor);
             canvas.Size=new Size((int)Math.Round(minimumCanvas.Width*factor),(int)Math.Round(minimumCanvas.Height*factor));
             var offset=viewport.AutoScrollPosition;

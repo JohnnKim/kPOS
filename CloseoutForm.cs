@@ -9,7 +9,7 @@ internal sealed class CloseoutForm : PosForm
     private enum Field
     {
         Sales, SalesTax, StateTax, NetLottery, CreditGiven, PaidOnAccount, OtherPayouts, GiftCertificatesSold,
-        Opening, Closing, NextBank, Cash, Checks, VisaMastercard, Amex, Discover, Diners, Debit,
+        Opening, Closing, NextBank, Cash, Checks,
         GiftCertificates, Coupons, OtherCard, Deposits, Returns
     }
 
@@ -114,14 +114,9 @@ internal sealed class CloseoutForm : PosForm
         AddField(tender, 0, "Cash", Field.Cash);
         fields[Field.Cash].PlaceholderText = "Drawer count";
         AddField(tender, 1, "Checks", Field.Checks);
-        AddField(tender, 2, "MC/Visa", Field.VisaMastercard);
-        AddField(tender, 3, "Amer Ex", Field.Amex);
-        AddField(tender, 4, "Discover", Field.Discover);
-        AddField(tender, 5, "Diners", Field.Diners);
-        AddField(tender, 6, "Debit", Field.Debit);
-        AddField(tender, 7, "Gift Cert", Field.GiftCertificates);
-        AddField(tender, 8, "Coupons", Field.Coupons);
-        AddField(tender, 9, "Unallocated Card", Field.OtherCard);
+        AddField(tender, 2, "Credit/Debit", Field.OtherCard);
+        AddField(tender, 3, "Gift Cert", Field.GiftCertificates);
+        AddField(tender, 4, "Coupons", Field.Coupons);
         AddSection(right, tender);
 
         var deposits = Section(2);
@@ -210,14 +205,9 @@ internal sealed class CloseoutForm : PosForm
         var tender = amounts?.Tender;
         Set(Field.Cash, tender?.Cash);
         Set(Field.Checks, tender?.Checks ?? 0m);
-        Set(Field.VisaMastercard, tender?.VisaMastercard ?? 0m);
-        Set(Field.Amex, tender?.Amex ?? 0m);
-        Set(Field.Discover, tender?.Discover ?? 0m);
-        Set(Field.Diners, tender?.Diners ?? 0m);
-        Set(Field.Debit, tender?.Debit ?? 0m);
         Set(Field.GiftCertificates, tender?.GiftCertificates ?? 0m);
         Set(Field.Coupons, tender?.Coupons ?? 0m);
-        Set(Field.OtherCard, tender?.OtherCard ?? 0m);
+        Set(Field.OtherCard, tender?.CardTotal ?? 0m);
         var adjustments = amounts?.Adjustments;
         Set(Field.CreditGiven, adjustments?.CreditGiven ?? 0m);
         Set(Field.PaidOnAccount, adjustments?.PaidOnAccount ?? 0m);
@@ -266,7 +256,7 @@ internal sealed class CloseoutForm : PosForm
 
         var totals = new EndOfDayTotals(values[Field.Sales], values[Field.SalesTax], values[Field.StateTax], values[Field.NetLottery]);
         var tender = new EndOfDayTender(values.GetValueOrDefault(Field.Cash, closing - opening), values[Field.Checks],
-            values[Field.VisaMastercard], values[Field.Amex], values[Field.Discover], values[Field.Diners], values[Field.Debit],
+            0m, 0m, 0m, 0m, 0m,
             values[Field.GiftCertificates], values[Field.Coupons], values[Field.OtherCard]);
         var adjustments = new EndOfDayAdjustments(values[Field.CreditGiven], values[Field.PaidOnAccount],
             values[Field.OtherPayouts], values[Field.GiftCertificatesSold], values[Field.Deposits], values[Field.Returns]);
@@ -365,14 +355,14 @@ internal sealed class CloseoutForm : PosForm
             "",
             Pair("Credit Given", adjustments.CreditGiven, "Cash", tender.Cash),
             Pair("Paid on Account", adjustments.PaidOnAccount, "Checks", tender.Checks),
-            Pair("System Payouts", report.Sales.Expenses, "MC/Visa", tender.VisaMastercard),
-            Pair("Other Payouts", adjustments.OtherPayouts, "Amer Ex", tender.Amex),
-            Pair("Gift Certs Sold", adjustments.GiftCertificatesSold, "Discover", tender.Discover),
-            Pair("Opening Drawers", report.Opening, "Diners", tender.Diners),
-            Pair("Closing Drawers", report.CashCounted, "Debit", tender.Debit),
+            Pair("System Payouts", report.Sales.Expenses, "Credit/Debit", tender.CardTotal),
+            $"Other Payouts {Sale.Money(adjustments.OtherPayouts)}",
+            $"Gift Certs Sold {Sale.Money(adjustments.GiftCertificatesSold)}",
+            $"Opening Drawers {Sale.Money(report.Opening)}",
+            $"Closing Drawers {Sale.Money(report.CashCounted)}",
             Pair("Next Bank", report.NextBank, "Gift Cert", tender.GiftCertificates),
             Pair("Bank Should", amounts.BankShould(report), "Coupons", tender.Coupons),
-            Pair("Cash to Deposit", report.CashDeposit, "Unallocated Card", tender.OtherCard),
+            $"Cash to Deposit {Sale.Money(report.CashDeposit)}",
             Pair("Deposits", adjustments.Deposits, "Returns", adjustments.Returns),
             $"Net Deposits {Sale.Money(adjustments.NetDeposits)}",
             difference.Text,

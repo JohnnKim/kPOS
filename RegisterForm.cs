@@ -77,7 +77,7 @@ internal sealed class RegisterForm : PosForm
         scanCode.BurstReady += (_, _) => RunRegisterAction(() =>
         {
             string code = scanCode.Text;
-            if ((code.Length >= 8 && code.All(char.IsAsciiDigit)) || data.FindProduct(code) is not null)
+            if ((code.Length >= 8 && code.All(char.IsAsciiDigit)) || data.FindScanProduct(code) is not null)
                 SubmitScan();
         });
         SuspendLayout();
@@ -131,7 +131,10 @@ internal sealed class RegisterForm : PosForm
         side.Controls.Add(totalsFrame, 0, 0);
         side.Controls.Add(registerKeyPanel, 0, 1);
         ApplyDisplaySettings();
-        var sidebar = PosView.Scroll(side);
+        side.AutoSize = true;
+        side.Dock = DockStyle.Top;
+        var sidebar = new Panel { Dock = DockStyle.Fill };
+        sidebar.Controls.Add(side);
         sidebar.Margin = new Padding(0, 0, 3, 3);
         sidebar.Controls.Add(displayMessage);
         arrangeDisplayMessage=()=>
@@ -242,7 +245,7 @@ internal sealed class RegisterForm : PosForm
         AddCommand(saleMenu, "Edit &quantity", Keys.Control | Keys.Q, EditQuantity);
         AddCommand(saleMenu, "&Lottery", Keys.Control | Keys.Alt | Keys.L, AddLottery);
         AddCommand(saleMenu, "&Misc", Keys.Control | Keys.M, AddMisc);
-        var lists = new ToolStripMenuItem("&Lists");
+        var lists = new ToolStripMenuItem("&Products");
         AddCommand(lists, "&Item Lookup", Keys.F3, LookupItem);
         AddCommand(lists, "&Product List", Keys.Control | Keys.L, ViewProducts);
         shortcuts.Add(Keys.F8, ViewProducts);
@@ -251,7 +254,7 @@ internal sealed class RegisterForm : PosForm
 #if !KPOS_UPDATE_FIXTURE
         shortcuts.Add(Keys.F12, FocusScanner);
 #endif
-        var reports = new ToolStripMenuItem("&Records");
+        var reports = new ToolStripMenuItem("&Reports");
         AddCommand(reports, "Today's &receipts…", Keys.F11, ViewTransactions);
         shortcuts.Add(Keys.Control | Keys.P, ViewTransactions);
         AddCommand(reports, "&End of Day…", Keys.Control | Keys.E, ViewCloseout);
@@ -266,7 +269,26 @@ internal sealed class RegisterForm : PosForm
 #endif
         var help = new ToolStripMenuItem("&Help");
         AddCommand(help, "&Register Help", Keys.F1, ViewRegisterHelp);
-        menu.Items.AddRange([saleMenu, lists, reports, help]);
+        var vendors = new ToolStripMenuItem("&Vendors");
+        vendors.DropDownItems.Add("Vendor directory", null, (_, _) => RunRegisterAction(() =>
+        {
+            using var window = new VendorDirectory(data);
+            window.ShowDialog(this);
+        }));
+        var activity = new ToolStripMenuItem("&Activity");
+        activity.DropDownItems.Add("Order and Receive", null, (_, _) => RunRegisterAction(() =>
+        {
+            using var window = new PurchasingForm(PurchasingSource.Local(data), data);
+            window.ShowDialog(this);
+        }));
+        lists.DropDownItems.Add("Import inventory and vendors…", null, (_, _) => RunRegisterAction(ImportStoreCatalog));
+        foreach (bool labels in new[] { false, true })
+            lists.DropDownItems.Add(labels ? "Barcode Printer" : "Set Promotions", null, (_, _) => RunRegisterAction(() =>
+            {
+                using var window = new ItemSelectionForm(data, labels);
+                window.ShowDialog(this);
+            }));
+        menu.Items.AddRange([saleMenu, lists, vendors, activity, reports, help]);
         return menu;
     }
 
@@ -577,7 +599,7 @@ internal sealed class RegisterForm : PosForm
 
         if(allowRegisterCommand && keys.ActionFor(code) is string action && DispatchCommand(action)) return;
 
-        Product? product = data.FindProduct(code);
+        Product? product = data.FindScanProduct(code);
         if (product is not null)
         {
             AddItem(product);
@@ -617,7 +639,7 @@ internal sealed class RegisterForm : PosForm
             return;
         }
 
-        int selected = sale.Add(product, nextItemIsCase);
+        int selected = sale.Add(data.CheckoutProduct(product.ScannedBarcode is null ? data.FindScanProduct(product.Barcode) ?? product : product), nextItemIsCase);
         status.Text = nextItemIsCase ? $"Case added: {product.Description}" : $"Added: {product.Description}";
         SetCaseSale(false);
         RefreshTicket(selected);
@@ -821,6 +843,28 @@ internal sealed class RegisterForm : PosForm
     }
 
     private void ShowLastChange(decimal? change) => lastChange.Text = change is decimal amount ? Sale.Money(amount) : "—";
+
+    private void ImportStoreCatalog()
+    {
+        using var picker = new OpenFileDialog { Title = "Select inventory.txt", Filter = "Text exports (*.txt)|*.txt" };
+        if (picker.ShowDialog(this) != DialogResult.OK) return;
+        string inventory = picker.FileName;
+        picker.Title = "Select vendor.txt"; picker.FileName = "vendor.txt";
+        if (picker.ShowDialog(this) != DialogResult.OK) return;
+        var day = data.CurrentBusinessDate();
+        if (MessageBox.Show(this,$"Import these products and vendors with opening stock on {day:d}?", "Import catalog",
+                MessageBoxButtons.OKCancel) != DialogResult.OK) return;
+        try
+        {
+            UseWaitCursor = true;
+            var result = data.ImportLegacyCatalog(inventory,picker.FileName,day);
+            MessageBox.Show(this,$"{result.Products:N0} products, {result.Vendors:N0} vendors, {result.ScanCodes:N0} scan codes.\n" +
+                string.Join(Environment.NewLine,result.Review), "Catalog imported");
+        }
+        catch(Exception ex) when(ex is IOException or FormatException or InvalidOperationException or UnauthorizedAccessException)
+        { MessageBox.Show(this,ex.Message,"Import failed"); }
+        finally { UseWaitCursor = false; }
+    }
 
     private void ViewOrders()
     {

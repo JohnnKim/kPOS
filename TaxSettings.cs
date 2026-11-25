@@ -4,13 +4,13 @@ using Microsoft.Data.Sqlite;
 namespace Kpos;
 
 internal sealed record TaxSettings(decimal Base, decimal State = 0, decimal County = 0, decimal City = 0,
-    decimal District = 0, decimal Other = 0, decimal? MiscBase = null)
+    decimal District = 0, decimal Other = 0, decimal? MiscBase = null, decimal CigRate = 0)
 {
     public decimal SalesRate => Base + State + County + City + District + Other;
     public decimal MiscRate => (MiscBase ?? Base) + State + County + City + District + Other;
     internal void Validate()
     {
-        decimal[] rates = [Base, State, County, City, District, Other, MiscBase ?? Base];
+        decimal[] rates = [Base, State, County, City, District, Other, MiscBase ?? Base, CigRate];
         if(rates.Any(rate => rate is < 0 or > 100 || decimal.Round(rate, 4) != rate) || SalesRate > 100 || MiscRate > 100)
             throw new ArgumentException("Enter tax percentages from 0 to 100 with up to four decimal places. Combined rates cannot exceed 100%.");
     }

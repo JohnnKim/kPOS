@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 namespace Kpos;
 
 internal sealed record ItemSetup(string Class = "Standard", string Bin = "", long Par = 0, long ReorderPoint = 0,
-    long ShelfCapacity = 0, long ShelfQuantity = 0, bool OrderCases = false, string Notes = "", bool DiscountAllowed = true);
+    long ShelfCapacity = 0, long ShelfQuantity = 0, bool OrderCases = false, string Notes = "", bool DiscountAllowed = true, bool CigTaxable = false);
 internal sealed record OrderQuantity(string Barcode, long Units, long? Expected = null);
 internal sealed record PlacePurchaseRequest(Guid Id, long SupplierId, string Number, DateOnly? Due, string Notes, OrderQuantity[] Lines);
 internal sealed record ReceivePurchaseRequest(Guid Id, Guid OrderId, OrderQuantity[] Lines);

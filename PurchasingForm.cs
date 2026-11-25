@@ -110,7 +110,7 @@ internal sealed class PurchasingForm : PosForm
         foreach(var item in snapshot.Items.Where(item=>(!vendorOnly.Checked||vendorId==0||item.Details.SupplierId==vendorId)&&new[] {item.Product.Barcode,item.Product.Description,item.Details.Brand,item.Details.Supplier}.Any(value=>value.Contains(query,StringComparison.OrdinalIgnoreCase))))
         {
             var p=item.Product; var a=item.Activity; var setup=item.Details.Setup??new();
-            int row=items.Rows.Add(p.Barcode,item.Details.Brand,p.Description,p.Size,item.Details.Supplier,item.OnHand?.ToString()??"Not counted",a.OnOrder,item.Draft,a.Sold7,a.Sold30,a.Sold90,a.MonthToDate,a.YearToDate,a.LastSale?.ToString("yyyy-MM-dd")??"",a.LastReceived?.ToString("yyyy-MM-dd")??"",
+            int row=items.Rows.Add(p.Barcode,item.Details.Brand,p.Description,p.Size,item.Details.Supplier,item.OnHand?.ToString()??"N/A",a.OnOrder,item.Draft,a.Sold7,a.Sold30,a.Sold90,a.MonthToDate,a.YearToDate,a.LastSale?.ToString("yyyy-MM-dd")??"",a.LastReceived?.ToString("yyyy-MM-dd")??"",
                 Sale.Money(p.UnitPrice),item.Details.UnitCost is decimal cost?Sale.Money(cost):"Not set",item.Details.UnitCost is decimal c&&p.UnitPrice>0?((p.UnitPrice-c)*100/p.UnitPrice).ToString("0.0"):"",p.UnitsPerCase,setup.Bin,setup.Par,setup.ReorderPoint);
             items.Rows[row].Tag=item; if(p.Barcode==selected&&items.IsHandleCreated)items.CurrentCell=items.Rows[row].Cells["Description"];
         }

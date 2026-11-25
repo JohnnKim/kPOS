@@ -162,11 +162,11 @@ internal sealed class ProductListForm : PosForm
         Controls.Add(layout);
 
         PosView.Grid(grid, 11, 38);
-        foreach(var (name, caption, width) in new[] { ("Barcode", "Barcode", 150), ("Brand", "Brand", 110),
+        foreach(var (name, caption, width) in new[] { ("Barcode", "Barcode", 210), ("Brand", "Brand", 110),
             ("Description", "Description", 200), ("Size", "Size", 100), ("Price", "Price", 105),
-            ("OnHand", "Qty", 125), ("Supplier", "Vendor", 150) })
+            ("OnHand", "Qty", 70), ("Supplier", "Vendor", 150) })
             grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = caption, Width = width, MinimumWidth = width });
-        grid.Columns["OnHand"]!.ToolTipText = "Selling units on hand from saved counts, deliveries, sales and returns. Not counted means no inventory baseline exists.";
+        grid.Columns["OnHand"]!.ToolTipText = "Selling units on hand from saved counts, deliveries, sales and returns. N/A means no inventory baseline exists.";
         if(!selectItem)
         {
             foreach(var (name, caption) in new[] { ("CasePrice", "Case price"), ("Type", "Type"), ("VendorCode", "Vendor item code"),
@@ -174,10 +174,14 @@ internal sealed class ProductListForm : PosForm
                 grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = caption, Width = 140 });
         }
         grid.Columns["Description"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
-        foreach(string name in new[] { "Description", "Brand", "Supplier", "Size" }) grid.Columns[name]!.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        grid.ShowCellToolTips = true;
+        grid.DefaultCellStyle.WrapMode = DataGridViewTriState.False;
         grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
-        grid.HandleCreated += (_, _) => grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders;
-        grid.ColumnWidthChanged += (_, _) => { if(grid.IsHandleCreated) grid.AutoResizeRows(DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders); };
+        grid.CellToolTipTextNeeded += (_, e) =>
+        {
+            if (e.RowIndex >= 0 && e.ColumnIndex >= 0)
+                e.ToolTipText = grid[e.ColumnIndex, e.RowIndex].FormattedValue?.ToString();
+        };
         grid.ScrollBars = ScrollBars.Both;
         foreach(DataGridViewColumn column in grid.Columns) column.SortMode = DataGridViewColumnSortMode.NotSortable;
         foreach(string name in new[] { "Price", "CasePrice" })
@@ -194,7 +198,7 @@ internal sealed class ProductListForm : PosForm
             e.Value = grid.Columns[e.ColumnIndex].Name switch
             {
                 "Barcode" => item.Barcode, "Brand" => meta.Brand, "Description" => item.Description, "Size" => item.Size,
-                "Price" => item.UnitPrice, "OnHand" => stock.GetValueOrDefault(item.Barcode) is long units ? units : "Not counted",
+                "Price" => item.UnitPrice, "OnHand" => stock.GetValueOrDefault(item.Barcode) is long units ? units : "N/A",
                 "Supplier" => meta.Supplier, "CasePrice" => item.HasCasePrice ? item.CasePrice : null, "Type" => meta.Type,
                 "VendorCode" => meta.VendorCode, "UnitCost" => meta.UnitCost is decimal cost ? Sale.Money(cost) : "Not set",
                 "OnOrder"=>a?.OnOrder,"Draft"=>draft.GetValueOrDefault(item.Barcode),"Sold7"=>a?.Sold7,"Sold30"=>a?.Sold30,"Sold90"=>a?.Sold90,"MTD"=>a?.MonthToDate,"YTD"=>a?.YearToDate,

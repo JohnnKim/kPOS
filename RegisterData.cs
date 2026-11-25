@@ -165,6 +165,9 @@ internal sealed partial class RegisterData : IDisposable
                 return "This product changed in another window. Close and reopen it to edit the latest details.";
         }
 
+        using var aliases = Command("SELECT 1 FROM scan_aliases WHERE scan IN ($code,$barcode) AND barcode<>$barcode",transaction);
+        aliases.Parameters.AddWithValue("$code",product.Code); aliases.Parameters.AddWithValue("$barcode",product.Barcode);
+        if (aliases.ExecuteScalar() is not null) return "That code belongs to another product barcode.";
         using var conflicts = Command("""
             SELECT description FROM products
             WHERE ($original IS NULL OR barcode <> $original)
@@ -304,6 +307,7 @@ internal sealed partial class RegisterData : IDisposable
             AddPurchasing(transaction);
 
         if(currentVersion < 16) { using var display=Command("ALTER TABLE register_settings ADD COLUMN display_message TEXT NOT NULL DEFAULT ''; PRAGMA user_version=16;",transaction);display.ExecuteNonQuery(); }
+        if (currentVersion < 17) CreateRetailReports(transaction);
         transaction.Commit();
     }
 

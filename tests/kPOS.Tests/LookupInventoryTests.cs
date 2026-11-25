@@ -35,7 +35,7 @@ public sealed class LookupInventoryTests
             Assert.AreEqual(21L, Stock(grid, "101"));
             Assert.AreEqual(0L, Stock(grid, "102"));
             Assert.AreEqual(-1L, Stock(grid, "201"));
-            Assert.AreEqual("Not counted", Stock(grid, "302"));
+            Assert.AreEqual("N/A", Stock(grid, "302"));
         }
 
         data.SaveInventoryEntry(beer.Barcode, day, InventoryEntry.OpeningCount, 30);

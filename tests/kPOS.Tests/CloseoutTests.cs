@@ -34,7 +34,7 @@ public sealed class CloseoutTests
         Assert.AreEqual(2L, data.CloseNumber(day.AddDays(1)));
         var row = data.ReadReport(RecordReport.Closeout, day, day).Rows[0];
         Assert.AreEqual(110m, Convert.ToDecimal(row["Revised total"], System.Globalization.CultureInfo.InvariantCulture));
-        Assert.AreEqual(10m, Convert.ToDecimal(row["Debit"], System.Globalization.CultureInfo.InvariantCulture));
+        Assert.AreEqual(24m, Convert.ToDecimal(row["Credit/Debit"], System.Globalization.CultureInfo.InvariantCulture));
     }
 
     [TestMethod]

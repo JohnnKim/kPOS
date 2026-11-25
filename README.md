@@ -1,6 +1,8 @@
 # kPOS
 Independent liquor store POS system
 
+Preview.41 adds inventory and vendor import, dated promotions, Avery label printing, and printable period sales and department profit reports.
+
 Preview.40 validates discount rates in Sale.SetDiscount to match line editing rules.
 
 Preview.39 improves terminal and dialog layout, expands Settings, and limits register messages to 24 characters.

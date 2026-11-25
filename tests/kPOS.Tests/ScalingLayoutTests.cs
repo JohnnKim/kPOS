@@ -45,7 +45,7 @@ public sealed class ScalingLayoutTests
             window.Size=size;Application.DoEvents();
             if(size.Width>=1000)
             {
-                foreach(var (name,value) in new[]{("Barcode",data.ListProducts()[0].Barcode),("OnHand","Not counted")})
+                foreach(var (name,value) in new[]{("Barcode",data.ListProducts()[0].Barcode),("OnHand","N/A")})
                 {
                     var column=grid.Columns[name]!;var style=column.InheritedStyle!;
                     Assert.IsTrue(TextRenderer.MeasureText(value,style.Font).Width+style.Padding.Horizontal<=column.Width,$"{name} must show its full value at {size}.");

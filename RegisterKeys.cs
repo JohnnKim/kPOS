@@ -43,7 +43,7 @@ internal sealed partial class RegisterData
     {
         foreach(string key in keys.SaleCommands.Select(pair => pair.Value).Where(value => value.Length > 0))
         {
-            using var query = Command("SELECT description FROM products WHERE archived=0 AND (code=$key OR barcode=$key) LIMIT 1", transaction);
+            using var query = Command("SELECT description FROM products WHERE archived=0 AND (code=$key OR barcode=$key OR barcode=(SELECT barcode FROM scan_aliases WHERE scan=$key)) LIMIT 1", transaction);
             query.Parameters.AddWithValue("$key", key);
             if(query.ExecuteScalar() is string name) return $"A shortcut conflicts with the item code or barcode for {name}.";
         }
