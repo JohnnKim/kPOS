@@ -16,10 +16,10 @@ internal sealed class StoreTerminalForm : PosForm
     private readonly Label connection = PosView.Label("● Off", 12, FontStyle.Bold, PosView.Muted);
     private readonly Label store = PosView.Label("Connect this checkout station to the store host.", 11);
     private readonly Label feedback = PosView.Label("Use Copy Store Pairing on Host Terminal.", 11);
-    private readonly Label due = PosView.BannerAmount("$0.00", 32);
-    private readonly Label caption = PosView.Label("TOTAL DUE", 14, FontStyle.Bold, Color.White);
-    private readonly Label last = PosView.Label("", 12, FontStyle.Bold);
-    private readonly Label salesTax = PosView.Label("Sales Tax  $0.00", 12);
+    private readonly Label due = PosView.BannerAmount("$0.00", 26);
+    private readonly Label caption = PosView.Label("TOTAL DUE", 12, FontStyle.Bold, Color.White);
+    private readonly Label last = PosView.Label("", 11, FontStyle.Bold);
+    private readonly Label salesTax = PosView.Label("Sales Tax  $0.00", 11);
     private readonly DataGridView grid = HomeTerminalView.Grid();
     private readonly List<Button> actions = [];
     private readonly Queue<(string Code, bool Case)> scans = new();
@@ -58,7 +58,7 @@ internal sealed class StoreTerminalForm : PosForm
     public StoreTerminalForm(string? profilePath = null)
     {
         this.profilePath = profilePath ?? StoreTerminalProfile.DefaultPath;
-        Text = "kPOS — Store Terminal (LAN)"; ClientSize = new Size(1180, 760); StartPosition = FormStartPosition.CenterScreen;
+        Text = "kPOS — Store Terminal (LAN)"; ClientSize = new Size(1240, 760); StartPosition = FormStartPosition.CenterScreen;
         BackColor = PosView.Canvas; store.MaximumSize = feedback.MaximumSize = new Size(1080, 0); last.MaximumSize = new Size(310, 0);
         try
         {
@@ -98,10 +98,10 @@ internal sealed class StoreTerminalForm : PosForm
         grid.AccessibleName = "Shared store sale";
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Line", HeaderText = "#", Width = 38, MinimumWidth = 38 });
         grid.Columns["Line"]!.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Item", HeaderText = "Current Sale", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 180 });
-        foreach(var pair in new[] { ("Size", 90), ("Qty", 50), ("Unit Price", 100), ("Discount", 80), ("Amount", 100) }) grid.Columns.Add(new DataGridViewTextBoxColumn { Name = pair.Item1, HeaderText = pair.Item1, Width = pair.Item2 });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Item", HeaderText = "Current Sale", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 140 });
+        foreach(var pair in new[] { ("Size", 80), ("Qty", 50), ("Unit Price", 90), ("Discount", 95), ("Amount", 95) }) grid.Columns.Add(new DataGridViewTextBoxColumn { Name = pair.Item1, HeaderText = pair.Item1, Width = pair.Item2 }); grid.Columns["Discount"]!.MinimumWidth = 90;
         var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
-        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65)); body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35)); body.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 68)); body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32)); body.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var saleArea = HomeTerminalView.Layout();
         saleArea.Padding = Padding.Empty;
         HomeTerminalView.Row(saleArea, grid, true);
@@ -119,13 +119,13 @@ internal sealed class StoreTerminalForm : PosForm
         var receipt = PosView.Button("Last Receipt", size: 11); receipt.Click += (_, _) => ShowReceipt();
         var printerSettings = PosView.Button("Printer / Drawer", size: 11); printerSettings.Click += (_, _) => ShowHardwareSettings();
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(receipt, printerSettings));
-        foreach(Control row in summary.Controls) row.Margin = new Padding(0, 1, 0, 2);
-        body.Controls.Add(PosView.Scroll(summary), 1, 0);
+        foreach(Control row in summary.Controls) row.Margin = new Padding(0, 1, 0, 1);
+        summary.Dock = DockStyle.Fill; summary.AutoScroll = false; body.Controls.Add(summary, 1, 0);
         var layout = HomeTerminalView.Layout();
-        var heading = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2 };
+        var heading = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Padding = new Padding(0, 0, 0, 4) };
         heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); heading.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         heading.Controls.Add(PosView.Label("kPOS · Store Terminal", 22, FontStyle.Bold), 0, 0);
-        heading.Controls.Add(new RegisterClock { ForeColor = PosView.Ink, Anchor = AnchorStyles.Right }, 1, 0);
+        heading.Controls.Add(new RegisterClock { ForeColor = PosView.Ink, Anchor = AnchorStyles.Right, Padding = new Padding(0, 2, 0, 6), Margin = new Padding(0, 0, 0, 4) }, 1, 0);
         HomeTerminalView.Row(layout, heading);
         HomeTerminalView.Row(layout, PosView.Label("Checkout station · connects to Host Terminal in the store", 11));
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(connection, setupToggle, paste, connect, disconnect));
