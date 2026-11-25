@@ -88,7 +88,9 @@ internal sealed class ProportionalLayout : IDisposable
         if(control is AmountLabel amount)amount.SetViewScale(scale);
         else if(fonts.TryGetValue(control,out var original))
         {
-            var key=(original.Family,Math.Max((root.FindForm() is RegisterForm ? 1f : control.AccessibleName=="Register display message"?16f:9.5f)*96/root.DeviceDpi,(float)Math.Round(original.Size*scale,2)),original.Style);
+            float minimum = control.AccessibleName == "Register display message" ? 16f :
+                (root.FindForm() is RegisterForm ? 1f : 9.5f) * 96 / root.DeviceDpi;
+            var key=(original.Family,Math.Max(minimum,(float)Math.Round(original.Size*scale,2)),original.Style);
             if(!owned.TryGetValue(key,out Font? font)){font=new Font(key.Family,key.Item2,key.Style);owned[key]=font;}
             control.Font=font;
             if(control is DataGridView grid)

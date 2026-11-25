@@ -1,7 +1,7 @@
 # kPOS
 Independent liquor store POS system
 
-Preview.41 adds inventory and vendor import, dated promotions, Avery label printing, and printable period sales and department profit reports.
+Preview.42 adds inventory and vendor import, dated promotions, Avery label printing, and printable period sales and department profit reports.
 
 On the store register, open **Products → Import Data…**. Choose `inventory.txt`, then `vendor.txt`, and confirm the opening stock date. kPOS reads both files on the register and saves them in its local database. The completion dialog lists any barcodes that need review.
 

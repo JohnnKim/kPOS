@@ -13,7 +13,7 @@ internal enum RecordReport { Totals, Sales, SaleLines, ItemTotals, PriceHistory,
 
 internal sealed partial class RegisterData
 {
-    public const int SchemaVersion = 17;
+    public const int SchemaVersion = 18;
     public const int DefaultChangeSeconds = 8;
     public const int MaximumChangeSeconds = 120;
     private const string HasSoldItems = """

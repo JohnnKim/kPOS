@@ -34,11 +34,16 @@ internal sealed partial class RegisterData
             INSERT INTO data_revision VALUES(1,1);
             PRAGMA user_version=15;
             """, transaction); schema.ExecuteNonQuery();
-        foreach(string table in new[] { "products", "product_details", "sales", "sale_lines", "inventory_counts", "inventory_receipts", "order_draft",
-            "purchase_distributors", "purchase_business", "distributor_items", "home_order_requests", "purchase_orders", "purchase_lines", "purchase_receivings", "register_settings", "day_closeouts", "drawer_expenses" })
+        AddRevisionTriggers(transaction, ["products", "product_details", "sales", "sale_lines", "inventory_counts", "inventory_receipts", "order_draft",
+            "purchase_distributors", "purchase_business", "distributor_items", "home_order_requests", "purchase_orders", "purchase_lines", "purchase_receivings", "register_settings", "day_closeouts", "drawer_expenses"]);
+    }
+
+    private void AddRevisionTriggers(SqliteTransaction transaction, string[] tables)
+    {
+        foreach(string table in tables)
         foreach(string action in new[] { "INSERT", "UPDATE", "DELETE" })
         {
-            using var trigger = Command($"CREATE TRIGGER revision_{table}_{action} AFTER {action} ON {table} BEGIN UPDATE data_revision SET revision=revision+1 WHERE id=1; END;", transaction);
+            using var trigger = Command($"CREATE TRIGGER IF NOT EXISTS revision_{table}_{action} AFTER {action} ON {table} BEGIN UPDATE data_revision SET revision=revision+1 WHERE id=1; END;", transaction);
             trigger.ExecuteNonQuery();
         }
     }

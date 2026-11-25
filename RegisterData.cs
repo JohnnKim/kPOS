@@ -308,6 +308,12 @@ internal sealed partial class RegisterData : IDisposable
 
         if(currentVersion < 16) { using var display=Command("ALTER TABLE register_settings ADD COLUMN display_message TEXT NOT NULL DEFAULT ''; PRAGMA user_version=16;",transaction);display.ExecuteNonQuery(); }
         if (currentVersion < 17) CreateRetailReports(transaction);
+        if (currentVersion < 18)
+        {
+            AddRevisionTriggers(transaction, ["inventory_counts", "promotions", "scan_aliases"]);
+            using var upgraded = Command("PRAGMA user_version=18", transaction);
+            upgraded.ExecuteNonQuery();
+        }
         transaction.Commit();
     }
 
