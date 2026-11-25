@@ -54,7 +54,7 @@ internal static class HomeTerminalView
 
     internal static FlowLayoutPanel Actions(params Control[] controls)
     {
-        var row = new FlowLayoutPanel { AutoSize = true, WrapContents = true, Dock = DockStyle.Top };
+        var row = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Dock = DockStyle.Fill, Margin = new Padding(0, 4, 0, 6), Padding = new Padding(0, 2, 0, 4) };
         row.Controls.AddRange(controls);
         return row;
     }

@@ -27,7 +27,7 @@ internal sealed class RecordsForm : PosForm
         this.folders = folders;
         barcode = product?.Barcode;
         Text = product is null ? "Sales Records" : $"Item History - {product.Description}";
-        ClientSize = new Size(1060, 640);
+        ClientSize = new Size(1240, 680);
         MinimumSize = new Size(760, 430);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
@@ -290,6 +290,12 @@ internal sealed class RecordsForm : PosForm
         PosView.Grid(grid, 10, 43);
         grid.ColumnHeadersDefaultCellStyle.Font = PosView.Text(10, FontStyle.Bold);
         grid.ColumnHeadersHeight = 47;
+        grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+        grid.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCells;
+        grid.ShowCellToolTips = true;
+        grid.ScrollBars = ScrollBars.Both;
         grid.CellFormatting += (_, e) =>
         {
             if (e.ColumnIndex >= 0 && grid.Columns[e.ColumnIndex].DataPropertyName is "Sold at" or "Recorded at" &&
@@ -322,8 +328,19 @@ internal sealed class RecordsForm : PosForm
                     "Cash over/short" or "Card over/short" or "Cash deposit" or "Notes",
                 _ => true
             };
-            column.Resizable = DataGridViewTriState.False;
-            column.MinimumWidth = 40;
+            column.Resizable = DataGridViewTriState.True;
+            column.MinimumWidth = field switch
+            {
+                "Business date" or "Sold at" or "Recorded at" => 115,
+                "Barcode" => 140,
+                "Product" or "Notes" or "Reason" => 170,
+                "Event" => 105,
+                "Close number" => 80,
+                "Sales" or "Quantity" or "Pack" or "Type" => 65,
+                "Units per case" => 95,
+                "Revised total" or "Drawer expenses" or "Cash over/short" or "Card over/short" or "Cash deposit" or "Unit price" or "Case price" => 110,
+                _ => 80
+            };
             column.FillWeight = field switch
             {
                 "Sold at" or "Recorded at" => 142,

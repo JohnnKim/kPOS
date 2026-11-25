@@ -41,7 +41,7 @@ internal sealed partial class RegisterData
         return rows;
     }
 
-    internal ImportSummary ImportLegacyCatalog(string inventoryFile, string vendorFile, DateOnly asOf)
+    internal ImportSummary ImportLegacyCatalog(string inventoryFile, string vendorFile, DateOnly asOf, bool replaceAllData = false)
     {
         var items = ReadLegacyRows(inventoryFile, 72);
         var vendors = ReadLegacyRows(vendorFile, 18);
@@ -49,14 +49,19 @@ internal sealed partial class RegisterData
             .Where(g => g.Select(r => r[69]).Distinct().Skip(1).Any()).Select(g => g.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var review = ambiguous.Select(barcode => $"Barcode {barcode} is assigned to different items. Search by item name until corrected.").ToList();
         using var tx = connection.BeginTransaction(deferred: false);
-        using var previous = Command("SELECT 1 FROM legacy_inventory LIMIT 1", tx);
-        if (previous.ExecuteScalar() is not null) throw new InvalidOperationException("This database already contains a legacy inventory import.");
+        if (!replaceAllData)
+        {
+            using var previous = Command("SELECT 1 FROM legacy_inventory LIMIT 1", tx);
+            if (previous.ExecuteScalar() is not null) throw new InvalidOperationException("This database already contains a legacy inventory import.");
+        }
         void Run(string sql, params object[] values)
         {
             using var stmt = Command(sql,tx);
             for (int i=0;i<values.Length;i++) stmt.Parameters.AddWithValue("$p"+i,values[i]);
             stmt.ExecuteNonQuery();
         }
+        if (replaceAllData)
+                Run("DELETE FROM sale_lines; DELETE FROM sales; DELETE FROM day_closeouts; DELETE FROM drawer_expenses; DELETE FROM purchase_receivings; DELETE FROM purchase_lines; DELETE FROM purchase_orders; DELETE FROM order_draft; DELETE FROM inventory_receipts; DELETE FROM inventory_counts; DELETE FROM home_order_requests; DELETE FROM terminal_sales; DELETE FROM terminal_quotes; DELETE FROM promotions; DELETE FROM scan_aliases; DELETE FROM price_history; DELETE FROM distributor_items; DELETE FROM product_details; DELETE FROM legacy_inventory; DELETE FROM legacy_vendors; DELETE FROM purchase_distributors; DELETE FROM products;");
         var vendorIds = new Dictionary<string,long>(StringComparer.OrdinalIgnoreCase);
         int number = 0;
         foreach (var row in vendors)
