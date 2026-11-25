@@ -51,7 +51,7 @@ internal sealed class ItemSelectionForm : PosForm
         var grid = new DataGridView { Dock = DockStyle.Fill, VirtualMode = true, RowHeadersVisible = false,
             AllowUserToAddRows = false, AllowUserToDeleteRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill };
         PosView.Grid(grid);
-        grid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Select", FillWeight = 18 });
+        grid.RowTemplate.Height = 36; grid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Select", Width = 76, MinimumWidth = 72, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
         foreach (var (caption, weight) in new[] { ("Barcode", 55), ("Item name", 120), ("Size", 40), ("Price", 35) })
             grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = caption, ReadOnly = true, FillWeight = weight });
         grid.CellValueNeeded += (_, e) =>
@@ -95,10 +95,10 @@ internal sealed class ItemSelectionForm : PosForm
         var mode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 175 };
         mode.Items.AddRange(["Percent off", "Sale unit price"]); mode.SelectedIndex = 0;
         var amount = new NumericUpDown { Maximum = 100, DecimalPlaces = 2, Width = 110 };
-        mode.SelectedIndexChanged += (_, _) => amount.Maximum = mode.SelectedIndex == 0 ? 100 : 999999.99m;
+        Label RowLabel(string text) { var l = PosView.Label(text, 11); l.Margin = new Padding(4, 6, 4, 2); l.Anchor = AnchorStyles.Left; return l; } var valueLabel = RowLabel("Percent (%)"); mode.SelectedIndexChanged += (_, _) => { amount.Maximum = mode.SelectedIndex == 0 ? 100 : 999999.99m; valueLabel.Text = mode.SelectedIndex == 0 ? "Percent (%)" : "Sale price ($)"; };
         var copies = new NumericUpDown { Minimum = 1, Maximum = 100, Value = 1, Width = 80 };
-        if (labels) HomeTerminalView.Row(layout, HomeTerminalView.Actions(PosView.Label("Labels per item", 11), copies));
-        else HomeTerminalView.Row(layout, HomeTerminalView.Actions(PosView.Label("From", 11), start, PosView.Label("Through", 11), end, mode, amount));
+        if (labels) HomeTerminalView.Row(layout, HomeTerminalView.Actions(RowLabel("Labels per item"), copies));
+        else HomeTerminalView.Row(layout, HomeTerminalView.Actions(RowLabel("From"), start, RowLabel("Through"), end, RowLabel("Discount type"), mode, valueLabel, amount));
         var apply = PosView.Button(labels ? "Preview labels" : "Save Promotion", primary: true);
         apply.Click += (_, _) =>
         {
