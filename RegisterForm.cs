@@ -892,7 +892,7 @@ if (replaceAllData)
 {
 Directory.CreateDirectory(folders.Backups);
 backupPath = Path.Combine(folders.Backups, $"before-catalog-replace-{day:yyyy-MM-dd}-{Guid.NewGuid():N}.zip");
-RegisterData.ExportBackup(data.DatabasePath, backupPath, folders.DailyArchives, new BackupExportOptions());
+RegisterData.ExportBackup(data.DatabasePath, backupPath, folders.DailyArchives, new BackupExportOptions(true, Array.Empty<RecordReport>(), false, day, day, System.IO.Compression.CompressionLevel.Optimal));
 }
 var result = data.ImportLegacyCatalog(inventory, picker.FileName, day, replaceAllData: replaceAllData);
 sale.Clear();
