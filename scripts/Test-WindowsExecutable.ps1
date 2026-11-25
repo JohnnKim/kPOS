@@ -94,15 +94,13 @@ public static class KposExecutableTest
                 WaitUntil(() => TextIsInBounds(settings, "Change display duration (seconds)") &&
                     TextIsInBounds(settings, "&Save Settings"), "show the Settings form and its save button");
                 IntPtr tabs = FindChildByClass(settings, "WindowsForms10.SysTabControl32.");
-                Send(tabs, 0x0100, 0x27); // Right to Display
+                Send(tabs, 0x1330, 1); Send(tabs, 0x0100, 0x20); Send(tabs, 0x0101, 0x20); // Select Display tab
                 WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen") &&
                     HasText(settings, "Show last change on the sales screen"), "show both display settings");
-                Send(tabs, 0x0100, 0x27); // Right to Company Information
-                Send(tabs, 0x0100, 0x27); // Right to Shortcuts
+                Send(tabs, 0x1330, 3); Send(tabs, 0x0100, 0x20); Send(tabs, 0x0101, 0x20); // Select Shortcuts tab
                 WaitUntil(() => HasText(settings, "Stock in Orders (F6)") && HasText(settings, "Submit fast barcode scans without Enter"),
                     "reach the expanded shortcut settings by scrolling");
-                Send(tabs, 0x0100, 0x25); // Left to Company Information
-                Send(tabs, 0x0100, 0x25); // Left to Display
+                Send(tabs, 0x1330, 1); Send(tabs, 0x0100, 0x20); Send(tabs, 0x0101, 0x20); // Return to Display tab
                 WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen"), "return to display settings");
                 IntPtr showKeys = FindChildWithText(settings, "Show Register Keys on the sales screen");
                 IntPtr showChange = FindChildWithText(settings, "Show last change on the sales screen");
@@ -115,7 +113,7 @@ public static class KposExecutableTest
                 Send(FindChildWithText(register, "Se&ttings"), 0x00F5, 0);
                 settings = FindWindow(desktop, process.ProcessId, "Settings");
                 tabs = FindChildByClass(settings, "WindowsForms10.SysTabControl32.");
-                Send(tabs, 0x0100, 0x27);
+                Send(tabs, 0x1330, 1); Send(tabs, 0x0100, 0x20); Send(tabs, 0x0101, 0x20); // Reopen Display tab
                 WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen"), "reopen display settings");
                 Send(FindChildWithText(settings, "Show Register Keys on the sales screen"), 0x00F5, 0);
                 Send(FindChildWithText(settings, "Show last change on the sales screen"), 0x00F5, 0);
