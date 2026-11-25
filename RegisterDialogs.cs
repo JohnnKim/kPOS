@@ -191,7 +191,7 @@ internal sealed class ProductListForm : PosForm
             PosView.AmountColumn(grid, "Price", 11);priceColumn.ValueType = typeof(decimal);
             priceColumn.DefaultCellStyle.Format = "C2"; priceColumn.DefaultCellStyle.FormatProvider = CultureInfo.GetCultureInfo("en-US");
         }
-                PosView.AmountColumn(grid, "CasePrice", 11);
+                if (grid.Columns["CasePrice"] is not null) PosView.AmountColumn(grid, "CasePrice", 11);
         grid.CellValueNeeded += (_, e) =>
         {
             if((uint)e.RowIndex >= (uint)matches.Length) return;
@@ -216,7 +216,7 @@ internal sealed class ProductListForm : PosForm
         };
         search.Text = initialSearch;
         filterTimer.Tick += (_, _) => { filterTimer.Stop(); Filter(); };
-        search.TextChanged += (_, _) => { filterTimer.Stop(); filterTimer.Start(); };
+        search.TextChanged += (_, _) => { if (products.Count > 200) { filterTimer.Stop(); filterTimer.Start(); } else Filter(); };
         FormClosed += (_, _) => filterTimer.Dispose();
         field.SelectedIndexChanged += (_, _) => Filter();
         grid.CellDoubleClick += (_, e) =>
