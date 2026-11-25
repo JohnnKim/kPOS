@@ -107,8 +107,8 @@ internal sealed class StoreTerminalForm : PosForm
         HomeTerminalView.Row(saleArea, grid, true);
         body.Controls.Add(saleArea, 0, 0);
         var summary = HomeTerminalView.Layout(); summary.Padding = new Padding(2); summary.BackColor = PosView.Light;
-        var banner = HomeTerminalView.Layout(); banner.BackColor = PosView.Navy; banner.AutoSize = true; banner.AutoSizeMode = AutoSizeMode.GrowAndShrink; banner.Padding = new Padding(4, 1, 4, 1);
-        HomeTerminalView.Row(banner, caption); HomeTerminalView.Row(banner, due); due.MinimumSize = new Size(0, 32); due.Height = 34;
+        var banner = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, BackColor = PosView.Navy, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Top, Padding = new Padding(6, 2, 6, 2) }; banner.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); banner.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        caption.Anchor = AnchorStyles.Left; due.MinimumSize = new Size(0, 26); due.Height = 28; due.Dock = DockStyle.Fill; banner.Controls.Add(caption, 0, 0); banner.Controls.Add(due, 1, 0);
         HomeTerminalView.Row(summary, banner);
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(salesTax, cases));
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(Action("Checkout · F9", CheckoutAsync, true, true), Action("Retry Confirmation", CheckoutAsync, compact: true)));
