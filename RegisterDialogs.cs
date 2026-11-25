@@ -216,7 +216,7 @@ internal sealed class ProductListForm : PosForm
         };
         search.Text = initialSearch;
         filterTimer.Tick += (_, _) => { filterTimer.Stop(); Filter(); };
-        search.TextChanged += (_, _) => { if (products.Count > 200) { filterTimer.Stop(); filterTimer.Start(); } else Filter(); };
+        search.TextChanged += (_, _) => { if (products.Count > 1000) { filterTimer.Stop(); filterTimer.Start(); } else Filter(); };
         FormClosed += (_, _) => filterTimer.Dispose();
         field.SelectedIndexChanged += (_, _) => Filter();
         grid.CellDoubleClick += (_, e) =>
