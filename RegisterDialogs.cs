@@ -20,6 +20,7 @@ internal sealed class ProductListForm : PosForm
     private readonly bool selectItem;
     private readonly bool allowAddCode;
     private readonly TextBox search = new() { Dock = DockStyle.Fill, AccessibleName = "Find product", MaxLength = 80 };
+    private readonly System.Windows.Forms.Timer filterTimer = new() { Interval = 90 };
     private readonly ComboBox field = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 152, AccessibleName = "Search by" };
     private readonly Label matchCount = PosView.Label("", 11, color: PosView.Muted);
     private readonly Button add = PosView.Button("Add as &Code", size: 11);
@@ -185,12 +186,12 @@ internal sealed class ProductListForm : PosForm
         };
         grid.ScrollBars = ScrollBars.Both;
         foreach(DataGridViewColumn column in grid.Columns) column.SortMode = DataGridViewColumnSortMode.NotSortable;
-        foreach(string name in new[] { "Price", "CasePrice" })
+        if(grid.Columns["Price"] is DataGridViewColumn priceColumn)
         {
-            if(grid.Columns[name] is not DataGridViewColumn column) continue;
-            PosView.AmountColumn(grid, name, 11); column.ValueType = typeof(decimal);
-            column.DefaultCellStyle.Format = "C2"; column.DefaultCellStyle.FormatProvider = CultureInfo.GetCultureInfo("en-US");
+            PosView.AmountColumn(grid, "Price", 11);priceColumn.ValueType = typeof(decimal);
+            priceColumn.DefaultCellStyle.Format = "C2"; priceColumn.DefaultCellStyle.FormatProvider = CultureInfo.GetCultureInfo("en-US");
         }
+                PosView.AmountColumn(grid, "CasePrice", 11);
         grid.CellValueNeeded += (_, e) =>
         {
             if((uint)e.RowIndex >= (uint)matches.Length) return;
@@ -200,7 +201,7 @@ internal sealed class ProductListForm : PosForm
             {
                 "Barcode" => item.Barcode, "Brand" => meta.Brand, "Description" => item.Description, "Size" => item.Size,
                 "Price" => item.UnitPrice, "OnHand" => stock.GetValueOrDefault(item.Barcode) is long units ? units : "N/A",
-                "Supplier" => meta.Supplier, "CasePrice" => item.HasCasePrice ? item.CasePrice : null, "Type" => meta.Type,
+                "Supplier" => meta.Supplier, "CasePrice" => item.HasCasePrice ? Sale.Money(item.CasePrice) : "", "Type" => meta.Type,
                 "VendorCode" => meta.VendorCode, "UnitCost" => meta.UnitCost is decimal cost ? Sale.Money(cost) : "Not set",
                 "OnOrder"=>a?.OnOrder,"Draft"=>draft.GetValueOrDefault(item.Barcode),"Sold7"=>a?.Sold7,"Sold30"=>a?.Sold30,"Sold90"=>a?.Sold90,"MTD"=>a?.MonthToDate,"YTD"=>a?.YearToDate,
                 "LastSale"=>a?.LastSale?.ToString("yyyy-MM-dd"),"LastReceived"=>a?.LastReceived?.ToString("yyyy-MM-dd"),"Class"=>setup.Class,"Bin"=>setup.Bin,"Par"=>setup.Par,"Reorder"=>setup.ReorderPoint,
@@ -214,7 +215,9 @@ internal sealed class ProductListForm : PosForm
             { e.CellStyle!.ForeColor = PosView.Error; e.CellStyle.SelectionForeColor = Color.White; }
         };
         search.Text = initialSearch;
-        search.TextChanged += (_, _) => Filter();
+        filterTimer.Tick += (_, _) => { filterTimer.Stop(); Filter(); };
+        search.TextChanged += (_, _) => { filterTimer.Stop(); filterTimer.Start(); };
+        FormClosed += (_, _) => filterTimer.Dispose();
         field.SelectedIndexChanged += (_, _) => Filter();
         grid.CellDoubleClick += (_, e) =>
         {
