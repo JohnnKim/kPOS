@@ -107,7 +107,7 @@ internal sealed class RegisterForm : PosForm
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 68));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 140));
         var header = CreateHeader();
