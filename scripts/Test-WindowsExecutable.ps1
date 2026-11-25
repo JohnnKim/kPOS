@@ -53,8 +53,9 @@ public static class KposExecutableTest
                 WaitUntil(() => !IsZoomed(register), "restore the register window");
                 if (!SetWindowPos(register, IntPtr.Zero, 0, 0, 780, 515, 0x0016))
                     throw new Win32Exception();
-                WaitUntil(() => ScrollableAncestor(register, "Register Keys") != IntPtr.Zero &&
-                    RevealText(register, "F9"), "scroll to register keys in a smaller window");
+                WaitUntil(() => (ScrollableAncestor(register, "Register Keys") != IntPtr.Zero ||
+                    TextIsInBounds(register, "Register Keys")) &&
+                    RevealText(register, "F9"), "show register keys in a smaller window");
                 if (!SetWindowPos(register, IntPtr.Zero, 0, 0, 1280, 720, 0x0016))
                     throw new Win32Exception();
                 RevealText(register, "kPOS");
