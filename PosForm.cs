@@ -222,20 +222,24 @@ internal class PosForm : Form
 
 
 
-            proportional.Apply(factor); if (this is RegisterForm
-                {
-                    canvas.Size = new Size(
-                       Math.Max((int)Math.Round(minimumCanvas.Width * factor), viewport.ClientSize.Width),
-                       (int)Math.Round(minimumCanvas.Height * factor));
-                       var offset = viewport.AutoScrollPosition;
-                       canvas.Location = new Point(0,
-                       canvas.Height <= viewport.ClientSize.Height ? (viewport.ClientSize.Height - canvas.Height) / 2 : offset.Y);
-                } else {                       
-            canvas.Size=new Size((int)Math.Round(minimumCanvas.Width*factor),(int)Math.Round(minimumCanvas.Height*factor));
-            var offset=viewport.AutoScrollPosition;
-            canvas.Location=new Point(canvas.Width<=viewport.ClientSize.Width?(viewport.ClientSize.Width-canvas.Width)/2:offset.X,
-                canvas.Height<=viewport.ClientSize.Height?(viewport.ClientSize.Height-canvas.Height)/2:offset.Y); }
-            if(this is RegisterForm register)register.ArrangeDisplayMessage();
+            proportional.Apply(factor);
+            if (this is RegisterForm)
+            {
+    canvas.Size = new Size(
+    Math.Max((int)Math.Round(minimumCanvas.Width * factor), viewport.ClientSize.Width),
+(int)Math.Round(minimumCanvas.Height * factor));
+        var offset = viewport.AutoScrollPosition;
+                canvas.Location = new Point(0,
+                    canvas.Height <= viewport.ClientSize.Height ? (viewport.ClientSize.Height - canvas.Height) / 2 : offset.Y);
+            }
+            else
+            {
+                canvas.Size = new Size((int)Math.Round(minimumCanvas.Width * factor), (int)Math.Round(minimumCanvas.Height * factor));
+                var offset = viewport.AutoScrollPosition;
+                canvas.Location = new Point(canvas.Width <= viewport.ClientSize.Width ? (viewport.ClientSize.Width - canvas.Width) / 2 : offset.X,
+                    canvas.Height <= viewport.ClientSize.Height ? (viewport.ClientSize.Height - canvas.Height) / 2 : offset.Y);
+            }
+            if (this is RegisterForm register) register.ArrangeDisplayMessage();
         }
         finally
         {
