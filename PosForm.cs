@@ -21,6 +21,18 @@ internal class PosForm : Form
         Font = PosView.Text(11);
     }
 
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == Keys.Escape && this is not RegisterForm)
+        {
+            if (Modal)
+                DialogResult = DialogResult.Cancel;
+            Close();
+            return true;
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
     private static readonly Lazy<Icon> AppIcon = new(() =>
     {
         using Stream stream = typeof(PosForm).Assembly.GetManifestResourceStream("Kpos.AppIcon")!;
