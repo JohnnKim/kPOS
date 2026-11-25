@@ -94,12 +94,12 @@ internal sealed class StoreTerminalForm : PosForm
         var setup = HomeTerminalView.Fields(("Terminal name", terminalName), ("Store address", url), ("Certificate SHA256", pin), ("Store checkout key", key));
         connectionFields = setup;
         var setupToggle = PosView.Button("Connection Setup", size: 11); setupToggle.Click += (_, _) => setup.Visible = !setup.Visible;
-        grid.AutoGenerateColumns = false; grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+        grid.AutoGenerateColumns = false; grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill; grid.ScrollBars = ScrollBars.Both;
         grid.AccessibleName = "Shared store sale";
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Line", HeaderText = "#", Width = 38, MinimumWidth = 38 });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Line", HeaderText = "#", FillWeight = 32, MinimumWidth = 36 });
         grid.Columns["Line"]!.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Item", HeaderText = "Current Sale", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 140 });
-        foreach(var pair in new[] { ("Size", 80), ("Qty", 50), ("Unit Price", 90), ("Discount", 95), ("Amount", 95) }) grid.Columns.Add(new DataGridViewTextBoxColumn { Name = pair.Item1, HeaderText = pair.Item1, Width = pair.Item2 }); grid.Columns["Discount"]!.MinimumWidth = 90;
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Item", HeaderText = "Current Sale", FillWeight = 180, MinimumWidth = 120 });
+        foreach(var col in new[] { ("Size", 65f, 65), ("Qty", 42f, 44), ("Unit Price", 78f, 80), ("Discount", 82f, 85), ("Amount", 82f, 85) }) grid.Columns.Add(new DataGridViewTextBoxColumn { Name = col.Item1, HeaderText = col.Item1, FillWeight = col.Item2, MinimumWidth = col.Item3 });
         var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 68)); body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32)); body.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var saleArea = HomeTerminalView.Layout();
@@ -115,16 +115,16 @@ internal sealed class StoreTerminalForm : PosForm
         HomeTerminalView.Row(saleArea, HomeTerminalView.Actions(Action("Quantity · Q", QuantityAsync), Action("Refund · RF", RefundAsync), Action("Delete · F5", DeleteAsync)));
         HomeTerminalView.Row(saleArea, HomeTerminalView.Actions(Action("Item Lookup · F3", LookupAsync), Action("Refresh Prices", RefreshPricesAsync), Action("Void Sale · F4", VoidAsync)));
         HomeTerminalView.Row(summary, last);
-        var receipt = PosView.Button("Last Receipt", size: 9); receipt.AutoSize = false; receipt.MinimumSize = Size.Empty; receipt.Height = 26; receipt.Click += (_, _) => ShowReceipt(); receipt.Padding = new Padding(4, 2, 4, 2);
-        var printerSettings = PosView.Button("Printer / Drawer", size: 9); printerSettings.AutoSize = false; printerSettings.MinimumSize = Size.Empty; printerSettings.Height = 26; printerSettings.Click += (_, _) => ShowHardwareSettings(); printerSettings.Padding = new Padding(4, 2, 4, 2);
+        var receipt = PosView.Button("Last Receipt", size: 9); receipt.AutoSize = true; receipt.AutoSizeMode = AutoSizeMode.GrowAndShrink; receipt.MinimumSize = Size.Empty; receipt.Click += (_, _) => ShowReceipt(); receipt.MaximumSize = new Size(0, 26); receipt.Padding = new Padding(6, 1, 6, 1);
+        var printerSettings = PosView.Button("Printer / Drawer", size: 9); printerSettings.AutoSize = true; printerSettings.AutoSizeMode = AutoSizeMode.GrowAndShrink; printerSettings.MinimumSize = Size.Empty; printerSettings.Click += (_, _) => ShowHardwareSettings(); printerSettings.MaximumSize = new Size(0, 26); printerSettings.Padding = new Padding(6, 1, 6, 1);
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(receipt, printerSettings));
         foreach(Control row in summary.Controls) { row.Margin = Padding.Empty; row.Padding = Padding.Empty; }
         summary.Dock = DockStyle.Fill; summary.AutoScroll = false; body.Controls.Add(summary, 1, 0);
         var layout = HomeTerminalView.Layout(); layout.Padding = new Padding(8, 4, 8, 4);
-        var heading = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, Padding = new Padding(0, 0, 0, 4) };
+        var heading = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, Padding = new Padding(0, 2, 8, 6) };
         heading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); heading.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         heading.Controls.Add(PosView.Label("kPOS · Store Terminal", 22, FontStyle.Bold), 0, 0);
-        heading.Controls.Add(new RegisterClock { ForeColor = PosView.Ink, Anchor = AnchorStyles.Right, Padding = new Padding(0, 2, 0, 6), Margin = new Padding(0, 0, 0, 4) }, 1, 0);
+        heading.Controls.Add(new RegisterClock { ForeColor = PosView.Ink, AutoSize = true, TextAlign = ContentAlignment.MiddleRight, Anchor = AnchorStyles.Right, Padding = new Padding(0, 2, 6, 6), Margin = new Padding(0, 0, 4, 4) }, 1, 0);
         HomeTerminalView.Row(layout, heading);
         HomeTerminalView.Row(layout, PosView.Label("Checkout station · connects to Host Terminal in the store", 11));
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(connection, setupToggle, paste, connect, disconnect));
@@ -158,7 +158,7 @@ internal sealed class StoreTerminalForm : PosForm
         pulse.Start(); Render();
 
         Button Action(string text, Func<Task> action, bool primary = false, bool compact = false)
-        { var button = PosView.Button(text, primary, compact ? 9 : 11); if (compact) { button.AutoSize = false; button.MinimumSize = Size.Empty; button.Height = 26; button.Padding = new Padding(4, 2, 4, 2); } button.Click += async (_, _) => await RunAsync(action); actions.Add(button); return button; }
+        { var button = PosView.Button(text, primary, compact ? 9 : 11); if (compact) { button.AutoSize = true; button.AutoSizeMode = AutoSizeMode.GrowAndShrink; button.MinimumSize = Size.Empty; button.MaximumSize = new Size(0, 26); button.Padding = new Padding(6, 1, 6, 1); } button.Click += async (_, _) => await RunAsync(action); actions.Add(button); return button; }
     }
 
     private async Task ConnectAsync()

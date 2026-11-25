@@ -107,6 +107,10 @@ internal class PosForm : Form
             Size frame = Size - ClientSize;
             ClientSize = new Size(Math.Min((int)Math.Ceiling(minimumCanvas.Width * 1.5), work.Width - frame.Width),
                 Math.Min((int)Math.Ceiling(minimumCanvas.Height * 1.5) + menuHeight, work.Height - frame.Height));
+                Location = new Point(
+                work.Left + Math.Max(0, (work.Width - Width) / 2),
+                work.Top + Math.Max(0, (work.Height - Height) / 2));
+
         }
         FitContent();
         WindowState = state;
@@ -216,12 +220,26 @@ internal class PosForm : Form
             // One scale factor preserves the arrangement. Very small register windows retain scrolling.
             double factor=ScrollWholeWindow?Math.Max(smallest,fit):Math.Max(.25,fit);
 
+
+
             proportional.Apply(factor);
-            canvas.Size=new Size((int)Math.Round(minimumCanvas.Width*factor),(int)Math.Round(minimumCanvas.Height*factor));
-            var offset=viewport.AutoScrollPosition;
-            canvas.Location=new Point(canvas.Width<=viewport.ClientSize.Width?(viewport.ClientSize.Width-canvas.Width)/2:offset.X,
-                canvas.Height<=viewport.ClientSize.Height?(viewport.ClientSize.Height-canvas.Height)/2:offset.Y);
-            if(this is RegisterForm register)register.ArrangeDisplayMessage();
+            if (this is RegisterForm)
+            {
+    canvas.Size = new Size(
+    Math.Max((int)Math.Round(minimumCanvas.Width * factor), viewport.ClientSize.Width),
+(int)Math.Round(minimumCanvas.Height * factor));
+        var offset = viewport.AutoScrollPosition;
+                canvas.Location = new Point(0,
+                    canvas.Height <= viewport.ClientSize.Height ? (viewport.ClientSize.Height - canvas.Height) / 2 : offset.Y);
+            }
+            else
+            {
+                canvas.Size = new Size((int)Math.Round(minimumCanvas.Width * factor), (int)Math.Round(minimumCanvas.Height * factor));
+                var offset = viewport.AutoScrollPosition;
+                canvas.Location = new Point(canvas.Width <= viewport.ClientSize.Width ? (viewport.ClientSize.Width - canvas.Width) / 2 : offset.X,
+                    canvas.Height <= viewport.ClientSize.Height ? (viewport.ClientSize.Height - canvas.Height) / 2 : offset.Y);
+            }
+            if (this is RegisterForm register) register.ArrangeDisplayMessage();
         }
         finally
         {

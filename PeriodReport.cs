@@ -80,7 +80,7 @@ internal sealed partial class RegisterData
             <!doctype html><html lang="en"><meta charset="utf-8"><title>kPOS sales reports</title>
             <style>
             @page{size:letter landscape;margin:.45in}*{box-sizing:border-box}body{color:#111;font:10pt Arial,sans-serif;max-width:11in;margin:24px auto}
-            header{text-align:center}header small{float:left}h1{margin:5px}h2{text-align:center;border-bottom:3px double;padding-bottom:6px}
+            header{position:relative;text-align:center}header small{position:absolute;left:0;top:0}h1{margin:5px}h2{text-align:center;border-bottom:3px double;padding-bottom:6px}
             table{width:100%;border-collapse:collapse;font:10pt 'Courier New',monospace}td,th{text-align:right;padding:4px}th:first-child,td:first-child{text-align:left}
             th{border-bottom:1px solid}thead{display:table-header-group}tr{break-inside:avoid}.types{columns:2;column-gap:8%}.pair{display:flex;justify-content:space-between;break-inside:avoid;font:11pt 'Courier New';padding:3px 0}
             .grand{max-width:5in;margin:auto}.block{break-before:page}.matrix{font-size:8pt}footer{text-align:center;font-style:italic;margin-top:20px}

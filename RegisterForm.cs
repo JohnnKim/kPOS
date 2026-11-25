@@ -61,7 +61,7 @@ internal sealed class RegisterForm : PosForm
     private readonly Label lastChange = CreateAmountLabel();
     private readonly Label displayMessage=new(){AccessibleName="Register display message",AutoEllipsis=true,AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,ForeColor=PosView.Navy,Font=new Font("Segoe UI Semibold",22,FontStyle.Regular),Visible=false};
     private Action? arrangeDisplayMessage;
-    internal void ArrangeDisplayMessage()=>arrangeDisplayMessage?.Invoke();
+    internal void ArrangeDisplayMessage() { arrangeDisplayMessage?.Invoke(); if (ticket.IsHandleCreated) ticket.AutoResizeColumns(); }
     private bool nextItemIsCase;
     private bool exporting;
     public string? RequestedDirectory { get; private set; }
@@ -330,13 +330,13 @@ internal sealed class RegisterForm : PosForm
         version.Margin = new Padding(10, 0, 0, 10);
         identity.Controls.Add(title, 0, 0); identity.Controls.Add(version, 1, 0);
         header.Controls.Add(identity, 0, 0);
-        var dateAndTime = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        var dateAndTime = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.None, Anchor = AnchorStyles.Right, Margin = Padding.Empty, ColumnCount = 1, RowCount = 2 };
         dateAndTime.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         dateAndTime.RowStyles.Add(new RowStyle(SizeType.AutoSize)); dateAndTime.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         legalAge.Anchor = AnchorStyles.Right;
-        legalAge.Margin=new Padding(0);
+        legalAge.Padding = Padding.Empty; legalAge.Margin = Padding.Empty; legalAge.TextAlign = ContentAlignment.MiddleRight;
         dateAndTime.Controls.Add(legalAge, 0, 0);
-        dateAndTime.Controls.Add(new RegisterClock { Anchor = AnchorStyles.Right, Margin = new Padding(0), Padding=new Padding(0,0,6,0) }, 0, 1);
+        dateAndTime.Controls.Add(new RegisterClock { Anchor = AnchorStyles.Right, Margin = Padding.Empty, Padding = Padding.Empty, TextAlign = ContentAlignment.MiddleRight }, 0, 1);
         header.Controls.Add(dateAndTime, 1, 0);
         return header;
     }
