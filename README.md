@@ -1,6 +1,8 @@
 # kPOS
 Independent liquor store POS system
 
+Preview.41 fixes a race condition in HostConnections.StoreTerminal when updating terminal last-seen timestamps.
+
 Preview.40 validates discount rates in Sale.SetDiscount to match line editing rules.
 
 Preview.39 improves terminal and dialog layout, expands Settings, and limits register messages to 24 characters.
@@ -25,10 +27,10 @@ and hardware/connection options are in [Home-Terminal.md](docs/Home-Terminal.md)
 
 ## kPOS – Product / Development Report
 
-November 20th 2026
+November 24th 2026
 
 Windows oriented Point-Of-Sale and back office software for independent liquor retail
-Current Stage: Windows testing preview, v0.1.0-preview.40
+Current Stage: Windows testing preview, v0.1.0-preview.41
 
 ## Executive Summary
 kPOS is being built to replace an aging LiquorPOS system that the store uses to ring up sales, manage products, track inventory, place orders, and close the day. The current Windows XP based system contains years of work that would be expensive to recreate and easy to lose in a haphazard transition. The mission statement is to preserve that progress while also modernizing the current system.
