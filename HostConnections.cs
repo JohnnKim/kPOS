@@ -29,9 +29,12 @@ internal sealed class HostConnections(bool checkoutEnabled)
 
     internal string StoreTerminal(Guid id)
     {
-        if(!terminals.TryGetValue(id, out var terminal) || terminal.Role != "Store Terminal") throw new ArgumentException("Connect this store terminal before checking out.");
-        terminals[id] = terminal with { LastSeen = DateTimeOffset.UtcNow };
-        return terminal.Name;
+        while(true)
+        {
+            if(!terminals.TryGetValue(id, out var terminal) || terminal.Role != "Store Terminal") throw new ArgumentException("Connect this store terminal before checking out.");
+            var updated = terminal with { LastSeen = DateTimeOffset.UtcNow };
+            if(terminals.TryUpdate(id, updated, terminal)) return updated.Name;
+        }
     }
 
     internal void Map(WebApplication app, string databasePath)
