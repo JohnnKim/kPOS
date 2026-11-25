@@ -281,7 +281,7 @@ internal sealed class RegisterForm : PosForm
             using var window = new PurchasingForm(PurchasingSource.Local(data), data);
             window.ShowDialog(this);
         }));
-        lists.DropDownItems.Add("Import inventory and vendors…", null, (_, _) => RunRegisterAction(ImportStoreCatalog));
+        lists.DropDownItems.Add("Import Data…", null, (_, _) => RunRegisterAction(ImportStoreCatalog));
         foreach (bool labels in new[] { false, true })
             lists.DropDownItems.Add(labels ? "Barcode Printer" : "Set Promotions", null, (_, _) => RunRegisterAction(() =>
             {
@@ -861,7 +861,7 @@ internal sealed class RegisterForm : PosForm
             MessageBox.Show(this,$"{result.Products:N0} products, {result.Vendors:N0} vendors, {result.ScanCodes:N0} scan codes.\n" +
                 string.Join(Environment.NewLine,result.Review), "Catalog imported");
         }
-        catch(Exception ex) when(ex is IOException or FormatException or InvalidOperationException or UnauthorizedAccessException)
+        catch(Exception ex) when(ex is IOException or InvalidDataException or FormatException or InvalidOperationException or UnauthorizedAccessException)
         { MessageBox.Show(this,ex.Message,"Import failed"); }
         finally { UseWaitCursor = false; }
     }
