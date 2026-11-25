@@ -92,17 +92,18 @@ internal sealed class ProductEditorForm : PosForm
         var bin = new TextBox { Text=setup.Bin,MaxLength=80,Width=240 };
         var par = Counter(setup.Par); var reorder = Counter(setup.ReorderPoint); var shelfCapacity=Counter(setup.ShelfCapacity); var shelfQuantity=Counter(setup.ShelfQuantity);
         var orderCases=new CheckBox { Text="Order quantities normally entered as cases",Checked=setup.OrderCases,AutoSize=true };
+        var cigTax = new CheckBox { Text = "Apply cigarette tax", Checked = setup.CigTaxable, AutoSize = true };
         var discountAllowed=new CheckBox { Text="Allow discounts",Checked=setup.DiscountAllowed,AutoSize=true };
         var notes=new TextBox { Text=setup.Notes,MaxLength=2000,Multiline=true,Height=120,Width=480,ScrollBars=ScrollBars.Vertical };
         var tabs=new TabControl {Dock=DockStyle.Fill};var itemPage=new TabPage("Item / Pricing");itemPage.Controls.Add(PosView.Scroll(fields));tabs.TabPages.Add(itemPage);
         var storage=HomeTerminalView.Layout();HomeTerminalView.Row(storage,HomeTerminalView.Fields(("Class",itemClass),("Bin / location",bin),("Par (selling units)",par),("Reorder point (units)",reorder),("Shelf capacity (units)",shelfCapacity),("On shelf (units)",shelfQuantity)));
-        HomeTerminalView.Row(storage,orderCases);HomeTerminalView.Row(storage,discountAllowed);HomeTerminalView.Row(storage,PosView.Label("Item notes",12,FontStyle.Bold));HomeTerminalView.Row(storage,notes);
+        HomeTerminalView.Row(storage,orderCases);HomeTerminalView.Row(storage,discountAllowed);HomeTerminalView.Row(storage,cigTax);HomeTerminalView.Row(storage,PosView.Label("Item notes",12,FontStyle.Bold));HomeTerminalView.Row(storage,notes);
         if(data is not null){var storagePage=new TabPage("Storage / Notes");storagePage.Controls.Add(PosView.Scroll(storage));tabs.TabPages.Add(storagePage);}
         var bottom = new TableLayoutPanel { Dock=DockStyle.Bottom, AutoSize=true, ColumnCount=1, Padding=new Padding(12,4,12,8) };
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100)); bottom.Controls.Add(feedback); bottom.Controls.Add(buttons);
         Controls.Add(tabs); Controls.Add(bottom); AutoSize=false;ClientSize=new Size(900,760);MinimumSize=new Size(580,450);
         static NumericUpDown Counter(long value)=>new(){Minimum=0,Maximum=999999,Value=value,Width=140};
-        ItemSetup CurrentSetup()=>new(itemClass.Text,bin.Text,(long)par.Value,(long)reorder.Value,(long)shelfCapacity.Value,(long)shelfQuantity.Value,orderCases.Checked,notes.Text,discountAllowed.Checked);
+        ItemSetup CurrentSetup()=>new(itemClass.Text,bin.Text,(long)par.Value,(long)reorder.Value,(long)shelfCapacity.Value,(long)shelfQuantity.Value,orderCases.Checked,notes.Text,discountAllowed.Checked,cigTax.Checked);
         AcceptButton = saveButton;
         CancelButton = cancel;
 

@@ -33,7 +33,7 @@ internal sealed class SettingsForm : PosForm
         header.Padding = new Padding(10, 5, 10, 5);
         header.Dock = DockStyle.Fill;
         header.Margin = new Padding(0, 0, 0, 10);
-        var tabs = new TabControl { Multiline = true, Dock = DockStyle.Fill };
+        var tabs = new TabControl { Multiline = true, Appearance = TabAppearance.Buttons, Dock = DockStyle.Fill };
         var rate = new NumericUpDown
         {
             Minimum = 0, Maximum = 100, DecimalPlaces = 4, Increment = 0.1m, Value = data.ReadTaxes().Base, Width = 110
@@ -52,6 +52,14 @@ internal sealed class SettingsForm : PosForm
         void UpdateCharactersLeft()=>charactersLeft.Text=$"{displayText.MaxLength-displayText.Text.Length} characters left";
         displayText.TextChanged+=(_,_)=>UpdateCharactersLeft();UpdateCharactersLeft();
         AddTab("Display", (null, maximize), (null, showKeys), (null, showChange),(null,PosView.Label("Register text (optional, 24 characters)",11)),(null,displayText),(null,charactersLeft));
+        OrderContact company = data.ReadOrderBusiness();
+        TextBox CompanyField(string value) => new() { Text = value, Dock = DockStyle.Top };
+        var companyName = CompanyField(company.Name);
+        var companyAddress = CompanyField(company.Address);
+        var companyPhone = CompanyField(company.Phone);
+        var companyEmail = CompanyField(company.Email);
+        AddTab("Company Information", ("Company name", companyName), ("Address", companyAddress),
+            ("Phone", companyPhone), ("Email", companyEmail));
         RegisterKeys keys = data.ReadRegisterKeys();
         var quantityKey = Shortcut(keys.Quantity);
         var lotteryKey = Shortcut(keys.Lottery);
@@ -74,9 +82,10 @@ internal sealed class SettingsForm : PosForm
         var district = TaxRate(originalTaxes.District); var other = TaxRate(originalTaxes.Other); var miscBase = TaxRate(originalTaxes.MiscBase ?? originalTaxes.Base);
         var overrideMisc = Option("Use a separate Misc base tax", originalTaxes.MiscBase.HasValue);
         miscBase.Enabled = overrideMisc.Checked; overrideMisc.CheckedChanged += (_, _) => miscBase.Enabled = overrideMisc.Checked;
-        TaxSettings CurrentTaxes() => new(rate.Value, state.Value, county.Value, city.Value, district.Value, other.Value, overrideMisc.Checked ? miscBase.Value : null);
+        var cigaretteRate = TaxRate(originalTaxes.CigRate);
+        TaxSettings CurrentTaxes() => new(rate.Value, state.Value, county.Value, city.Value, district.Value, other.Value, overrideMisc.Checked ? miscBase.Value : null, cigaretteRate.Value);
         AddTab("Tax", (null, PosView.Label("Base plus add-on rates form one sales tax. Misc base replaces the base rate for Misc items.", 10, color: PosView.Muted)),
-            ("Base tax (%)", rate), ("State add-on (%)", state), ("County add-on (%)", county), ("City add-on (%)", city),
+            ("Sales base tax (%)", rate), ("Cig Tax (%)", cigaretteRate), ("State add-on (%)", state), ("County add-on (%)", county), ("City add-on (%)", city),
             ("District add-on (%)", district), ("Other add-on (%)", other), (null, overrideMisc), ("Misc base tax (%)", miscBase));
         var hardware = new HardwareSettingsPanel(data.ReadHardware(), Path.Combine(folders.Root, "Records", "Hardware"));
         var hardwareTab = new TabPage("Printer / Drawer") { BackColor = Color.White };
@@ -98,6 +107,7 @@ internal sealed class SettingsForm : PosForm
                 data.DisplayMessage=displayText.Text;
                 data.SaveSettings(rate.Value, (int)duration.Value, requireCount.Checked, maximize.Checked,
                     CurrentKeys(), showKeys.Checked, showChange.Checked, CurrentTaxes(), hardware.Value);
+                data.SaveOrderBusiness(company with { Name = companyName.Text.Trim(), Address = companyAddress.Text.Trim(), Phone = companyPhone.Text.Trim(), Email = companyEmail.Text.Trim() });
                 RequestedDirectory = picker.SelectedPath;
                 DialogResult = DialogResult.OK;
             }
@@ -158,6 +168,7 @@ internal sealed class SettingsForm : PosForm
                 data.DisplayMessage=displayText.Text;
                 data.SaveSettings(rate.Value, (int)duration.Value, requireCount.Checked, maximize.Checked,
                     CurrentKeys(), showKeys.Checked, showChange.Checked, CurrentTaxes(), hardware.Value);
+                data.SaveOrderBusiness(company with { Name = companyName.Text.Trim(), Address = companyAddress.Text.Trim(), Phone = companyPhone.Text.Trim(), Email = companyEmail.Text.Trim() });
                 DialogResult = DialogResult.OK;
             }
             catch (Exception error) when (error is SqliteException or ArgumentException)

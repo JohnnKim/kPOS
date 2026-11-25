@@ -58,8 +58,8 @@ internal sealed class HostConnections(bool checkoutEnabled)
             if(!StoreAllowed(context)) return Results.StatusCode(403);
             if(code.Length is < 1 or > 100) return Results.BadRequest();
             using var data = RegisterData.OpenHomeConnection(databasePath);
-            Product? product = data.FindProduct(code);
-            return product is null ? Results.NotFound() : Results.Ok(product);
+            Product? product = data.FindScanProduct(code);
+            return product is null ? Results.NotFound() : Results.Ok(data.CheckoutProduct(product));
         });
         app.MapPost("/api/v1/store/quote", (StoreQuoteRequest request, HttpContext context) => StoreWrite(context, data =>
             data.QuoteStoreSale(request, StoreTerminal(request.TerminalId))));

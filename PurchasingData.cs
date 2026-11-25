@@ -4,7 +4,7 @@ using Microsoft.Data.Sqlite;
 namespace Kpos;
 
 internal sealed record ItemSetup(string Class = "Standard", string Bin = "", long Par = 0, long ReorderPoint = 0,
-    long ShelfCapacity = 0, long ShelfQuantity = 0, bool OrderCases = false, string Notes = "", bool DiscountAllowed = true);
+    long ShelfCapacity = 0, long ShelfQuantity = 0, bool OrderCases = false, string Notes = "", bool DiscountAllowed = true, bool CigTaxable = false);
 internal sealed record OrderQuantity(string Barcode, long Units, long? Expected = null);
 internal sealed record PlacePurchaseRequest(Guid Id, long SupplierId, string Number, DateOnly? Due, string Notes, OrderQuantity[] Lines);
 internal sealed record ReceivePurchaseRequest(Guid Id, Guid OrderId, OrderQuantity[] Lines);
@@ -34,11 +34,16 @@ internal sealed partial class RegisterData
             INSERT INTO data_revision VALUES(1,1);
             PRAGMA user_version=15;
             """, transaction); schema.ExecuteNonQuery();
-        foreach(string table in new[] { "products", "product_details", "sales", "sale_lines", "inventory_counts", "inventory_receipts", "order_draft",
-            "purchase_distributors", "purchase_business", "distributor_items", "home_order_requests", "purchase_orders", "purchase_lines", "purchase_receivings", "register_settings", "day_closeouts", "drawer_expenses" })
+        AddRevisionTriggers(transaction, ["products", "product_details", "sales", "sale_lines", "inventory_counts", "inventory_receipts", "order_draft",
+            "purchase_distributors", "purchase_business", "distributor_items", "home_order_requests", "purchase_orders", "purchase_lines", "purchase_receivings", "register_settings", "day_closeouts", "drawer_expenses"]);
+    }
+
+    private void AddRevisionTriggers(SqliteTransaction transaction, string[] tables)
+    {
+        foreach(string table in tables)
         foreach(string action in new[] { "INSERT", "UPDATE", "DELETE" })
         {
-            using var trigger = Command($"CREATE TRIGGER revision_{table}_{action} AFTER {action} ON {table} BEGIN UPDATE data_revision SET revision=revision+1 WHERE id=1; END;", transaction);
+            using var trigger = Command($"CREATE TRIGGER IF NOT EXISTS revision_{table}_{action} AFTER {action} ON {table} BEGIN UPDATE data_revision SET revision=revision+1 WHERE id=1; END;", transaction);
             trigger.ExecuteNonQuery();
         }
     }

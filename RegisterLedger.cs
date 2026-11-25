@@ -13,7 +13,7 @@ internal enum RecordReport { Totals, Sales, SaleLines, ItemTotals, PriceHistory,
 
 internal sealed partial class RegisterData
 {
-    public const int SchemaVersion = 16;
+    public const int SchemaVersion = 18;
     public const int DefaultChangeSeconds = 8;
     public const int MaximumChangeSeconds = 120;
     private const string HasSoldItems = """
@@ -78,8 +78,10 @@ internal sealed partial class RegisterData
         {
             using var lineCommand = Command("""
                 INSERT INTO sale_lines (sale_id, line_number, barcode, code, description, size, quantity,
-                                        units_per_pack, is_case, unit_cents, discount_cents, net_cents, taxable, kind, tax_void)
-                VALUES ($id, $number, $barcode, $code, $name, $size, $qty, $units, $case, $price, $discount, $net, $taxable, $kind, $void)
+                                        units_per_pack, is_case, unit_cents, discount_cents, net_cents, taxable, kind, tax_void, item_type, cost_cents)
+                VALUES ($id, $number, $barcode, $code, $name, $size, $qty, $units, $case, $price, $discount, $net, $taxable, $kind, $void,
+                    coalesce(nullif((SELECT product_type FROM product_details WHERE barcode=$barcode), ''), $kind),
+                    (SELECT unit_cost_cents FROM product_details WHERE barcode=$barcode) * $qty * $units)
                 """, transaction);
             lineCommand.Parameters.AddWithValue("$id", id);
             var number = lineCommand.Parameters.Add("$number", SqliteType.Integer);
@@ -107,12 +109,12 @@ internal sealed partial class RegisterData
                 name.Value = line.Product.Description;
                 size.Value = line.Product.Size;
                 quantity.Value = line.Quantity;
-                units.Value = line.IsCase ? line.Product.UnitsPerCase : 1;
+                units.Value = line.IsCase ? line.Product.UnitsPerCase : line.Product.SellingUnits;
                 isCase.Value = line.IsCase;
                 price.Value = Cents(line.Price);
                 discount.Value = Cents(line.Discount);
                 net.Value = Cents(line.Extended);
-                taxable.Value = line.Product.IsTaxable && !line.TaxExempt && !sale.TaxExempt;
+                taxable.Value = (line.Product.IsTaxable || line.Product.CigTaxable) && !line.TaxExempt && !sale.TaxExempt;
                 taxVoid.Value = line.TaxExempt || sale.TaxExempt;
                 kind.Value = line.Kind.ToString();
                 lineCommand.ExecuteNonQuery();

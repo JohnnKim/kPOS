@@ -113,7 +113,7 @@ internal sealed class HomeTerminalForm : PosForm
         connectionFields = pairing;
         var connectionSetup = PosView.Button("Connection Setup", size: 11);
         connectionSetup.Click += (_, _) => pairing.Visible = !pairing.Visible;
-        stockFilter.Items.AddRange(["All stock", "Out of stock", "Low stock (≤5)", "Not counted"]); stockFilter.SelectedIndex = 0;
+        stockFilter.Items.AddRange(["All stock", "Out of stock", "Low stock (≤5)", "N/A"]); stockFilter.SelectedIndex = 0;
         var searchButton = Button("Search", async () => { inventoryPage = 0; activeSearch = search.Text.Trim(); activeStock = new[] { "all", "empty", "low", "uncounted" }[stockFilter.SelectedIndex]; await LoadInventoryAsync(); });
         search.KeyDown += (_, e) => { if(e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; searchButton.PerformClick(); } };
         var details = Button("Item Details", () => ViewItemAsync(items));
@@ -247,7 +247,7 @@ internal sealed class HomeTerminalForm : PosForm
         items.DataSource = snapshot.Items;
         items.Enabled = true;
         foreach(DataGridViewColumn column in items.Columns) column.Visible = column.Name is "Barcode" or "Brand" or "Description" or "Size" or "OnHand" or "UnitPrice" or "Supplier";
-        if(items.Columns["OnHand"] is DataGridViewColumn onHand) { onHand.DisplayIndex = 5; onHand.HeaderText = "Qty"; onHand.DefaultCellStyle.NullValue = "Not counted"; }
+        if(items.Columns["OnHand"] is DataGridViewColumn onHand) { onHand.DisplayIndex = 5; onHand.HeaderText = "Qty"; onHand.DefaultCellStyle.NullValue = "N/A"; }
         if(items.Columns["UnitPrice"] is DataGridViewColumn price) { price.HeaderText = "Unit price"; price.DefaultCellStyle.Format = "C2"; }
         if(items.Columns["Description"] is DataGridViewColumn name) { name.HeaderText = "Item"; name.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; name.MinimumWidth = 180; }
         foreach(var (columnName,index) in new[]{("Barcode",0),("Brand",1),("Description",2),("Size",3),("UnitPrice",4),("OnHand",5),("Supplier",6)})if(items.Columns[columnName] is DataGridViewColumn column){column.DisplayIndex=index;if(columnName=="Supplier")column.HeaderText="Vendor";}

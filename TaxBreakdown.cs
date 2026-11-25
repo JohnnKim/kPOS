@@ -1,9 +1,9 @@
 namespace Kpos;
 
 internal sealed record TaxBreakdown(TaxSettings Rates, decimal Base, decimal State, decimal County, decimal City,
-    decimal District, decimal Other, decimal MiscBase)
+    decimal District, decimal Other, decimal MiscBase, decimal CigTax = 0)
 {
-    internal decimal Total => Base + State + County + City + District + Other + MiscBase;
+    internal decimal Total => Base + State + County + City + District + Other + MiscBase + CigTax;
     internal IEnumerable<(string Name, decimal Rate, decimal Amount)> Rows()
     {
         var rows = new[] { ("Base tax", Rates.Base, Base), ("State tax", Rates.State, State), ("County tax", Rates.County, County),
@@ -11,6 +11,7 @@ internal sealed record TaxBreakdown(TaxSettings Rates, decimal Base, decimal Sta
             ("Misc base tax", Rates.MiscBase ?? 0, MiscBase) };
         for(int index = 0; index < rows.Length; index++)
             if(rows[index].Item2 != 0 || index == 6 && Rates.MiscBase.HasValue) yield return rows[index];
+        if (CigTax != 0) yield return ("Cig Tax", Rates.CigRate, CigTax);
     }
 
     internal static TaxBreakdown Calculate(TaxSettings rates, decimal normal, decimal misc, decimal total)

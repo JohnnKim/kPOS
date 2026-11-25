@@ -53,8 +53,9 @@ public static class KposExecutableTest
                 WaitUntil(() => !IsZoomed(register), "restore the register window");
                 if (!SetWindowPos(register, IntPtr.Zero, 0, 0, 780, 515, 0x0016))
                     throw new Win32Exception();
-                WaitUntil(() => ScrollableAncestor(register, "Register Keys") != IntPtr.Zero &&
-                    RevealText(register, "F9"), "scroll to register keys in a smaller window");
+                WaitUntil(() => (ScrollableAncestor(register, "Register Keys") != IntPtr.Zero ||
+                    TextIsInBounds(register, "Register Keys")) &&
+                    RevealText(register, "F9"), "show register keys in a smaller window");
                 if (!SetWindowPos(register, IntPtr.Zero, 0, 0, 1280, 720, 0x0016))
                     throw new Win32Exception();
                 RevealText(register, "kPOS");
@@ -93,14 +94,14 @@ public static class KposExecutableTest
                 WaitUntil(() => TextIsInBounds(settings, "Change display duration (seconds)") &&
                     TextIsInBounds(settings, "&Save Settings"), "show the Settings form and its save button");
                 IntPtr tabs = FindChildByClass(settings, "WindowsForms10.SysTabControl32.");
-                Send(tabs, 0x0100, 0x27); // Right to Display
-                WaitUntil(() => TextIsInBounds(settings, "Show Register Keys on the sales screen") &&
-                    TextIsInBounds(settings, "Show last change on the sales screen"), "show both display settings");
-                Send(tabs, 0x0100, 0x27); // Right to Shortcuts
-                WaitUntil(() => RevealText(settings, "Stock in Orders (F6)") && RevealText(settings, "Submit fast barcode scans without Enter"),
+                Send(tabs, 0x1330, 1); Send(tabs, 0x0100, 0x20); Send(tabs, 0x0101, 0x20); // Select Display tab
+                WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen") &&
+                    HasText(settings, "Show last change on the sales screen"), "show both display settings");
+                Send(tabs, 0x1330, 3); Send(tabs, 0x0100, 0x20); Send(tabs, 0x0101, 0x20); // Select Shortcuts tab
+                WaitUntil(() => HasText(settings, "Stock in Orders (F6)") && HasText(settings, "Submit fast barcode scans without Enter"),
                     "reach the expanded shortcut settings by scrolling");
-                Send(tabs, 0x0100, 0x25); // Left to Display
-                WaitUntil(() => TextIsInBounds(settings, "Show Register Keys on the sales screen"), "return to display settings");
+                Send(tabs, 0x1330, 1); Send(tabs, 0x0100, 0x20); Send(tabs, 0x0101, 0x20); // Return to Display tab
+                WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen"), "return to display settings");
                 IntPtr showKeys = FindChildWithText(settings, "Show Register Keys on the sales screen");
                 IntPtr showChange = FindChildWithText(settings, "Show last change on the sales screen");
                 Send(showKeys, 0x00F5, 0);
@@ -112,8 +113,8 @@ public static class KposExecutableTest
                 Send(FindChildWithText(register, "Se&ttings"), 0x00F5, 0);
                 settings = FindWindow(desktop, process.ProcessId, "Settings");
                 tabs = FindChildByClass(settings, "WindowsForms10.SysTabControl32.");
-                Send(tabs, 0x0100, 0x27);
-                WaitUntil(() => TextIsInBounds(settings, "Show Register Keys on the sales screen"), "reopen display settings");
+                Send(tabs, 0x1330, 1); Send(tabs, 0x0100, 0x20); Send(tabs, 0x0101, 0x20); // Reopen Display tab
+                WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen"), "reopen display settings");
                 Send(FindChildWithText(settings, "Show Register Keys on the sales screen"), 0x00F5, 0);
                 Send(FindChildWithText(settings, "Show last change on the sales screen"), 0x00F5, 0);
                 Send(FindChildWithText(settings, "&Save Settings"), 0x00F5, 0);
@@ -243,7 +244,7 @@ public static class KposExecutableTest
                 IntPtr closeout = FindWindow(desktop, process.ProcessId, "End of Day Closeout");
                 WaitUntil(() => RevealText(closeout, "End-of-Day Totals") && RevealText(closeout, "Revised") &&
                     RevealText(closeout, "Calculated") && RevealText(closeout, "State Tax") && RevealText(closeout, "Net Deposits") &&
-                    RevealText(closeout, "Bank Should") && RevealText(closeout, "MC/Visa") && RevealText(closeout, "Notes") &&
+                    RevealText(closeout, "Bank Should") && RevealText(closeout, "Credit/Debit") && RevealText(closeout, "Notes") &&
                     RevealText(closeout, "Count &Bills and Coins…") && RevealText(closeout, "&OK") &&
                     RevealText(closeout, "&Cancel"), "reach every closeout control");
                 Send(closeout, 0x0010, 0); // WM_CLOSE

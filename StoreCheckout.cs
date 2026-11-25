@@ -62,10 +62,8 @@ internal sealed partial class RegisterData
             if(line is null || string.IsNullOrWhiteSpace(line.Barcode) || line.Barcode.Length > 100 || line.Quantity == 0 ||
                 line.Quantity is < -100 or > 100 || line.DiscountRate is < 0 or > 100 || decimal.Round(line.DiscountRate, 2) != line.DiscountRate)
                 throw new ArgumentException("Check the item, quantity and discount.");
-            using var productQuery = Command($"SELECT {ProductColumns} FROM products WHERE barcode=$barcode AND archived=0", transaction);
-            productQuery.Parameters.AddWithValue("$barcode", line.Barcode);
-            using var reader = productQuery.ExecuteReader();
-            Product product = reader.Read() ? ReadProduct(reader) : throw new InvalidOperationException("An item is no longer available. Refresh the sale.");
+            Product? found = FindScanProduct(line.Barcode, transaction);
+            Product product = CheckoutProduct(found ?? throw new InvalidOperationException("An item is no longer available. Refresh the sale."), transaction);
             if(line.IsCase && !product.HasCasePrice) throw new ArgumentException("This item has no case price.");
             if(line.DiscountRate>0 && !CatalogDiscountAllowed(product.Barcode,transaction)) throw new ArgumentException("Discounts are disabled for this item.");
             lines.Add(new(product, line.IsCase, line.Quantity, line.DiscountRate, TaxExempt: line.TaxExempt));

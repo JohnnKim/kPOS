@@ -30,7 +30,7 @@ public sealed class WindowLayoutTests
     }
 
     [TestMethod]
-    public void ProductListScrollsWideTablesAndWrapsLongNames()
+    public void ProductListScrollsWideTablesAndKeepsRowsStable()
     {
         using var data = new RegisterData(":memory:");
         Product[] products = Enumerable.Range(0, 240).Select(index => new Product(
@@ -49,7 +49,8 @@ public sealed class WindowLayoutTests
 
         Assert.IsTrue(grid.Controls.OfType<HScrollBar>().Any(bar => bar.Visible));
         Assert.IsTrue(grid.Controls.OfType<VScrollBar>().Any(bar => bar.Visible));
-        Assert.IsTrue(grid.Rows[0].Height > grid.RowTemplate.Height, "Long product descriptions must wrap into taller rows.");
+        Assert.AreEqual(grid.Rows[0].Height, grid.Rows[1].Height);
+        Assert.IsTrue(grid.ShowCellToolTips);
         grid.FirstDisplayedScrollingColumnIndex = grid.Columns["OnHand"]!.Index;
         Assert.IsTrue(grid.Columns["OnHand"]!.Displayed, "The last column must be reachable by horizontal scrolling.");
 

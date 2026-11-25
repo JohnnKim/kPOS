@@ -22,6 +22,9 @@ internal sealed record Product(
         new("302", "000000000302", "London Dry Gin", "750 mL", 25.99m, 12, 289.99m)
     ];
 
+    public bool CigTaxable { get; init; }
+    public string? ScannedBarcode { get; init; }
+    public int SellingUnits { get; init; } = 1;
     public bool HasCasePrice => UnitsPerCase > 1;
 
 }
@@ -63,9 +66,10 @@ internal sealed class Sale
         var taxable = lines.Where(line => line.Product.IsTaxable && !line.TaxExempt && !TaxExempt).ToArray();
         decimal tax = MoneyMath.Up(taxable.Sum(line => line.Extended * (line.Kind == SaleLineKind.Misc ? taxes.MiscRate : taxes.SalesRate) / 100));
         decimal lottery = lines.Where(line => line.Kind == SaleLineKind.Lottery).Sum(line => line.Extended);
-        return new SaleTotals(Subtotal, Discount, taxes.SalesRate, tax, lottery, taxes.MiscBase is null ? null : taxes.MiscRate,
+        decimal cigTax = TaxExempt ? 0 : MoneyMath.Up(lines.Where(line => line.Product.CigTaxable && !line.TaxExempt).Sum(line => line.Extended) * taxes.CigRate / 100);
+        return new SaleTotals(Subtotal, Discount, taxes.SalesRate, tax + cigTax, lottery, taxes.MiscBase is null ? null : taxes.MiscRate,
             TaxBreakdown.Calculate(taxes, taxable.Where(line => line.Kind != SaleLineKind.Misc).Sum(line => line.Extended),
-                taxable.Where(line => line.Kind == SaleLineKind.Misc).Sum(line => line.Extended), tax));
+                taxable.Where(line => line.Kind == SaleLineKind.Misc).Sum(line => line.Extended), tax) with { CigTax = cigTax });
     }
 
     public int Add(Product product, bool isCase)

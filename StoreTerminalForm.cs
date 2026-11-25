@@ -224,8 +224,8 @@ internal sealed class StoreTerminalForm : PosForm
         RequireEditable();
         await HeartbeatAsync();
         var products = new Dictionary<string, Product>();
-        foreach(string code in sale.Lines.Select(line => line.Product.Barcode).Distinct()) products[code] = await client!.StoreProductAsync(code, closing.Token);
-        sale = Sale.FromLines(sale.Lines.Select(line => line with { Product = products[line.Product.Barcode], PriceOverride = null }), sale.TaxExempt);
+        foreach(string code in sale.Lines.Select(line => (line.Product.ScannedBarcode ?? line.Product.Barcode)).Distinct()) products[code] = await client!.StoreProductAsync(code, closing.Token);
+        sale = Sale.FromLines(sale.Lines.Select(line => line with { Product = products[(line.Product.ScannedBarcode ?? line.Product.Barcode)], PriceOverride = null }), sale.TaxExempt);
         feedback.Text = "Current store prices loaded. Review the total.";
     }
     private Task LookupAsync() => LookupAsync("");
@@ -234,7 +234,7 @@ internal sealed class StoreTerminalForm : PosForm
         RequireEditable();
         using var window = new StoreLookupForm(client!, search);
         if(window.ShowDialog(this) == DialogResult.OK && window.SelectedProduct is Product product)
-        { sale.Add(product, cases.Checked && product.HasCasePrice); feedback.Text = product.Description; }
+        { product = await client!.StoreProductAsync(product.Barcode, closing.Token); sale.Add(product, cases.Checked && product.HasCasePrice); feedback.Text = product.Description; }
         await Task.CompletedTask;
     }
     private Task QuantityAsync()
@@ -259,7 +259,7 @@ internal sealed class StoreTerminalForm : PosForm
         if(!Ready) throw new InvalidOperationException("Connect to Host Terminal first.");
         if(scans.Count > 0) await DrainScansAsync();
         StoreQuote quote = pending?.Quote ?? await client!.QuoteAsync(new(profile!.Id, saleId,
-            sale.Lines.Select(line => new StoreLine(line.Product.Barcode, line.IsCase, line.Quantity, line.DiscountRate, line.TaxExempt)).ToArray(), sale.GetTotals(info!.Taxes ?? new(info.TaxRate)), sale.TaxExempt), closing.Token);
+            sale.Lines.Select(line => new StoreLine((line.Product.ScannedBarcode ?? line.Product.Barcode), line.IsCase, line.Quantity, line.DiscountRate, line.TaxExempt)).ToArray(), sale.GetTotals(info!.Taxes ?? new(info.TaxRate)), sale.TaxExempt), closing.Token);
         using var payment = new StorePaymentForm(quote, pending?.Commit, CommitAsync, CancelAsync);
         payment.ShowDialog(this);
         if(payment.Receipt is StoreReceipt receipt)
@@ -490,7 +490,7 @@ internal sealed class StoreLookupForm : PosForm
                 grid.DataSource = result.Items;
                 grid.Enabled = true;
                 foreach(DataGridViewColumn column in grid.Columns) column.Visible = column.Name is "Barcode" or "Brand" or "Description" or "OnHand" or "Size" or "UnitPrice" or "Supplier";
-                if(grid.Columns["OnHand"] is DataGridViewColumn stock) { stock.DisplayIndex = 5; stock.HeaderText = "Qty"; stock.DefaultCellStyle.NullValue = "Not counted"; }
+                if(grid.Columns["OnHand"] is DataGridViewColumn stock) { stock.DisplayIndex = 5; stock.HeaderText = "Qty"; stock.DefaultCellStyle.NullValue = "N/A"; }
                 foreach(var (columnName, index, width) in new[] { ("Barcode",0,130), ("Brand",1,110), ("Description",2,200), ("Size",3,100), ("UnitPrice",4,105), ("OnHand",5,105), ("Supplier",6,160) })
                     if(grid.Columns[columnName] is DataGridViewColumn column) { column.DisplayIndex = index; column.Width = width; column.HeaderText = columnName == "Supplier" ? "Vendor" : columnName == "UnitPrice" ? "Price" : column.HeaderText; }
                 if(grid.Columns["Description"] is DataGridViewColumn name) { name.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; name.MinimumWidth = 200; }
