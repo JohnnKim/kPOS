@@ -106,7 +106,7 @@ internal sealed class StoreTerminalForm : PosForm
         saleArea.Padding = Padding.Empty;
         HomeTerminalView.Row(saleArea, grid, true);
         body.Controls.Add(saleArea, 0, 0);
-        var summary = HomeTerminalView.Layout(); summary.Padding = new Padding(2;) summary.BackColor = PosView.Light;
+        var summary = HomeTerminalView.Layout(); summary.Padding = new Padding(2); summary.BackColor = PosView.Light;
         var banner = HomeTerminalView.Layout(); banner.BackColor = PosView.Navy; banner.AutoSize = true; banner.AutoSizeMode = AutoSizeMode.GrowAndShrink; banner.Padding = new Padding(4, 2, 4, 2);
         HomeTerminalView.Row(banner, caption); HomeTerminalView.Row(banner, due);
         HomeTerminalView.Row(summary, banner);
