@@ -93,25 +93,25 @@ public static class KposExecutableTest
                 IntPtr settings = FindWindow(desktop, process.ProcessId, "Settings");
                 WaitUntil(() => TextIsInBounds(settings, "Change display duration (seconds)") &&
                     TextIsInBounds(settings, "&Save Settings"), "show the Settings form and its save button");
-                Send(FindChildWithText(settings, "Display"), 0x00F5, 0);
+                Send(WaitForChildWithText(settings, "Display"), 0x00F5, 0);
                 WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen") &&
                     HasText(settings, "Show last change on the sales screen"), "show both display settings");
-                Send(FindChildWithText(settings, "Shortcuts"), 0x00F5, 0);
+                Send(WaitForChildWithText(settings, "Shortcuts"), 0x00F5, 0);
                 WaitUntil(() => HasText(settings, "Stock in Orders (F6)") && HasText(settings, "Submit fast barcode scans without Enter"),
                     "reach the expanded shortcut settings by scrolling");
-                Send(FindChildWithText(settings, "Display"), 0x00F5, 0);
+                Send(WaitForChildWithText(settings, "Display"), 0x00F5, 0);
                 WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen"), "return to display settings");
                 IntPtr showKeys = FindChildWithText(settings, "Show Register Keys on the sales screen");
                 IntPtr showChange = FindChildWithText(settings, "Show last change on the sales screen");
                 Send(showKeys, 0x00F5, 0);
                 Send(showChange, 0x00F5, 0);
                 Send(FindChildWithText(settings, "&Save Settings"), 0x00F5, 0);
-                WaitUntil(() => HasText(register, "Settings saved.") && !TextIsInBounds(register, "Register Keys") &&
+                WaitUntil(() => !IsWindow(settings) && HasText(register, "Settings saved.") && !TextIsInBounds(register, "Register Keys") &&
                     !TextIsInBounds(register, "Last change"), "apply display settings to the register");
 
                 Send(FindChildWithText(register, "Se&ttings"), 0x00F5, 0);
                 settings = FindWindow(desktop, process.ProcessId, "Settings");
-                Send(FindChildWithText(settings, "Display"), 0x00F5, 0);
+                Send(WaitForChildWithText(settings, "Display"), 0x00F5, 0);
                 WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen"), "reopen display settings");
                 Send(FindChildWithText(settings, "Show Register Keys on the sales screen"), 0x00F5, 0);
                 Send(FindChildWithText(settings, "Show last change on the sales screen"), 0x00F5, 0);
@@ -429,6 +429,8 @@ public static class KposExecutableTest
                 else
                 {
                     home = FindWindow(desktop, process.ProcessId, storeTerminal ? "kPOS — Store Terminal (LAN)" : "kPOS — Remote Connection");
+                    if (storeTerminal)
+                        Send(WaitForChildWithText(home, "Connection Setup"), 0x00F5, 0);
                     WaitUntil(() => storeTerminal
                         ? HasText(home, "Paste Store Pairing") && HasText(home, "Connect to Host") && HasText(home, "Store checkout key")
                         : HasText(home, "Connect / Refresh") && HasText(home, "Request Order") && HasText(home, "Certificate SHA256"),
@@ -736,8 +738,11 @@ public static class KposExecutableTest
         for (IntPtr parent = GetParent(child); parent != IntPtr.Zero; parent = GetParent(parent))
         {
             WindowRect bounds;
-            if (!GetWindowRect(parent, out bounds) || label.Left < bounds.Left || label.Top < bounds.Top ||
-                label.Right > bounds.Right || label.Bottom > bounds.Bottom)
+            // WinForms can round a proportionally scaled child one pixel beyond its parent.
+            const int layoutRoundingTolerance = 2;
+            if (!GetWindowRect(parent, out bounds) ||
+                label.Left < bounds.Left - layoutRoundingTolerance || label.Top < bounds.Top - layoutRoundingTolerance ||
+                label.Right > bounds.Right + layoutRoundingTolerance || label.Bottom > bounds.Bottom + layoutRoundingTolerance)
                 return false;
             if (parent == root)
                 return true;

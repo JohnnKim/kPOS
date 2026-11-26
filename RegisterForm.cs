@@ -62,7 +62,29 @@ internal sealed class RegisterForm : PosForm
     private readonly Label lastChange = CreateAmountLabel();
     private readonly Label displayMessage=new(){AccessibleName="Register display message",AutoEllipsis=true,AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,ForeColor=PosView.Navy,Font=new Font("Segoe UI Semibold",22,FontStyle.Regular),Visible=false};
     private Action? arrangeDisplayMessage;
-    internal void ArrangeDisplayMessage() { arrangeDisplayMessage?.Invoke(); }
+    private bool arrangingDisplayMessage;
+
+    internal void ArrangeDisplayMessage()
+    {
+        if (arrangingDisplayMessage)
+            return;
+        if (displayMessage.Text.Length == 0)
+        {
+            displayMessage.Visible = false;
+            return;
+        }
+
+        // Reparenting the message can raise Layout again before the move completes.
+        arrangingDisplayMessage = true;
+        try
+        {
+            arrangeDisplayMessage?.Invoke();
+        }
+        finally
+        {
+            arrangingDisplayMessage = false;
+        }
+    }
     private bool nextItemIsCase;
     private bool exporting;
     public string? RequestedDirectory { get; private set; }
