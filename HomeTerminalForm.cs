@@ -20,13 +20,13 @@ internal sealed class HomeTerminalForm : PosForm
     private readonly Label totals = PosView.Label("Connect to check the store.", 14, FontStyle.Bold);
     private readonly Label status = PosView.Label("Home / office PC: paste the store's pairing details, then Connect.", 11);
     private readonly Label pages = PosView.Label("", 11);
-    private readonly DataGridView items = HomeTerminalView.Grid();
-    private readonly DataGridView catalog = HomeTerminalView.Grid();
-    private readonly DataGridView records = HomeTerminalView.Grid();
-    private readonly DataGridView history = HomeTerminalView.Grid();
-    private readonly DataGridView basketGrid = HomeTerminalView.Grid();
-    private readonly DataGridView suppliers = HomeTerminalView.Grid();
-    private readonly DataGridView terminals = HomeTerminalView.Grid();
+    private readonly DataGridView items = CompactGrid();
+    private readonly DataGridView catalog = CompactGrid();
+    private readonly DataGridView records = CompactGrid();
+    private readonly DataGridView history = CompactGrid();
+    private readonly DataGridView basketGrid = CompactGrid();
+    private readonly DataGridView suppliers = CompactGrid();
+    private readonly DataGridView terminals = CompactGrid();
     private readonly Guid connectionId = Guid.NewGuid();
     private StoreConnectionInfo? hostInfo;
     private Control? connectionFields;
@@ -190,12 +190,11 @@ internal sealed class HomeTerminalForm : PosForm
             catch(Exception error) when(error is IOException or UnauthorizedAccessException) { status.Text = "Sound preference could not be saved."; }
         };
         var layout = HomeTerminalView.Layout();
-        HomeTerminalView.Row(layout, PosView.Label("kPOS · Remote Connection", 20, FontStyle.Bold));
+        HomeTerminalView.Row(layout, PosView.FilterRow(PosView.Label("kPOS · Remote Connection", 20, FontStyle.Bold),
+            Button("Orders…", OpenOrdersAsync), Button("Item Catalog…", OpenCatalogAsync), Button("Sales Records…", OpenRecordsAsync)));
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(connection, connectionSetup, paste, connect, disconnect, Button("Download Backup", BackupAsync), refresh, sound));
         HomeTerminalView.Row(layout, pairing);
         HomeTerminalView.Row(layout, totals);
-        HomeTerminalView.Row(layout, PosView.FilterRow(Button("Orders…", OpenOrdersAsync), Button("Item Catalog…", OpenCatalogAsync),
-            Button("Sales Records…", OpenRecordsAsync)));
         HomeTerminalView.Row(layout, status);
         HomeTerminalView.Row(layout, tabs, true);
         Controls.Add(layout);
@@ -261,7 +260,19 @@ internal sealed class HomeTerminalForm : PosForm
 
     private Button Button(string text, Func<Task> action, bool primary = false)
     { var button = PosView.Button(text, primary, 11); button.Click += async (_, _) => await RunAsync(action); operationButtons.Add(button); return button; }
-    private void Page(string title, Control body) { var page = new TabPage(title); page.Controls.Add(body); tabs.TabPages.Add(page); }
+    private static DataGridView CompactGrid()
+    {
+        var grid = HomeTerminalView.Grid();
+        grid.MinimumSize = new Size(0, 36);
+        return grid;
+    }
+
+    private void Page(string title, Control body)
+    {
+        var page = new TabPage(title) { AutoScroll = true, AutoScrollMinSize = new Size(0, 295) };
+        page.Controls.Add(body);
+        tabs.TabPages.Add(page);
+    }
     private HomeTerminalClient Connected => client ?? throw new InvalidOperationException("Paste pairing details and connect to the store first.");
     private void SetConnection(string text, Color color) { connection.Text = "● " + text; connection.ForeColor = color; }
     private void DisableData() { foreach(var grid in new[] { items, catalog, records, history, suppliers, terminals }) grid.Enabled = false; totals.Text = "Connect to check the store."; }
