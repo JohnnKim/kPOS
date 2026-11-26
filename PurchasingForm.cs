@@ -29,8 +29,10 @@ internal sealed class PurchasingForm : PosForm
     private readonly DataGridView items = HomeTerminalView.Grid(), orders = HomeTerminalView.Grid(), lines = HomeTerminalView.Grid();
     private readonly TextBox search = new() { Width = 240, PlaceholderText = "Barcode, brand, item or vendor" };
     private readonly ComboBox vendor = new() { Width = 210, DropDownStyle = ComboBoxStyle.DropDownList };
-    private readonly CheckBox vendorOnly=new(){Text="This vendor only",AutoSize=true};
+    private readonly CheckBox vendorOnly=new(){Text="This vendor only",AutoSize=true,Checked=true};
     private bool rendering;
+    private PurchasingRow[] visibleItems = [];
+    private readonly ComboBox period = new() { Width = 125, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly NumericUpDown quantity = new() { Minimum = 0, Maximum = 999999, Width = 100, AccessibleName = "Order quantity" };
     private readonly CheckBox cases = new() { Text = "Cases", AutoSize = true };
     private readonly Label status = PosView.Label("Loading purchasing…", 11);
@@ -43,7 +45,7 @@ internal sealed class PurchasingForm : PosForm
     private Guid? selectedOrder;
     private string selectedBarcode = "";
     private long draftExpected;
-    private PurchasingRow? CurrentItem => items.CurrentRow?.Tag as PurchasingRow;
+    private PurchasingRow? CurrentItem => items.CurrentRow is { Index: >= 0 } row && row.Index < visibleItems.Length ? visibleItems[row.Index] : null;
     private SavedPurchaseOrder? CurrentOrder => snapshot?.Orders.FirstOrDefault(order => order.Id == selectedOrder);
 
     internal PurchasingForm(PurchasingSource source, RegisterData? local = null, HomeTerminalClient? remote = null, string? recoveryFile = null)
@@ -56,21 +58,45 @@ internal sealed class PurchasingForm : PosForm
         try { Directory.CreateDirectory(root); lease = new FileStream(recoveryPath+".lock",FileMode.OpenOrCreate,FileAccess.Write,FileShare.None); pending = TerminalRecovery.Read<PurchasingPending>(recoveryPath); }
         catch(Exception error) when(error is IOException or UnauthorizedAccessException or JsonException) { status.Text = "Purchasing is already open or its recovery file cannot be read. " + error.Message; }
         var tabs = new TabControl { Dock = DockStyle.Fill };
+        period.Items.AddRange(["Last 7 days", "Last 30 days"]);
+        period.SelectedIndex = 0;
         var worksheet = HomeTerminalView.Layout();
-        HomeTerminalView.Row(worksheet, HomeTerminalView.Actions(search, vendor, vendorOnly, PosView.Label("Order qty",11), quantity, cases,
+        HomeTerminalView.Row(worksheet, HomeTerminalView.Actions(vendor, vendorOnly, period, search));
+        HomeTerminalView.Row(worksheet, HomeTerminalView.Actions(PosView.Label("Order qty",11), quantity, cases,
             Action("Save Draft", SaveDraftAsync), Action("Assign Vendor", AssignAsync), Action("Stock Count / Delivery", StockAsync)));
         HomeTerminalView.Row(worksheet, items, true);
         HomeTerminalView.Row(worksheet, HomeTerminalView.Actions(Action("Place Vendor Draft", PlaceAsync, true), Action("New Vendor", () => VendorAsync(false)), Action("Edit Vendor", () => VendorAsync(true)), Action("Retry Unconfirmed", RetryAsync)));
         var history = HomeTerminalView.Layout(); HomeTerminalView.Row(history, orders, true); HomeTerminalView.Row(history, lines, true);
-        HomeTerminalView.Row(history, HomeTerminalView.Actions(Action("Receive Selected Line", ReceiveLineAsync), Action("Receive Remaining", ReceiveAllAsync),
+        HomeTerminalView.Row(history, HomeTerminalView.Actions(Action("Receive from image", ReceiveImageAsync, true), Action("Receive Selected Line", ReceiveLineAsync), Action("Receive Remaining", ReceiveAllAsync),
             Action("Cancel Remaining", CancelAsync), Action("Export HTML", () => ExportAsync(false)), Action("Export CSV", () => ExportAsync(true)), Action("Print Preview", PreviewAsync)));
         foreach(var pair in new[] { ("Order Worksheet",worksheet), ("Purchase Orders / Receiving",history) }) { var page = new TabPage(pair.Item1); page.Controls.Add(pair.Item2); tabs.TabPages.Add(page); }
         var close = PosView.Button("Close",size:11); close.DialogResult = DialogResult.Cancel; CancelButton=close;
         var layout = HomeTerminalView.Layout(); HomeTerminalView.Row(layout,PosView.Label("Purchasing / Receiving",24,FontStyle.Bold));
         HomeTerminalView.Row(layout,tabs,true); HomeTerminalView.Row(layout,HomeTerminalView.Actions(Action("Refresh",LoadAsync),close)); HomeTerminalView.Row(layout,status); Controls.Add(layout);
         foreach(var grid in new[] { items,orders,lines }) { PosView.Grid(grid,11,36); grid.AutoSizeColumnsMode=DataGridViewAutoSizeColumnsMode.None; }
-        string[] columns = ["Barcode","Brand","Description","Size","Vendor","On Hand","On Order","Draft","Sold 7d","Sold 30d","Sold 90d","MTD","YTD","Last Sale","Last Received","Unit Price","Unit Cost","Margin %","Case Units","Bin","Par","Reorder Point"];
-        foreach(string name in columns) items.Columns.Add(new DataGridViewTextBoxColumn { Name=name,HeaderText=name,Width=name=="Description"?240:name=="Vendor"?180:120 });
+        items.VirtualMode = true;
+        items.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        foreach (var (name, weight) in new[] { ("Description", 190), ("Vendor code", 82), ("Size", 65),
+            ("Sold", 48), ("Prior stock", 68), ("On hand", 62), ("On order", 62), ("Draft", 45),
+            ("Unit cost", 68), ("Case cost", 75), ("Units/case", 70) })
+            items.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = name, FillWeight = weight, MinimumWidth = 35 });
+        items.CellValueNeeded += (_, e) =>
+        {
+            if ((uint)e.RowIndex >= (uint)visibleItems.Length) return;
+            var row = visibleItems[e.RowIndex];
+            var cost = row.Details.UnitCost;
+            e.Value = items.Columns[e.ColumnIndex].Name switch
+            {
+                "Description" => row.Product.Description, "Vendor code" => row.Details.VendorCode, "Size" => row.Product.Size,
+                "Sold" => period.SelectedIndex == 0 ? row.Activity.Sold7 : row.Activity.Sold30,
+                "Prior stock" => (period.SelectedIndex == 0 ? row.Stock7DaysAgo : row.Stock30DaysAgo)?.ToString() ?? "N/A",
+                "On hand" => row.OnHand?.ToString() ?? "N/A", "On order" => row.Activity.OnOrder, "Draft" => row.Draft,
+                "Unit cost" => cost.HasValue ? Sale.Money(cost.Value) : "",
+                "Case cost" => cost.HasValue && row.Product.UnitsPerCase > 0 ? Sale.Money(cost.Value * row.Product.UnitsPerCase) : "",
+                "Units/case" => row.Product.UnitsPerCase, _ => null
+            };
+        };
+        period.SelectedIndexChanged += (_, _) => items.Invalidate();
         search.TextChanged+=(_,_)=>RenderItems(); vendor.SelectedIndexChanged+=(_,_)=>{if(!rendering)RenderItems();};vendorOnly.CheckedChanged+=(_,_)=>RenderItems();
         items.SelectionChanged+=(_,_)=> { if(!rendering&&CurrentItem is PurchasingRow item && item.Product.Barcode!=selectedBarcode) { selectedBarcode=item.Product.Barcode; cases.Checked=false; quantity.Value=Math.Min(quantity.Maximum,item.Draft);draftExpected=item.Draft; } };
         orders.SelectionChanged+=(_,_)=> { if(orders.CurrentRow?.DataBoundItem is OrderDisplay row) { selectedOrder=row.Id; RenderLines(); } };
@@ -105,16 +131,19 @@ internal sealed class PurchasingForm : PosForm
     }
     private void RenderItems()
     {
-        if(snapshot is null)return; string selected=CurrentItem?.Product.Barcode??selectedBarcode; int offset=items.HorizontalScrollingOffset;
-        rendering=true;items.Rows.Clear(); string query=search.Text.Trim(); long vendorId=(vendor.SelectedItem as VendorOption)?.Id??0;
-        foreach(var item in snapshot.Items.Where(item=>(!vendorOnly.Checked||vendorId==0||item.Details.SupplierId==vendorId)&&new[] {item.Product.Barcode,item.Product.Description,item.Details.Brand,item.Details.Supplier}.Any(value=>value.Contains(query,StringComparison.OrdinalIgnoreCase))))
-        {
-            var p=item.Product; var a=item.Activity; var setup=item.Details.Setup??new();
-            int row=items.Rows.Add(p.Barcode,item.Details.Brand,p.Description,p.Size,item.Details.Supplier,item.OnHand?.ToString()??"N/A",a.OnOrder,item.Draft,a.Sold7,a.Sold30,a.Sold90,a.MonthToDate,a.YearToDate,a.LastSale?.ToString("yyyy-MM-dd")??"",a.LastReceived?.ToString("yyyy-MM-dd")??"",
-                Sale.Money(p.UnitPrice),item.Details.UnitCost is decimal cost?Sale.Money(cost):"Not set",item.Details.UnitCost is decimal c&&p.UnitPrice>0?((p.UnitPrice-c)*100/p.UnitPrice).ToString("0.0"):"",p.UnitsPerCase,setup.Bin,setup.Par,setup.ReorderPoint);
-            items.Rows[row].Tag=item; if(p.Barcode==selected&&items.IsHandleCreated)items.CurrentCell=items.Rows[row].Cells["Description"];
-        }
-        if(items.IsHandleCreated)items.HorizontalScrollingOffset=offset;
+        if (snapshot is null) return;
+        string selected = CurrentItem?.Product.Barcode ?? selectedBarcode;
+        string query = search.Text.Trim();
+        long vendorId = (vendor.SelectedItem as VendorOption)?.Id ?? 0;
+        rendering = true;
+        visibleItems = snapshot.Items.Where(item =>
+            (!vendorOnly.Checked || vendorId == 0 || item.Details.SupplierId == vendorId) &&
+            (query.Length == 0 || new[] { item.Product.Barcode, item.Product.Description, item.Details.VendorCode,
+                item.Details.Brand, item.Details.Supplier }.Any(value => value.Contains(query, StringComparison.OrdinalIgnoreCase)))).ToArray();
+        items.RowCount = visibleItems.Length;
+        int index = Array.FindIndex(visibleItems, item => item.Product.Barcode == selected);
+        if (index >= 0 && items.IsHandleCreated) items.CurrentCell = items.Rows[index].Cells["Description"];
+        items.Invalidate();
         rendering=false;if(!quantity.ContainsFocus&&CurrentItem is PurchasingRow selectedItem&&selectedItem.Product.Barcode!=selectedBarcode){selectedBarcode=selectedItem.Product.Barcode;draftExpected=selectedItem.Draft;cases.Checked=selectedItem.Details.Setup?.OrderCases??false;quantity.Value=Math.Min(quantity.Maximum,cases.Checked?selectedItem.Draft/Math.Max(1,selectedItem.Product.UnitsPerCase):selectedItem.Draft);}
     }
     private void RenderLines()
@@ -163,6 +192,23 @@ internal sealed class PurchasingForm : PosForm
         }
         File.Delete(recoveryPath); pending=null; await LoadAsync();
     }
+    private async Task ReceiveImageAsync()
+    {
+        CheckPending();
+        var order = CurrentOrder ?? throw new ArgumentException("Select a purchase order.");
+        if (!order.Lines.Any(l => l.Remaining > 0) || order.Status == "Cancelled")
+            throw new ArgumentException("Select an open purchase order with outstanding units.");
+        using var image = new OpenFileDialog { Title = "Select scanned invoice", Filter = "Invoice images|*.jpg;*.jpeg;*.png;*.bmp;*.tif;*.tiff" };
+        if (image.ShowDialog(this) != DialogResult.OK) return;
+        string text = await CatalogImage.Read(image.FileName, closing.Token);
+        var rows = text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (rows.Length == 0) throw new ArgumentException("The scanner found no text in this image.");
+        using var review = new InvoiceReviewForm(order, rows);
+        if (review.ShowDialog(this) != DialogResult.OK) return;
+        pending = new(Receive: new(Guid.NewGuid(), order.Id, review.Confirmed));
+        await RetryAsync();
+    }
+
     private async Task ReceiveLineAsync()
     {
         CheckPending(); var order=CurrentOrder??throw new ArgumentException("Select a purchase order."); string barcode=lines.CurrentRow?.Cells["Barcode"].Value as string??throw new ArgumentException("Select an order line.");

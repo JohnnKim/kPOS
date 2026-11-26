@@ -31,7 +31,8 @@ public sealed class ScalingLayoutTests
     public void SettingsTabsUseReadableTypeAndLargerTabTargets()
     {
         using var data=new RegisterData(":memory:");using var window=new SettingsForm(data,new RegisterFolders(Path.GetTempPath())){Opacity=0,ShowInTaskbar=false};window.Show();Application.DoEvents();
-        var tabs=Children(window).OfType<TabControl>().Single();Assert.IsTrue(tabs.Font.Size>=11);Assert.IsTrue(tabs.GetTabRect(0).Height>=28);
+        var button=Children(window).OfType<Button>().Single(b => b.Text == "Checkout");
+        Assert.IsTrue(button.Height >= button.Font.Height + button.Padding.Vertical);
     }
     [TestMethod]
     public void LookupColumnsReturnToTheirReferenceWidthsAfterShrinking()

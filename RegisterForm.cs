@@ -49,6 +49,7 @@ internal sealed class RegisterForm : PosForm
     private readonly Label legalAge = new() { AutoSize = true, ForeColor = Color.FromArgb(24, 53, 82) };
     private readonly System.Windows.Forms.Timer legalAgeTimer = new() { Interval = 30000 };
     private readonly Label discounts = CreateAmountLabel();
+    private readonly Label tobaccoTax = CreateAmountLabel();
     private readonly Label tax = CreateAmountLabel();
     private readonly Label totalDue = PosView.BannerAmount("", 44);
     private readonly Label totalCaption = PosView.Label("TOTAL DUE", 14, FontStyle.Bold, Color.White);
@@ -61,7 +62,7 @@ internal sealed class RegisterForm : PosForm
     private readonly Label lastChange = CreateAmountLabel();
     private readonly Label displayMessage=new(){AccessibleName="Register display message",AutoEllipsis=true,AutoSize=false,TextAlign=ContentAlignment.MiddleCenter,ForeColor=PosView.Navy,Font=new Font("Segoe UI Semibold",22,FontStyle.Regular),Visible=false};
     private Action? arrangeDisplayMessage;
-    internal void ArrangeDisplayMessage() { arrangeDisplayMessage?.Invoke(); if (ticket.IsHandleCreated) ticket.AutoResizeColumns(); }
+    internal void ArrangeDisplayMessage() { arrangeDisplayMessage?.Invoke(); }
     private bool nextItemIsCase;
     private bool exporting;
     public string? RequestedDirectory { get; private set; }
@@ -109,7 +110,7 @@ internal sealed class RegisterForm : PosForm
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 160));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var header = CreateHeader();
         layout.Controls.Add(header, 0, 0);
         layout.SetColumnSpan(header, 2);
@@ -388,7 +389,7 @@ internal sealed class RegisterForm : PosForm
 
     private Control CreateTotals()
     {
-        var totals = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 6 };
+        var totals = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 7 };
         totals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         totals.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         for (int row = 0; row < totals.RowCount; row++)
@@ -413,7 +414,8 @@ internal sealed class RegisterForm : PosForm
         AddTotal(PosView.Label("Lottery", 12, color: PosView.Muted), lottery, 2);
         AddTotal(PosView.Label("Discounts", 12, color: PosView.Muted), discounts, 3);
         AddTotal(PosView.Label("Sales Tax", 12, color: PosView.Muted), tax, 4);
-        AddTotal(lastChangeCaption, lastChange, 5);
+        AddTotal(PosView.Label("Tobacco Tax", 12, color: PosView.Muted), tobaccoTax, 5);
+        AddTotal(lastChangeCaption, lastChange, 6);
         return PosView.Frame(totals, new Padding(6), fitContent: true, stretchWidth: true);
 
         void AddTotal(Label caption, Label amount, int row)
@@ -616,7 +618,7 @@ internal sealed class RegisterForm : PosForm
     {
         var choice = MessageBox.Show(this,
             $"No product matches code {code}.\n\nAdd it to the product database?",
-            "Unrecognized Product Code", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+            "Unrecognized Product Code", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question,
             MessageBoxDefaultButton.Button1);
         if (choice == DialogResult.Yes)
         {
@@ -1087,7 +1089,9 @@ finally { UseWaitCursor = false; }
         subtotal.Text = Sale.Money(totals.Merchandise);
         lottery.Text = Sale.Money(totals.Lottery);
         discounts.Text = Sale.Money(totals.Discount);
-        tax.Text = Sale.Money(totals.Tax);
+        decimal tobacco = totals.TaxDetails?.CigTax ?? 0;
+        tax.Text = Sale.Money(totals.Tax - tobacco);
+        tobaccoTax.Text = Sale.Money(tobacco);
         displayMessage.Text=data.DisplayMessage;
         displayMessage.Parent?.PerformLayout();
         ArrangeDisplayMessage();

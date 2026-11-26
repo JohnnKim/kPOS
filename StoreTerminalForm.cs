@@ -7,6 +7,7 @@ namespace Kpos;
 
 internal sealed class StoreTerminalForm : PosForm
 {
+    protected override bool ScrollWholeWindow => false;
     private readonly TextBox url = new() { PlaceholderText = "HTTPS address from Host Terminal" };
     private readonly TextBox pin = new();
     private readonly TextBox key = new() { UseSystemPasswordChar = true };
@@ -93,6 +94,7 @@ internal sealed class StoreTerminalForm : PosForm
         };
         var setup = HomeTerminalView.Fields(("Terminal name", terminalName), ("Store address", url), ("Certificate SHA256", pin), ("Store checkout key", key));
         connectionFields = setup;
+        setup.Visible = false;
         var setupToggle = PosView.Button("Connection Setup", size: 11); setupToggle.Click += (_, _) => setup.Visible = !setup.Visible;
         grid.AutoGenerateColumns = false; grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill; grid.ScrollBars = ScrollBars.Both;
         grid.AccessibleName = "Shared store sale";
@@ -110,13 +112,13 @@ internal sealed class StoreTerminalForm : PosForm
         var banner = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, BackColor = PosView.Navy, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Top, Padding = new Padding(6, 2, 6, 2) }; banner.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); banner.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         caption.Anchor = AnchorStyles.Left; due.MinimumSize = new Size(0, 26); due.Height = 28; due.Dock = DockStyle.Fill; banner.Controls.Add(caption, 0, 0); banner.Controls.Add(due, 1, 0);
         HomeTerminalView.Row(summary, banner);
-        HomeTerminalView.Row(summary, HomeTerminalView.Actions(salesTax, cases));
+        HomeTerminalView.Row(summary, salesTax);
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(Action("Checkout · F9", CheckoutAsync, true, true), Action("Retry Confirmation", CheckoutAsync, compact: true)));
         HomeTerminalView.Row(saleArea, HomeTerminalView.Actions(Action("Quantity · Q", QuantityAsync), Action("Refund · RF", RefundAsync), Action("Delete · F5", DeleteAsync)));
         HomeTerminalView.Row(saleArea, HomeTerminalView.Actions(Action("Item Lookup · F3", LookupAsync), Action("Refresh Prices", RefreshPricesAsync), Action("Void Sale · F4", VoidAsync)));
         HomeTerminalView.Row(summary, last);
-        var receipt = PosView.Button("Last Receipt", size: 9); receipt.AutoSize = true; receipt.AutoSizeMode = AutoSizeMode.GrowAndShrink; receipt.MinimumSize = Size.Empty; receipt.Click += (_, _) => ShowReceipt(); receipt.MaximumSize = new Size(0, 26); receipt.Padding = new Padding(6, 1, 6, 1);
-        var printerSettings = PosView.Button("Printer / Drawer", size: 9); printerSettings.AutoSize = true; printerSettings.AutoSizeMode = AutoSizeMode.GrowAndShrink; printerSettings.MinimumSize = Size.Empty; printerSettings.Click += (_, _) => ShowHardwareSettings(); printerSettings.MaximumSize = new Size(0, 26); printerSettings.Padding = new Padding(6, 1, 6, 1);
+        var receipt = PosView.Button("Last Receipt", size: 9); receipt.AutoSize = true; receipt.AutoSizeMode = AutoSizeMode.GrowAndShrink; receipt.MinimumSize = Size.Empty; receipt.Click += (_, _) => ShowReceipt();  receipt.Padding = new Padding(6, 1, 6, 1);
+        var printerSettings = PosView.Button("Printer / Drawer", size: 9); printerSettings.AutoSize = true; printerSettings.AutoSizeMode = AutoSizeMode.GrowAndShrink; printerSettings.MinimumSize = Size.Empty; printerSettings.Click += (_, _) => ShowHardwareSettings();  printerSettings.Padding = new Padding(6, 1, 6, 1);
         HomeTerminalView.Row(summary, HomeTerminalView.Actions(receipt, printerSettings));
         foreach(Control row in summary.Controls) { row.Margin = Padding.Empty; row.Padding = Padding.Empty; }
         summary.Dock = DockStyle.Fill; summary.AutoScroll = false; body.Controls.Add(summary, 1, 0);
@@ -131,7 +133,7 @@ internal sealed class StoreTerminalForm : PosForm
         HomeTerminalView.Row(layout, setup);
         HomeTerminalView.Row(layout, store);
         HomeTerminalView.Row(layout, body, true);
-        HomeTerminalView.Row(layout, HomeTerminalView.Actions(PosView.Label("Scan item or barcode", 12, FontStyle.Bold), scanner));
+        HomeTerminalView.Row(layout, HomeTerminalView.Actions(PosView.Label("Scan item or barcode", 12, FontStyle.Bold), scanner, cases));
         scanner.Width = 520;
         HomeTerminalView.Row(layout, feedback);
         Controls.Add(layout);
@@ -158,7 +160,7 @@ internal sealed class StoreTerminalForm : PosForm
         pulse.Start(); Render();
 
         Button Action(string text, Func<Task> action, bool primary = false, bool compact = false)
-        { var button = PosView.Button(text, primary, compact ? 9 : 11); if (compact) { button.AutoSize = true; button.AutoSizeMode = AutoSizeMode.GrowAndShrink; button.MinimumSize = Size.Empty; button.MaximumSize = new Size(0, 26); button.Padding = new Padding(6, 1, 6, 1); } button.Click += async (_, _) => await RunAsync(action); actions.Add(button); return button; }
+        { var button = PosView.Button(text, primary, compact ? 9 : 11); if (compact) { button.AutoSize = true; button.AutoSizeMode = AutoSizeMode.GrowAndShrink; button.MinimumSize = Size.Empty;  button.Padding = new Padding(6, 1, 6, 1); } button.Click += async (_, _) => await RunAsync(action); actions.Add(button); return button; }
     }
 
     private async Task ConnectAsync()
@@ -329,7 +331,8 @@ internal sealed class StoreTerminalForm : PosForm
         }
         if(row >= 0 && row < grid.Rows.Count) grid.CurrentCell = grid.Rows[row].Cells[0];
         SaleTotals totals = pending?.Quote.Totals ?? sale.GetTotals(info?.Taxes ?? new(info?.TaxRate ?? 0));
-        salesTax.Text = "Sales Tax  " + Sale.Money(totals.Tax);
+        decimal tobacco = totals.TaxDetails?.CigTax ?? 0;
+        salesTax.Text = $"Sales Tax  {Sale.Money(totals.Tax - tobacco)}    Tobacco Tax  {Sale.Money(tobacco)}";
         due.Text = Sale.Money(Math.Abs(totals.Total)); caption.Text = totals.Total < 0 ? "REFUND DUE" : "TOTAL DUE";
         due.Parent!.BackColor = totals.Total < 0 ? PosView.Refund : PosView.Navy;
         store.Text = info is null ? "Connect this checkout station to the store host." : $"Store: {info.StoreName} · {info.BusinessDate:yyyy-MM-dd} · {profile?.Name} · Tax {Sale.Rate(info.TaxRate)}";
@@ -460,12 +463,23 @@ internal sealed class StoreLookupForm : PosForm
     internal StoreLookupForm(HomeTerminalClient client, string initialSearch = "")
     {
         Text = "Store Terminal — Item Lookup"; ClientSize = new Size(1400, 760); ShowInTaskbar = false; StartPosition = FormStartPosition.CenterParent;
-        grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+        grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        grid.ScrollBars = ScrollBars.Vertical;
+        string sort = "";
+        string? expanded = null;
         search.Text = initialSearch;
         var layout = HomeTerminalView.Layout();
         var find = PosView.Button("Search", size: 11);
         var previous = PosView.Button("Previous", size: 11);
         var next = PosView.Button("Next", size: 11);
+        grid.ColumnHeaderMouseClick += async (_, e) =>
+        {
+            if (e.ColumnIndex < 0) return;
+            sort = grid.Columns[e.ColumnIndex].Name;
+            expanded = expanded == sort ? null : sort;
+            page = 0;
+            await LoadAsync();
+        };
         find.Click += async (_, _) => { page = 0; await LoadAsync(); };
         previous.Click += async (_, _) => { page = Math.Max(0, page-1); await LoadAsync(); };
         next.Click += async (_, _) => { page++; await LoadAsync(); };
@@ -476,23 +490,24 @@ internal sealed class StoreLookupForm : PosForm
         Controls.Add(layout); CancelButton = close;
         Shown += async (_, _) => await LoadAsync();
         _=client.WatchChangesAsync(revision=>this.PostIfOpen(()=>{if(loading)reloadPending=true;else _=LoadAsync(true);}),lookupClosing.Token);
+        search.TextChanged += async (_, _) => { page = 0; await LoadAsync(); };
         search.KeyDown += (_, e) => { if(e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; find.PerformClick(); } };
         grid.CellDoubleClick += (_, e) => { if(e.RowIndex >= 0) SelectItem(); };
         async Task LoadAsync(bool preserve = false)
         {
             string? selected=(grid.CurrentRow?.DataBoundItem as HomeStock)?.Barcode; int offset=preserve?grid.HorizontalScrollingOffset:0; int first=grid.FirstDisplayedScrollingRowIndex;
-            if(loading) return; loading = true;
+            if(loading) { reloadPending = true; return; } loading = true;
             try
             {
-                HomeSnapshot result = await client.OverviewAsync(search.Text.Trim(), page);
+                HomeSnapshot result = await client.OverviewAsync(search.Text.Trim(), page, lookupClosing.Token, sort: sort);
                 if(IsDisposed) return;
                 grid.DataSource = result.Items;
                 grid.Enabled = true;
                 foreach(DataGridViewColumn column in grid.Columns) column.Visible = column.Name is "Barcode" or "Brand" or "Description" or "OnHand" or "Size" or "UnitPrice" or "Supplier";
                 if(grid.Columns["OnHand"] is DataGridViewColumn stock) { stock.DisplayIndex = 5; stock.HeaderText = "Qty"; stock.DefaultCellStyle.NullValue = "N/A"; }
                 foreach(var (columnName, index, width) in new[] { ("Barcode",0,130), ("Brand",1,110), ("Description",2,200), ("Size",3,100), ("UnitPrice",4,105), ("OnHand",5,105), ("Supplier",6,160) })
-                    if(grid.Columns[columnName] is DataGridViewColumn column) { column.DisplayIndex = index; column.Width = width; column.HeaderText = columnName == "Supplier" ? "Vendor" : columnName == "UnitPrice" ? "Price" : column.HeaderText; }
-                if(grid.Columns["Description"] is DataGridViewColumn name) { name.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; name.MinimumWidth = 200; }
+                    if(grid.Columns[columnName] is DataGridViewColumn column) { column.DisplayIndex = index; column.MinimumWidth = 24; column.SortMode = DataGridViewColumnSortMode.Programmatic; column.FillWeight = (columnName == "Brand" ? 160 : width) * (columnName == expanded ? 1.65f : 1); column.HeaderText = columnName == "Supplier" ? "Vendor" : columnName == "UnitPrice" ? "Price" : column.HeaderText; }
+                if(grid.Columns["Description"] is DataGridViewColumn name) { name.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; name.MinimumWidth = 30; }
                 if(grid.Columns["UnitPrice"] is DataGridViewColumn price) price.DefaultCellStyle.Format = "C2";
                 next.Enabled = (page+1)*100 < result.ItemCount; previous.Enabled = page > 0;
                 if(preserve&&selected is not null)foreach(DataGridViewRow row in grid.Rows)if(((HomeStock)row.DataBoundItem!).Barcode==selected)grid.CurrentCell=row.Cells["Description"];

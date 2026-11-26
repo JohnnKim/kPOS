@@ -129,7 +129,19 @@ internal sealed partial class RegisterData
         using var command = ReportCommand(report, start, end, barcode, saleId, limit, offset, search: search);
         using var reader = command.ExecuteReader();
         var table = new DataTable { Locale = CultureInfo.InvariantCulture };
-        table.Load(reader);
+        // SQLite expressions can begin with NULL (for example an optional case price).
+        // Keep those fields scalar even if the provider initially reports a BLOB.
+        for (int i = 0; i < reader.FieldCount; i++)
+        {
+            Type type = reader.GetFieldType(i);
+            table.Columns.Add(reader.GetName(i), type == typeof(byte[]) ? typeof(object) : type);
+        }
+        while (reader.Read())
+        {
+            var values = new object[reader.FieldCount];
+            reader.GetValues(values);
+            table.Rows.Add(values);
+        }
         return table;
     }
 

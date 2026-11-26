@@ -156,19 +156,12 @@ public sealed class WorkstationWindowTests
     }
 
     [TestMethod]
-    [DataRow(0,0)]
-    [DataRow(1024,768)]
-    public void RegisterTextCounterAndLiveMessageUpdateAfterSaving(int width,int height)
+    public void DisplaySettingsKeepCheckoutPreferencesWithoutRegisterTextEditor()
     {
-        using var data=new RegisterData(":memory:");var folders=new RegisterFolders(Path.GetTempPath());
-        using var settings=new SettingsForm(data,folders);var editor=Descendants(settings).OfType<TextBox>().Single(box=>box.AccessibleName=="Register display text");
-        var counter=Descendants(settings).OfType<Label>().Single(label=>label.AccessibleName=="Register text characters left");
-        Assert.AreEqual("24 characters left",counter.Text);editor.Text="Welcome";Assert.AreEqual("17 characters left",counter.Text);
-        editor.Text=new string('x',24);Assert.AreEqual("0 characters left",counter.Text);
-        using var register=new RegisterForm(data,folders){Opacity=0,ShowInTaskbar=false};if(width>0){register.WindowState=FormWindowState.Normal;register.Size=new(width,height);}register.Show();Application.DoEvents();
-        data.DisplayMessage="Welcome to the store";typeof(RegisterForm).GetMethod("RefreshTicket",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(register,[0]);Application.DoEvents();
-        var message=Descendants(register).OfType<Label>().Single(label=>label.Text==data.DisplayMessage);Assert.IsTrue(message.Visible,$"Message={message.Bounds}, parent={message.Parent?.GetType().Name}/{message.Parent?.Bounds}; window={register.ClientSize}; panels={string.Join(";",Descendants(register).OfType<Panel>().Select(panel=>$"{panel.GetType().Name}:{panel.Bounds}"))}");Assert.IsTrue(message.Font.Size>=16);Assert.AreEqual(ContentAlignment.MiddleCenter,message.TextAlign);
-        if(Environment.GetEnvironmentVariable("KPOS_WINDOW_SCREENSHOTS") is string directory){using var bitmap=new Bitmap(register.Width,register.Height);register.DrawToBitmap(bitmap,new Rectangle(Point.Empty,bitmap.Size));bitmap.Save(Path.Combine(directory,"Register message.png"));}
+        using var data = new RegisterData(":memory:");
+        using var settings = new SettingsForm(data, new RegisterFolders(Path.GetTempPath()));
+        Assert.IsFalse(Descendants(settings).Any(control => control.AccessibleName == "Register display text"));
+        Assert.IsTrue(Descendants(settings).OfType<CheckBox>().Any(control => control.Text.Contains("Show Register Keys")));
     }
 
     private static IEnumerable<Control> Descendants(Control parent)

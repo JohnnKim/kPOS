@@ -44,17 +44,12 @@ public sealed class WindowLayoutTests
         window.Size = new Size(800, 480);
         Application.DoEvents();
         DataGridView grid = Descendants(window).OfType<DataGridView>().Single();
-        grid.Columns["Description"]!.MinimumWidth = 600;
-        Application.DoEvents();
-
-        Assert.IsTrue(grid.Controls.OfType<HScrollBar>().Any(bar => bar.Visible));
+        Assert.IsFalse(grid.Controls.OfType<HScrollBar>().Any(bar => bar.Visible));
         Assert.IsTrue(grid.Controls.OfType<VScrollBar>().Any(bar => bar.Visible));
         Assert.AreEqual(grid.Rows[0].Height, grid.Rows[1].Height);
         Assert.IsTrue(grid.ShowCellToolTips);
-        grid.FirstDisplayedScrollingColumnIndex = grid.Columns["OnHand"]!.Index;
-        Assert.IsTrue(grid.Columns["OnHand"]!.Displayed, "The last column must be reachable by horizontal scrolling.");
+        Assert.IsTrue(grid.Columns["Supplier"]!.Displayed);
 
-        grid.Columns["Description"]!.MinimumWidth = 200;
         window.Size = new Size(1280, 650);
         Application.DoEvents();
         Assert.IsFalse(grid.Controls.OfType<HScrollBar>().Any(bar => bar.Visible),

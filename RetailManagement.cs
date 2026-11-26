@@ -57,6 +57,40 @@ internal sealed partial class RegisterData
         transaction.Commit();
     }
 
+    internal sealed record Promotion(string Barcode, string Item, string From, string Through, bool FixedPrice, long Value)
+    {
+        public string Offer => FixedPrice ? Sale.Money(Value / 100m) : $"{Value / 100m:0.##}% off";
+    }
+
+    internal List<Promotion> CurrentPromotions()
+    {
+        using var query = Command("""
+            SELECT p.barcode, i.description, p.starts, p.ends, p.fixed_price, p.value
+            FROM promotions p JOIN products i ON i.barcode=p.barcode
+            WHERE ends >= $today ORDER BY p.starts, i.description COLLATE NOCASE
+            """);
+        query.Parameters.AddWithValue("$today", Day(CurrentBusinessDate()));
+        using var rows = query.ExecuteReader();
+        var result = new List<Promotion>();
+        while (rows.Read()) result.Add(new(rows.GetString(0), rows.GetString(1), rows.GetString(2),
+            rows.GetString(3), rows.GetBoolean(4), rows.GetInt64(5)));
+        return result;
+    }
+
+    internal bool CancelPromotion(Promotion entry)
+    {
+        using var query = Command("""
+            DELETE FROM promotions WHERE barcode=$barcode AND starts=$start AND ends=$end
+                AND fixed_price=$fixed AND value=$value
+            """);
+        query.Parameters.AddWithValue("$barcode", entry.Barcode);
+        query.Parameters.AddWithValue("$start", entry.From);
+        query.Parameters.AddWithValue("$end", entry.Through);
+        query.Parameters.AddWithValue("$fixed", entry.FixedPrice);
+        query.Parameters.AddWithValue("$value", entry.Value);
+        return query.ExecuteNonQuery() == 1;
+    }
+
     internal IReadOnlyList<Product> LabelProducts()
     {
         var products = ListProducts().ToList();

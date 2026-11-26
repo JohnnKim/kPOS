@@ -20,7 +20,10 @@ internal sealed class ProductListForm : PosForm
     private readonly bool selectItem;
     private readonly bool allowAddCode;
     private readonly TextBox search = new() { Dock = DockStyle.Fill, AccessibleName = "Find product", MaxLength = 80 };
-    private readonly System.Windows.Forms.Timer filterTimer = new() { Interval = 90 };
+    private string? sortField;
+    private string? expanded;
+    private Dictionary<string, string> searchText = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, float> weights = new();
     private readonly ComboBox field = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 152, AccessibleName = "Search by" };
     private readonly Label matchCount = PosView.Label("", 11, color: PosView.Muted);
     private readonly Button add = PosView.Button("Add as &Code", size: 11);
@@ -44,6 +47,7 @@ internal sealed class ProductListForm : PosForm
         this.folders = folders;
         this.allowAddCode = allowAddCode;
         LoadStock();
+        IndexSearch();
         Text = selectItem ? "Item Lookup" : "Product List";
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(1400, 760);
@@ -163,7 +167,7 @@ internal sealed class ProductListForm : PosForm
         Controls.Add(layout);
 
         PosView.Grid(grid, 11, 38);
-        foreach(var (name, caption, width) in new[] { ("Barcode", "Barcode", 185), ("Brand", "Brand", 170),
+        foreach(var (name, caption, width) in new[] { ("Barcode", "Barcode", 147), ("Brand", "Brand", 195),
             ("Description", "Description", 220), ("Size", "Size", 95), ("Price", "Price", 100),
             ("OnHand", "Qty", 70), ("Supplier", "Vendor", 155) })
             grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = caption, Width = width,
@@ -184,8 +188,38 @@ internal sealed class ProductListForm : PosForm
             if (e.RowIndex >= 0 && e.ColumnIndex >= 0)
                 e.ToolTipText = grid[e.ColumnIndex, e.RowIndex].FormattedValue?.ToString();
         };
-        grid.ScrollBars = ScrollBars.Both;
-        foreach(DataGridViewColumn column in grid.Columns) column.SortMode = DataGridViewColumnSortMode.NotSortable;
+        grid.ScrollBars = selectItem ? ScrollBars.Vertical : ScrollBars.Both;
+        foreach (DataGridViewColumn column in grid.Columns)
+        {
+            column.SortMode = DataGridViewColumnSortMode.Programmatic;
+            weights[column.Name] = column.Width;
+            if (selectItem)
+            {
+                column.MinimumWidth = 20;
+                column.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+                column.FillWeight = weights[column.Name];
+            }
+        }
+        grid.ColumnHeaderMouseClick += (_, e) =>
+        {
+            if (e.ColumnIndex < 0) return;
+            var clicked = grid.Columns[e.ColumnIndex];
+            sortField = clicked.Name;
+            expanded = expanded == sortField ? null : sortField;
+            foreach (DataGridViewColumn column in grid.Columns)
+            {
+                float width = weights[column.Name] * (column.Name == expanded ? 1.65f : 1);
+                if (selectItem) column.FillWeight = width;
+                else
+                {
+                    column.MinimumWidth = 32;
+                    column.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+                    column.Width = (int)(width * (expanded != null && column.Name != expanded ? .88 : 1) * grid.DeviceDpi / 96);
+                }
+                column.HeaderCell.SortGlyphDirection = column == clicked ? SortOrder.Ascending : SortOrder.None;
+            }
+            Filter();
+        };
         if(grid.Columns["Price"] is DataGridViewColumn priceColumn)
         {
             PosView.AmountColumn(grid, "Price", 11);priceColumn.ValueType = typeof(decimal);
@@ -195,19 +229,7 @@ internal sealed class ProductListForm : PosForm
         grid.CellValueNeeded += (_, e) =>
         {
             if((uint)e.RowIndex >= (uint)matches.Length) return;
-            Product item = matches[e.RowIndex]; CatalogDetails meta = catalog.GetValueOrDefault(item.Barcode) ?? new();
-            ItemSetup setup=meta.Setup??new();ItemActivity? a=activity.GetValueOrDefault(item.Barcode);
-            e.Value = grid.Columns[e.ColumnIndex].Name switch
-            {
-                "Barcode" => item.Barcode, "Brand" => meta.Brand, "Description" => item.Description, "Size" => item.Size,
-                "Price" => item.UnitPrice, "OnHand" => stock.GetValueOrDefault(item.Barcode) is long units ? units : "N/A",
-                "Supplier" => meta.Supplier, "CasePrice" => item.HasCasePrice ? Sale.Money(item.CasePrice) : "", "Type" => meta.Type,
-                "VendorCode" => meta.VendorCode, "UnitCost" => meta.UnitCost is decimal cost ? Sale.Money(cost) : "Not set",
-                "OnOrder"=>a?.OnOrder,"Draft"=>draft.GetValueOrDefault(item.Barcode),"Sold7"=>a?.Sold7,"Sold30"=>a?.Sold30,"Sold90"=>a?.Sold90,"MTD"=>a?.MonthToDate,"YTD"=>a?.YearToDate,
-                "LastSale"=>a?.LastSale?.ToString("yyyy-MM-dd"),"LastReceived"=>a?.LastReceived?.ToString("yyyy-MM-dd"),"Class"=>setup.Class,"Bin"=>setup.Bin,"Par"=>setup.Par,"Reorder"=>setup.ReorderPoint,
-                "Shelf"=>setup.ShelfQuantity,"ShelfCapacity"=>setup.ShelfCapacity,"OrderLot"=>setup.OrderCases?"Case":"Unit","Notes"=>setup.Notes,"Margin"=>meta.UnitCost is decimal c&&item.UnitPrice>0?((item.UnitPrice-c)*100/item.UnitPrice).ToString("0.0"):"Not set",
-                "CaseUnits" => item.UnitsPerCase, "Taxable" => item.IsTaxable ? "Yes" : "No", _ => null
-            };
+            e.Value = CellValue(matches[e.RowIndex], grid.Columns[e.ColumnIndex].Name);
         };
         grid.CellFormatting += (_, e) =>
         {
@@ -215,9 +237,7 @@ internal sealed class ProductListForm : PosForm
             { e.CellStyle!.ForeColor = PosView.Error; e.CellStyle.SelectionForeColor = Color.White; }
         };
         search.Text = initialSearch;
-        filterTimer.Tick += (_, _) => { filterTimer.Stop(); Filter(); };
-        search.TextChanged += (_, _) => { if (products.Count > 1000) { filterTimer.Stop(); filterTimer.Start(); } else Filter(); };
-        FormClosed += (_, _) => filterTimer.Dispose();
+        search.TextChanged += (_, _) => Filter();
         field.SelectedIndexChanged += (_, _) => Filter();
         grid.CellDoubleClick += (_, e) =>
         {
@@ -270,32 +290,66 @@ internal sealed class ProductListForm : PosForm
         return base.ProcessCmdKey(ref message, keys);
     }
 
+    private object? CellValue(Product item, string name)
+    {
+        CatalogDetails meta = catalog.GetValueOrDefault(item.Barcode) ?? new();
+            ItemSetup setup=meta.Setup??new();ItemActivity? a=activity.GetValueOrDefault(item.Barcode);
+        return name switch
+            {
+                "Barcode" => item.Barcode, "Brand" => meta.Brand, "Description" => item.Description, "Size" => item.Size,
+                "Price" => item.UnitPrice, "OnHand" => stock.GetValueOrDefault(item.Barcode) is long units ? units : "N/A",
+                "Supplier" => meta.Supplier, "CasePrice" => item.HasCasePrice ? Sale.Money(item.CasePrice) : "", "Type" => meta.Type,
+                "VendorCode" => meta.VendorCode, "UnitCost" => meta.UnitCost is decimal cost ? Sale.Money(cost) : "Not set",
+                "OnOrder"=>a?.OnOrder,"Draft"=>draft.GetValueOrDefault(item.Barcode),"Sold7"=>a?.Sold7,"Sold30"=>a?.Sold30,"Sold90"=>a?.Sold90,"MTD"=>a?.MonthToDate,"YTD"=>a?.YearToDate,
+                "LastSale"=>a?.LastSale?.ToString("yyyy-MM-dd"),"LastReceived"=>a?.LastReceived?.ToString("yyyy-MM-dd"),"Class"=>setup.Class,"Bin"=>setup.Bin,"Par"=>setup.Par,"Reorder"=>setup.ReorderPoint,
+                "Shelf"=>setup.ShelfQuantity,"ShelfCapacity"=>setup.ShelfCapacity,"OrderLot"=>setup.OrderCases?"Case":"Unit","Notes"=>setup.Notes,"Margin"=>meta.UnitCost is decimal c&&item.UnitPrice>0?((item.UnitPrice-c)*100/item.UnitPrice).ToString("0.0"):"Not set",
+                "CaseUnits" => item.UnitsPerCase, "Taxable" => item.IsTaxable ? "Yes" : "No", _ => null
+            };
+    }
+
+    private void IndexSearch()
+    {
+        searchText = products.ToDictionary(p => p.Barcode, p => {
+            var detail = catalog.GetValueOrDefault(p.Barcode);
+            return string.Join('\u001f', p.Description, p.Code, p.Barcode, p.Size, detail?.Brand, detail?.Supplier);
+        }, StringComparer.OrdinalIgnoreCase);
+    }
+
     private void Filter()
     {
         string query = search.Text.Trim();
-        bool tooShort = false;
-        matches = tooShort ? [] : products.Where(product => field.SelectedIndex switch
+        IEnumerable<Product> found = query.Length == 0 ? products : products.Where(product => field.SelectedIndex switch
         {
             1 => Contains(product.Description),
             2 => Contains(product.Code),
             3 => Contains(product.Barcode),
             4 => Contains(product.Size),
-            _ => Contains(product.Description) || Contains(product.Code) || Contains(product.Barcode) || Contains(product.Size) || Contains((catalog.GetValueOrDefault(product.Barcode) ?? new()).Brand) || Contains((catalog.GetValueOrDefault(product.Barcode) ?? new()).Supplier)
-        }).ToArray();
+            _ => Contains(searchText[product.Barcode])
+        });
+        if (sortField is string column)
+            found = found.OrderBy(p => CellValue(p, column), Comparer<object?>.Create(CompareValues))
+                .ThenBy(p => p.Barcode, StringComparer.OrdinalIgnoreCase);
+        matches = found.ToArray();
 
         grid.RowCount = matches.Length;
         if (matches.Length > 0 && grid.IsHandleCreated)
             grid.CurrentCell = grid.Rows[0].Cells["Description"];
         grid.Invalidate();
         grid.ResetScrollPosition();
-        matchCount.Text = tooShort ? $"{products.Count:N0} items · Type 2 characters"
-            : query.Length == 0 ? $"{products.Count:N0} items"
+        matchCount.Text = query.Length == 0 ? $"{products.Count:N0} items"
             : $"{matches.Length:N0} of {products.Count:N0} items";
         select.Enabled = delete.Enabled = matches.Length > 0;
         add.Enabled = allowAddCode && query.Length >= 2 && matches.Length == 0 &&
             !products.Any(product => string.Equals(product.Code, query, StringComparison.OrdinalIgnoreCase) ||
                                      string.Equals(product.Barcode, query, StringComparison.OrdinalIgnoreCase));
 
+        static int CompareValues(object? left, object? right)
+        {
+            if (left is null || right is null) return left == right ? 0 : left is null ? 1 : -1;
+            if (left is IComparable comparable && left is not string && left.GetType() == right.GetType())
+                return comparable.CompareTo(right);
+            return StringComparer.CurrentCultureIgnoreCase.Compare(left.ToString(), right.ToString());
+        }
         bool Contains(string value) => value.Contains(query, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -305,11 +359,10 @@ internal sealed class ProductListForm : PosForm
     {
         if (data is null)
             return;
-        DateOnly today = data.CurrentBusinessDate();
-        var orderItems=data.ReadOrderItems(today,today,today);draft=orderItems.ToDictionary(item=>item.Product.Barcode,item=>item.Draft);
-        stock = orderItems.ToDictionary(item => item.Product.Barcode, item => item.OnHand,
-            StringComparer.OrdinalIgnoreCase);
-        catalog = data.ReadCatalogDetails();
+        var snapshot = data.LookupStock();
+        draft = snapshot.Draft;
+        stock = snapshot.Stock;
+        catalog = snapshot.Details;
         if(!selectItem)activity=data.ReadItemActivity();
     }
 
@@ -318,6 +371,7 @@ internal sealed class ProductListForm : PosForm
         if (data is not null)
             products = data.ListProducts(archived: deleted.Checked);
         LoadStock();
+        IndexSearch();
         Filter();
     }
 

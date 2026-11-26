@@ -5,7 +5,8 @@ namespace Kpos;
 
 internal sealed record ItemSetup(string Class = "Standard", string Bin = "", long Par = 0, long ReorderPoint = 0,
     long ShelfCapacity = 0, long ShelfQuantity = 0, bool OrderCases = false, string Notes = "", bool DiscountAllowed = true, bool CigTaxable = false);
-internal sealed record OrderQuantity(string Barcode, long Units, long? Expected = null);
+internal sealed record OrderQuantity(string Barcode, long Units, long? Expected = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] decimal? InvoiceUnitCost = null);
 internal sealed record PlacePurchaseRequest(Guid Id, long SupplierId, string Number, DateOnly? Due, string Notes, OrderQuantity[] Lines);
 internal sealed record ReceivePurchaseRequest(Guid Id, Guid OrderId, OrderQuantity[] Lines);
 internal sealed record PurchaseLine(Product Product, long Ordered, long Received, decimal? UnitCost, string VendorCode)
@@ -15,7 +16,7 @@ internal sealed record SavedPurchaseOrder(Guid Id, string Number, DateTimeOffset
 { public decimal? Cost => Lines.Any(line => line.UnitCost is null) ? null : MoneyMath.Up(Lines.Sum(line => line.Ordered * line.UnitCost!.Value)); }
 internal sealed record ItemActivity(long Sold7, long Sold30, long Sold90, long MonthToDate, long YearToDate,
     DateOnly? LastSale, DateOnly? LastReceived, long OnOrder, DateTimeOffset? LastEdited);
-internal sealed record PurchasingRow(Product Product, CatalogDetails Details, long? OnHand, long Draft, ItemActivity Activity);
+internal sealed record PurchasingRow(Product Product, CatalogDetails Details, long? OnHand, long Draft, ItemActivity Activity, long? Stock7DaysAgo = null, long? Stock30DaysAgo = null);
 internal sealed record PurchasingSnapshot(DateOnly Day, PurchasingRow[] Items, Distributor[] Vendors, SavedPurchaseOrder[] Orders);
 
 internal sealed partial class RegisterData
@@ -80,7 +81,11 @@ internal sealed partial class RegisterData
     internal PurchasingSnapshot ReadPurchasing()
     {
         DateOnly day = CurrentBusinessDate(); var details = ReadCatalogDetails(); var activity = ReadItemActivity();
-        return new(day, ReadOrderItems(day.AddDays(-29), day, day).Select(item => new PurchasingRow(item.Product, details[item.Product.Barcode], item.OnHand, item.Draft, activity[item.Product.Barcode])).ToArray(),
+        Dictionary<string, long?> StockAt(DateOnly at) =>
+            ReadOrderItems(at, at, at).ToDictionary(item => item.Product.Barcode, item => item.OnHand);
+        var lastWeek = StockAt(day.AddDays(-7));
+        var lastMonth = StockAt(day.AddDays(-30));
+        return new(day, ReadOrderItems(day.AddDays(-29), day, day).Select(item => new PurchasingRow(item.Product, details[item.Product.Barcode], item.OnHand, item.Draft, activity[item.Product.Barcode], lastWeek.GetValueOrDefault(item.Product.Barcode), lastMonth.GetValueOrDefault(item.Product.Barcode))).ToArray(),
             ReadDistributors().ToArray(), ReadPurchaseOrders());
     }
     internal SavedPurchaseOrder[] ReadPurchaseOrders()
@@ -147,6 +152,19 @@ internal sealed partial class RegisterData
         {
             PurchaseLine item = order.Lines.SingleOrDefault(item => item.Product.Barcode == line.Barcode) ?? throw new ArgumentException("This item is not on the order.");
             if(line.Units > item.Remaining) throw new ArgumentException("Received units cannot exceed the outstanding order quantity.");
+            if (line.InvoiceUnitCost is decimal invoiceCost)
+            {
+                if (invoiceCost < 0 || invoiceCost > 999999.99m || decimal.Round(invoiceCost, 2) != invoiceCost)
+                    throw new ArgumentException("Enter a nonnegative unit cost with up to two decimal places.");
+                using var cost = Command("""
+                    INSERT INTO product_details(barcode, unit_cost_cents, edited_at) VALUES($barcode,$cost,$at)
+                    ON CONFLICT(barcode) DO UPDATE SET unit_cost_cents=excluded.unit_cost_cents, edited_at=excluded.edited_at
+                    """, transaction);
+                cost.Parameters.AddWithValue("$barcode", line.Barcode);
+                cost.Parameters.AddWithValue("$cost", Cents(invoiceCost));
+                cost.Parameters.AddWithValue("$at", DateTimeOffset.Now.ToString("O"));
+                cost.ExecuteNonQuery();
+            }
             using var update = Command("UPDATE purchase_lines SET received=received+$units WHERE order_id=$id AND barcode=$barcode; INSERT INTO inventory_receipts(barcode,business_date,units) VALUES($barcode,$day,$units) ON CONFLICT(barcode,business_date) DO UPDATE SET units=inventory_receipts.units+excluded.units", transaction);
             update.Parameters.AddWithValue("$units", line.Units); update.Parameters.AddWithValue("$id", order.Id.ToString("N")); update.Parameters.AddWithValue("$barcode", line.Barcode); update.Parameters.AddWithValue("$day", Day(day)); update.ExecuteNonQuery();
         }

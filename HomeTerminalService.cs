@@ -106,7 +106,11 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
                 if(!context.Response.HasStarted)context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;else context.Abort();
             }
         });
-        app.MapGet("/api/v1/overview", (string? search, int? page, string? stock) =>
+        var stockLock = new object();
+        HomeStock[] cachedStock = [];
+        long cachedRevision = -1;
+        DateOnly cachedDay = default;
+        app.MapGet("/api/v1/overview", (string? search, int? page, string? stock, string? sort) =>
         {
             int index = page ?? 0;
             if (index is < 0 or > 100000 || search?.Length > 100 || stock is not (null or "all" or "empty" or "low" or "uncounted"))
@@ -114,16 +118,39 @@ internal sealed class HomeTerminalHost : IAsyncDisposable
             using var data = RegisterData.OpenHomeConnection(databasePath);
             DateOnly day = data.CurrentBusinessDate();
             string query = search?.Trim() ?? "";
-            OrderItem[] items = data.ReadOrderItems(day, day, day).Where(item =>
-                item.Product.Description.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                item.Product.Barcode.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                item.Product.Code.Contains(query, StringComparison.OrdinalIgnoreCase)).Where(item => stock switch
-                { "empty" => item.OnHand <= 0, "low" => item.OnHand is <= 5, "uncounted" => item.OnHand is null, _ => true }).ToArray();
-            var catalogDetails = data.ReadCatalogDetails();
-            HomeStock[] stockRows = items.Skip(index * 100).Take(100).Select(item => new HomeStock(item.Product.Barcode,
-                item.Product.Code, item.Product.Description, item.Product.Size, item.OnHand, item.Sold, item.DistributorName,
-                item.Product.UnitPrice, item.Product.UnitsPerCase, item.Product.CasePrice, item.Product.IsTaxable, item.Draft, (catalogDetails.GetValueOrDefault(item.Product.Barcode) ?? new()).Brand)).ToArray();
-            return Results.Ok(new HomeSnapshot(day, DateTimeOffset.UtcNow, data.GetDaySales(day), stockRows, items.Length, index));
+            HomeStock[] snapshot;
+            lock (stockLock)
+            {
+                long revision = data.Revision();
+                if (revision != cachedRevision || day != cachedDay)
+                {
+                    var details = data.ReadCatalogDetails();
+                    cachedStock = data.ReadOrderItems(day, day, day).Select(item => new HomeStock(item.Product.Barcode,
+                        item.Product.Code, item.Product.Description, item.Product.Size, item.OnHand, item.Sold, item.DistributorName,
+                        item.Product.UnitPrice, item.Product.UnitsPerCase, item.Product.CasePrice, item.Product.IsTaxable, item.Draft,
+                        details.GetValueOrDefault(item.Product.Barcode)?.Brand ?? "")).ToArray();
+                    cachedDay = day;
+                    cachedRevision = revision;
+                }
+                snapshot = cachedStock;
+            }
+            var matches = snapshot.Where(item =>
+                (query.Length == 0 || item.Description.Contains(query,StringComparison.OrdinalIgnoreCase) ||
+                item.Barcode.Contains(query,StringComparison.OrdinalIgnoreCase) || item.Code.Contains(query,StringComparison.OrdinalIgnoreCase) ||
+                item.Supplier.Contains(query,StringComparison.OrdinalIgnoreCase) || item.Brand.Contains(query,StringComparison.OrdinalIgnoreCase)) &&
+                (stock switch { "empty" => item.OnHand <= 0, "low" => item.OnHand is <= 5, "uncounted" => item.OnHand is null, _ => true }));
+            matches = sort switch
+            {
+                "Barcode" => matches.OrderBy(i => i.Barcode, StringComparer.OrdinalIgnoreCase),
+                "Brand" => matches.OrderBy(i => i.Brand, StringComparer.OrdinalIgnoreCase),
+                "Size" => matches.OrderBy(i => i.Size, StringComparer.OrdinalIgnoreCase),
+                "Supplier" => matches.OrderBy(i => i.Supplier, StringComparer.OrdinalIgnoreCase),
+                "UnitPrice" => matches.OrderBy(i => i.UnitPrice),
+                "OnHand" => matches.OrderBy(i => i.OnHand),
+                _ => matches
+            };
+            var items = matches.ToArray();
+            return Results.Ok(new HomeSnapshot(day, DateTimeOffset.UtcNow, data.GetDaySales(day), items.Skip(index * 100).Take(100).ToArray(), items.Length, index));
         });
         app.MapPost("/api/v1/order-requests", (HomeOrderRequest order) =>
         {
@@ -187,9 +214,9 @@ internal sealed partial class HomeTerminalClient : IDisposable
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Trim());
     }
 
-    public async Task<HomeSnapshot> OverviewAsync(string search, int page, CancellationToken cancellationToken = default, string stock = "all")
+    public async Task<HomeSnapshot> OverviewAsync(string search, int page, CancellationToken cancellationToken = default, string stock = "all", string sort = "")
     {
-        using HttpResponseMessage response = await http.GetAsync($"api/v1/overview?search={Uri.EscapeDataString(search)}&page={page}&stock={Uri.EscapeDataString(stock)}", cancellationToken).ConfigureAwait(false);
+        using HttpResponseMessage response = await http.GetAsync($"api/v1/overview?search={Uri.EscapeDataString(search)}&page={page}&stock={Uri.EscapeDataString(stock)}&sort={Uri.EscapeDataString(sort)}", cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<HomeSnapshot>(cancellationToken).ConfigureAwait(false) ?? throw new IOException("The store returned an empty response.");
     }

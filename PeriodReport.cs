@@ -21,16 +21,18 @@ internal static class PeriodReport
 internal sealed partial class RegisterData
 {
     private sealed record DepartmentLine(string Month, string Type, long Sales, long? Cost);
-    private static string ReportDepartment(string type) => type.ToUpperInvariant() switch
+    private static string ReportDepartment(string type) => type.Trim().ToUpperInvariant() switch
     {
-        "WHISKEY" or "LIQUEUR" or "BRANDY" or "COGNAC" or "GIN" or "RUM" or "VODKA" or "TEQUILA" or "RTD" or "LIQUOR MISC" => "Liquor",
+        "LIQUOR" or "SCOTCH" or "BOURBON" or "WHISKY" or "WHISKEY" or "LIQUEUR" or "BRANDY" or "COGNAC" or "GIN" or "RUM" or "VODKA" or "TEQUILA" or "RTD" or "LIQUOR MISC" => "Liquor",
         "WINE" or "CHAMPAGNE" or "WINE MISC" => "Wine",
         "BEER" or "BEER MISC" => "Beer",
-        var t when t.StartsWith("TOBACCO", StringComparison.Ordinal) => "Tobacco",
+        var t when t.StartsWith("TOBACCO", StringComparison.Ordinal) || t.StartsWith("CIG", StringComparison.Ordinal) => "Tobacco",
         "GROCERY" or "SODA" or "ICE CREAM" or "DRUG/CBD" => "Grocery",
         "SNACK" or "SNACKS" => "Snack",
         "LOTTERY" or "LOTTO SALE" => "Lottery",
-        _ => type
+        "SUNDRY" or "SUNDRIES" => "Sundry",
+        "CANDY" => "Candy",
+        _ => "Misc"
     };
 
     internal string BuildPeriodReport(DateOnly start, DateOnly end, int kind)
@@ -83,7 +85,11 @@ internal sealed partial class RegisterData
             header{position:relative;text-align:center}header small{position:absolute;left:0;top:0}h1{margin:5px}h2{text-align:center;border-bottom:3px double;padding-bottom:6px}
             table{width:100%;border-collapse:collapse;font:10pt 'Courier New',monospace}td,th{text-align:right;padding:4px}th:first-child,td:first-child{text-align:left}
             th{border-bottom:1px solid}thead{display:table-header-group}tr{break-inside:avoid}.types{columns:2;column-gap:8%}.pair{display:flex;justify-content:space-between;break-inside:avoid;font:11pt 'Courier New';padding:3px 0}
-            .grand{max-width:5in;margin:auto}.block{break-before:page}.matrix{font-size:8pt}footer{text-align:center;font-style:italic;margin-top:20px}
+            .grand{max-width:5in;margin:auto}.block{break-before:page}.department{margin:8px 0 30px}.department h1{font-size:22pt}.department h3{margin:4px 0;font-size:14pt}
+            .matrix{table-layout:fixed;border-collapse:separate;border-spacing:4px 0;font:9pt 'Courier New',monospace;font-variant-numeric:tabular-nums}
+            .matrix th{font:600 10pt Arial;text-align:center;border-bottom:2px solid;padding:0 0 5px}.matrix td{padding:5px 0;white-space:nowrap}
+            .matrix td:first-child{text-align:right}.matrix tbody tr:first-child td{padding-top:18px}.matrix .totals td{text-align:left;padding-top:22px}
+            .matrix th:last-child{width:10%}footer{text-align:center;font-style:italic;margin-top:20px}
             @media print{button{display:none}body{margin:0;max-width:none}}button{padding:8px 18px}
             </style><button onclick="window.print()">Print report</button>
             """);
@@ -116,35 +122,32 @@ internal sealed partial class RegisterData
         if (kind != 0)
         {
             if(kind==2) html.Append("<section class='block'>");
-            Header("Department Gross Profit");
-            var departments = lines.Select(r=>ReportDepartment(r.Type)).Distinct().Order().ToArray();
-            // Repeat the date and Total on each band so custom departments cannot run off the printed page.
-            foreach (var band in (departments.Length==0 ? new[]{Array.Empty<string>()} : departments.Chunk(10)))
+            html.Append($"<header class='department'><small>Page {(kind == 2 ? 3 : 1)}</small><h1>Department Gross Profit</h1><h3>From {start:MMMM d, yyyy} To {end:MMMM d, yyyy}</h3></header>");
+            string[] band = ["Liquor","Wine","Beer","Tobacco","Grocery","Snack","Sundry","Candy","Misc","Lottery"];
+            html.Append("<table class='matrix'><thead><tr><th>Date</th>");
+            foreach(string d in band)html.Append($"<th>{E(d)}</th>");
+            html.Append("<th>Total</th></tr></thead><tbody>");
+            void MatrixRow(string label, IEnumerable<DepartmentLine> source, int metric)
             {
-                html.Append("<table class='matrix'><thead><tr><th>Date</th>");
-                foreach(string d in band)html.Append($"<th>{E(d)}</th>");
-                html.Append("<th>Total</th></tr></thead><tbody>");
-                void MatrixRow(string label, IEnumerable<DepartmentLine> source, int metric)
+                var subset=source.ToList(); decimal all=subset.Sum(r=>r.Sales);
+                html.Append($"<tr><td>{E(label)}</td>");
+                foreach(var d in band.Cast<string?>().Append(null))
                 {
-                    var subset=source.ToList(); decimal all=subset.Sum(r=>r.Sales);
-                    html.Append($"<tr><td>{E(label)}</td>");
-                    foreach(var d in band.Cast<string?>().Append(null))
-                    {
-                        var cells=d is null?subset:subset.Where(r=>ReportDepartment(r.Type)==d).ToList();
-                        decimal sales=cells.Sum(r=>r.Sales);decimal? c=Cost(cells);
-                        string text=metric switch {0=>Money(sales),1=>Money(c),2=>Money(sales-c),3=>Percent(sales,all),_=>Percent(sales-c,sales)};
-                        html.Append($"<td>{text}</td>");
-                    }
-                    html.Append("</tr>");
+                    var cells=d is null?subset:subset.Where(r=>ReportDepartment(r.Type)==d).ToList();
+                    decimal sales=cells.Sum(r=>r.Sales);decimal? c=Cost(cells);
+                    string text=metric switch {0=>Money(sales),1=>Money(c),2=>Money(sales-c),3=>all==0?"0.0%":Percent(sales,all),_=>sales==0 && c==0?"0.0%":Percent(sales-c,sales)};
+                    html.Append($"<td>{text}</td>");
                 }
-                foreach(var month in lines.GroupBy(r=>r.Month))
-                {
-                    MatrixRow(DateOnly.ParseExact(month.Key+"-01","yyyy-MM-dd",CultureInfo.InvariantCulture).ToString("MMM yyyy"),month,0);
-                    MatrixRow("Cost",month,1); MatrixRow("GP",month,2);
-                }
-                MatrixRow("Total sales",lines,0); MatrixRow("Cost",lines,1); MatrixRow("GP",lines,2);
-                MatrixRow("% Total",lines,3); MatrixRow("% GP",lines,4); html.Append("</tbody></table>");
+                html.Append("</tr>");
             }
+            foreach(var month in lines.GroupBy(r=>r.Month))
+            {
+                MatrixRow(DateOnly.ParseExact(month.Key+"-01","yyyy-MM-dd",CultureInfo.InvariantCulture).ToString("MMM yyyy"),month,0);
+                MatrixRow("Cost",month,1); MatrixRow("GP",month,2);
+            }
+            html.Append("<tr class=totals><td colspan=12>Totals:</td></tr>");
+            MatrixRow("Sales",lines,0); MatrixRow("Cost",lines,1); MatrixRow("GP",lines,2);
+            MatrixRow("% Total",lines,3); MatrixRow("% GP",lines,4); html.Append("</tbody></table>");
             if(kind==2)html.Append("</section>");
         }
         return html.Append("<footer>End of Report</footer></html>").ToString();

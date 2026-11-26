@@ -1,6 +1,10 @@
 # kPOS
 Independent liquor store POS system
 
+The ordering worksheet under **Activity → Order and Receive** shows vendor items, selling units sold, prior and current stock, and unit and case costs. Choose a seven-day or thirty-day period. Under **Purchase Orders / Receiving**, **Receive from image** reads a scanned invoice with Tesseract OCR. Confirm the order item, selling units and unit cost for each invoice line before posting.
+
+In **Sales Records**, choose **Department Gross Profit** and **Detailed report** to print the landscape department matrix. **Set Promotions** supports barcode or name searches, dated fixed prices and percentage discounts. **Current promotions** lists active and scheduled offers and allows cancellation.
+
 Preview.42 adds inventory and vendor import, dated promotions, Avery label printing, and printable period sales and department profit reports.
 
 On the store register, open **Products → Import Data…**. Choose `inventory.txt`, then `vendor.txt`, and confirm the opening stock date. kPOS reads both files on the register and saves them in its local database. The completion dialog lists any barcodes that need review.

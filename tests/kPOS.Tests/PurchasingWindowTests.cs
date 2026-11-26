@@ -24,7 +24,7 @@ public sealed class PurchasingWindowTests
                 try
                 {
                     await Task.Delay(50);window.Size=new(Math.Min(window.Width,width-24),Math.Min(window.Height,height-72));
-                    var grids=Controls(window).OfType<DataGridView>().ToArray();Assert.AreEqual(data.ListProducts().Count,grids.Single(grid=>grid.Columns.Contains("Sold 90d")).Rows.Count);
+                    var grids=Controls(window).OfType<DataGridView>().ToArray();Assert.AreEqual(data.ListProducts().Count,grids.Single(grid=>grid.Columns.Contains("Prior stock")).Rows.Count);
                     foreach(var tabs in Controls(window).OfType<TabControl>())foreach(TabPage page in tabs.TabPages){tabs.SelectedTab=page;WindowLayoutTests.CheckControls(window);}
                     Assert.AreEqual(1,grids.Single(grid=>grid.Columns.Contains("Remaining")).Rows.Count);
                     if(Environment.GetEnvironmentVariable("KPOS_WINDOW_SCREENSHOTS") is string images){using var bitmap=new Bitmap(window.Width,window.Height);window.DrawToBitmap(bitmap,new Rectangle(Point.Empty,bitmap.Size));bitmap.Save(Path.Combine(images,$"Purchasing-{width}.png"));}

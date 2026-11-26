@@ -63,7 +63,7 @@ internal sealed class RecordsForm : PosForm
             period.SelectedIndex = 0;
         }
         layout.Controls.Add(filters, 0, 0);
-        layout.Controls.Add(tabs, 0, 1);
+
         if (product is null)
         {
             AddTab("Totals", RecordReport.Totals);
@@ -77,6 +77,7 @@ internal sealed class RecordsForm : PosForm
         AddTab("Item Sales History", RecordReport.SaleLines);
         AddTab("Price History", RecordReport.PriceHistory);
 
+        layout.Controls.Add(PosView.Navigation(tabs), 0, 1);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         var close = PosView.Button("Close", size: 10);
         close.DialogResult = DialogResult.Cancel;
@@ -301,7 +302,7 @@ internal sealed class RecordsForm : PosForm
             if (e.ColumnIndex >= 0 && grid.Columns[e.ColumnIndex].DataPropertyName is "Sold at" or "Recorded at" &&
                 e.Value is string value && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
             {
-                e.Value = time.ToString("MM/dd/yyyy'\n'HH:mm", CultureInfo.InvariantCulture);
+                e.Value = time.ToString("MM/dd/yyyy HH:mm", CultureInfo.InvariantCulture);
                 e.FormattingApplied = true;
             }
         };
@@ -310,6 +311,14 @@ internal sealed class RecordsForm : PosForm
 
     private static void Bind(DataGridView grid, DataTable table, RecordReport report, bool individualSale = false)
     {
+        grid.DataSource = null;
+        grid.AutoGenerateColumns = false;
+        grid.Columns.Clear();
+        foreach (DataColumn field in table.Columns)
+            grid.Columns.Add(new DataGridViewTextBoxColumn {
+                Name = field.ColumnName, HeaderText = field.ColumnName, DataPropertyName = field.ColumnName,
+                DefaultCellStyle = new DataGridViewCellStyle { NullValue = "" }
+            });
         grid.DataSource = table;
         foreach (DataGridViewColumn column in grid.Columns)
         {
@@ -365,6 +374,8 @@ internal sealed class RecordsForm : PosForm
                 column.DefaultCellStyle.FormatProvider = CultureInfo.GetCultureInfo("en-US");
                 column.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
             }
-        } grid.AutoSizeColumnsMode = report is RecordReport.Closeout or RecordReport.PriceHistory ? DataGridViewAutoSizeColumnsMode.AllCells : DataGridViewAutoSizeColumnsMode.Fill;
+        }
+        grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells;
+        grid.AutoResizeRows(DataGridViewAutoSizeRowsMode.AllCellsExceptHeaders);
     }
 }
