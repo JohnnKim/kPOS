@@ -14,7 +14,7 @@ internal sealed class ProportionalLayout : IDisposable
     private double scale=1;
     private bool applying;
     private bool applied;
-    private sealed record GridSize(int Row,int Header, Dictionary<DataGridViewColumn,(int Width,int Minimum)> Columns);
+    private sealed record GridSize(int Row, int MinimumRow,int Header, Dictionary<DataGridViewColumn,(int Width,int Minimum)> Columns);
     internal ProportionalLayout(Control root){this.root=root;Capture(root);}
     private void Capture(Control control)
     {
@@ -32,11 +32,12 @@ internal sealed class ProportionalLayout : IDisposable
         // DataGridView columns do not follow the initial compact Control.Scale.
         // Keep their reference widths in the same coordinate system as the canvas.
         if(control is DataGridView grid&&!grids.ContainsKey(grid))
-            grids[grid]=new(grid.RowTemplate.Height,grid.ColumnHeadersHeight,grid.Columns.Cast<DataGridViewColumn>().ToDictionary(column=>column,column=>((int)Math.Round(column.Width*PosView.CompactScale),(int)Math.Round(column.MinimumWidth*PosView.CompactScale))));
+            grids[grid]=new(grid.RowTemplate.Height,grid.RowTemplate.MinimumHeight,grid.ColumnHeadersHeight,grid.Columns.Cast<DataGridViewColumn>().ToDictionary(column=>column,column=>((int)Math.Round(column.Width*PosView.CompactScale),(int)Math.Round(column.MinimumWidth*PosView.CompactScale))));
         if(control is DataGridView table)
         {
-            foreach(var style in new[]{table.DefaultCellStyle,table.ColumnHeadersDefaultCellStyle}.Concat(table.Columns.Cast<DataGridViewColumn>().SelectMany(column=>new[]{column.DefaultCellStyle,column.HeaderCell.Style})))
-                if(style.Font is Font font&&!cellFonts.ContainsKey(style))cellFonts[style]=(font.FontFamily.Name,font.Size,font.Style);
+            var styles = (applied ? Array.Empty<DataGridViewCellStyle>() : [table.DefaultCellStyle,table.ColumnHeadersDefaultCellStyle]).Concat(table.Columns.Cast<DataGridViewColumn>().SelectMany(column=>new[]{column.DefaultCellStyle,column.HeaderCell.Style});
+            foreach (var style in styles)
+                if(style.Font is Font font&&!cellFonts.ContainsKey(style))cellFonts[style]=(font.FontFamily.Name,(float)(font.Size / scale),font.Style);
         }
         if(control is not DataGridView)foreach(Control child in control.Controls)Capture(child);
     }
@@ -69,15 +70,18 @@ internal sealed class ProportionalLayout : IDisposable
             }
             foreach(var (control,size) in fixedLabels.Where(pair=>!pair.Key.IsDisposed))control.Size=new((int)Math.Round(size.Width*scale),(int)Math.Round(size.Height*scale));
             ApplyFonts(root);
-            foreach(var (style,font) in cellFonts)style.Font=FontFor(font.Family,Math.Max(9.5f*96/root.DeviceDpi,(float)(font.Size*scale)),font.Style);
+            float cellMinimum = (root.FindForm() is RegisterForm ? 1f : 9.5f) * 96 / root.DeviceDpi;
+            foreach (var (style, font) in cellFonts)
+                style.Font = FontFor(font.Family, Math.Max(cellMinimum, (float)Math.Round(font.Size * scale, 2)), font.Style);
             foreach(var (grid,size) in grids.Where(pair=>!pair.Key.IsDisposed))
             {
-                grid.RowTemplate.Height=Math.Max(18,(int)Math.Round(size.Row*scale));if(grid.ColumnHeadersHeightSizeMode!=DataGridViewColumnHeadersHeightSizeMode.AutoSize)grid.ColumnHeadersHeight=Math.Max(24,(int)Math.Round(size.Header*scale));
+                grid.RowTemplate.Height=Math.Max(18,(int)Math.Round(size.Row*scale));grid.RowTemplate.MinimumHeight = Math.Max(18, (int)Math.Round(size.MinimumRow*scale));if(grid.ColumnHeadersHeightSizeMode!=DataGridViewColumnHeadersHeightSizeMode.AutoSize)grid.ColumnHeadersHeight=Math.Max(24,(int)Math.Round(size.Header*scale));
                 foreach(var (column,dimensions) in size.Columns.Where(pair=>pair.Key.DataGridView==grid))
                 {
                     column.MinimumWidth=Math.Max(2,(int)Math.Round(dimensions.Minimum*scale));
                     if(column.AutoSizeMode==DataGridViewAutoSizeColumnMode.None || column.AutoSizeMode==DataGridViewAutoSizeColumnMode.NotSet && grid.AutoSizeColumnsMode==DataGridViewAutoSizeColumnsMode.None)column.Width=Math.Max(column.MinimumWidth,(int)Math.Round(dimensions.Width*scale));
                 }
+                if (grid.AutoSizeRowsMode != DataGridViewAutoSizeRowsMode.None && grid.IsHandleCreated) grid.AutoResizeRows();
             }
         }
         finally{PosView.ResumeLayoutTree(root);applying=false;}
@@ -108,6 +112,6 @@ internal sealed class ProportionalLayout : IDisposable
             var value=metrics[control];Padding Resize(Padding p)=>new((int)Math.Round(p.Left*ratio),(int)Math.Round(p.Top*ratio),(int)Math.Round(p.Right*ratio),(int)Math.Round(p.Bottom*ratio));
             metrics[control]=new(Resize(value.Margin),Resize(value.Padding),new((int)Math.Round(value.Minimum.Width*ratio),(int)Math.Round(value.Minimum.Height*ratio)),value.Rows.Select(size=>size<0?size:(float)(size*ratio)).ToArray(),value.Columns.Select(size=>size<0?size:(float)(size*ratio)).ToArray());
         }
-foreach(var grid in grids.Keys.ToArray()){var old=grids[grid];grids[grid]=new((int)(old.Row*ratio),(int)(old.Header*ratio),old.Columns.ToDictionary(pair=>pair.Key,pair=>((int)(pair.Value.Width*ratio),(int)(pair.Value.Minimum*ratio))));}}
+foreach(var grid in grids.Keys.ToArray()){var old=grids[grid];grids[grid]=new((int)(old.Row*ratio),(int)(old.MinimumRow*ratio),(int)(old.Header*ratio),old.Columns.ToDictionary(pair=>pair.Key,pair=>((int)(pair.Value.Width*ratio),(int)(pair.Value.Minimum*ratio))));}}
     public void Dispose(){foreach(var font in owned.Values)font.Dispose();owned.Clear();}
 }
