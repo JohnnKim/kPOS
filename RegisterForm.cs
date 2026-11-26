@@ -301,7 +301,7 @@ internal sealed class RegisterForm : PosForm
         var activity = new ToolStripMenuItem("&Activity");
         activity.DropDownItems.Add("Order and Receive", null, (_, _) => RunRegisterAction(() =>
         {
-            using var window = new PurchasingForm(PurchasingSource.Local(data), data);
+            using var window = new OrderForm(data);
             window.ShowDialog(this);
         }));
         lists.DropDownItems.Add("Import Data…", null, (_, _) => RunRegisterAction(ImportStoreCatalog));
@@ -571,13 +571,13 @@ internal sealed class RegisterForm : PosForm
         PosView.Grid(ticket, 14, 46);
         ticket.ColumnHeadersDefaultCellStyle.WrapMode=DataGridViewTriState.False;
         ticket.Columns.Add("Line", "#");
-        ticket.Columns["Line"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
+        ticket.Columns["Line"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
         ticket.Columns["Line"]!.MinimumWidth = 38;
         ticket.Columns["Line"]!.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
         ticket.Columns.Add("Description", "Current Sale");
         ticket.Columns["Description"]!.HeaderCell.Style.Font = PosView.Text(17, FontStyle.Bold);
         ticket.Columns.Add("Size", "Size");
-        ticket.Columns["Size"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
+        ticket.Columns["Size"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
         ticket.Columns["Size"]!.MinimumWidth = 70;
         ticket.Columns.Add("Quantity", "Qty");
         ticket.Columns.Add("Price", "Unit Price");

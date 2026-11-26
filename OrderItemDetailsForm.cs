@@ -5,6 +5,11 @@ namespace Kpos;
 internal sealed class OrderItemDetailsForm : PosForm
 {
     public OrderItemDetailsForm(RegisterData data, OrderItem item, DateOnly start, DateOnly end, int coverage)
+        : this(item, start, end, coverage, data.ReadDistributors(), data.DailyItemSales(item.Product.Barcode, start, end),
+            id => { data.AssignDistributor(item.Product.Barcode, id); return Task.CompletedTask; }) { }
+
+    internal OrderItemDetailsForm(OrderItem item, DateOnly start, DateOnly end, int coverage,
+        IReadOnlyList<Distributor> distributors, IReadOnlyDictionary<DateOnly, long> daily, Func<long?, Task> saveDistributor)
     {
         Text = "Order Item Details";
         StartPosition = FormStartPosition.CenterParent;
@@ -23,7 +28,6 @@ internal sealed class OrderItemDetailsForm : PosForm
         layout.Controls.Add(PosView.Label(item.Product.Description, 22, FontStyle.Bold), 0, 0);
         layout.Controls.Add(PosView.Label($"{item.Product.Code} · Barcode {item.Product.Barcode} · {item.Product.Size} · {Sale.Money(item.Product.UnitPrice)} per unit", 11), 0, 1);
 
-        var daily = data.DailyItemSales(item.Product.Barcode, start, end);
         var graph = new ItemSalesGraph(start, end, daily) { Dock = DockStyle.Fill, BackColor = Color.White };
         layout.Controls.Add(PosView.Frame(graph, new Padding(10)), 0, 2);
         var stats = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
@@ -40,7 +44,7 @@ internal sealed class OrderItemDetailsForm : PosForm
 
         var contacts = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         var vendors = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260, DisplayMember = "Name", AccessibleName = "Item distributor" };
-        var options = data.ReadDistributors().Select(vendor => new VendorOption(vendor.Id, vendor.Details.Name)).Prepend(new(null, "Unassigned")).ToArray();
+        var options = distributors.Select(vendor => new VendorOption(vendor.Id, vendor.Details.Name)).Prepend(new(null, "Unassigned")).ToArray();
         vendors.Items.AddRange(options);
         vendors.SelectedIndex = Math.Max(0, Array.FindIndex(options, vendor => vendor.Id == item.DistributorId));
         var label = PosView.Label("&Distributor", 11);
@@ -62,18 +66,20 @@ internal sealed class OrderItemDetailsForm : PosForm
         layout.Controls.Add(actions, 0, 5);
         Controls.Add(layout);
         CancelButton = close;
-        save.Click += (_, _) =>
+        save.Click += async (_, _) =>
         {
+            save.Enabled = false;
             try
             {
                 int selected = choices.Length > 0 ? Array.FindIndex(choices, choice => choice.Checked) : vendors.SelectedIndex;
-                data.AssignDistributor(item.Product.Barcode, options[selected].Id);
-                DialogResult = DialogResult.OK;
+                await saveDistributor(options[selected].Id);
+                if (!IsDisposed) DialogResult = DialogResult.OK;
             }
-            catch (SqliteException error)
+            catch (Exception error) when (error is SqliteException or IOException or HttpRequestException or ArgumentException or InvalidOperationException or OperationCanceledException)
             {
-                MessageBox.Show(this, error.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (!IsDisposed) MessageBox.Show(this, error.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+            finally { if (!IsDisposed) save.Enabled = true; }
         };
 
         void AddMetric(string caption, long? amount)

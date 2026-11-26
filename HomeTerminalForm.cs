@@ -32,9 +32,9 @@ internal sealed class HomeTerminalForm : PosForm
     private Control? connectionFields;
     private Guid? pendingStore;
     private readonly TabControl tabs = new() { Dock = DockStyle.Fill };
-    private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 110, Value = DateTime.Today.AddDays(-7) };
-    private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 110 };
-    private readonly ComboBox report = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170 };
+    private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 175, Value = DateTime.Today.AddDays(-7), AccessibleName = "From" };
+    private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 175, AccessibleName = "Through" };
+    private readonly ComboBox report = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 225, AccessibleName = "Report type" };
     private readonly Button submit = PosView.Button("Request Order", primary: true, size: 11);
     private readonly List<(HomeStock Stock, HomeOrderRequest Request)> basket = [];
     private readonly List<Button> operationButtons = [];
@@ -150,7 +150,7 @@ internal sealed class HomeTerminalForm : PosForm
             new ReportChoice(RecordReport.TerminalSales, "Sales by terminal") });
         report.SelectedIndex = 0;
         var recordLayout = HomeTerminalView.Layout();
-        HomeTerminalView.Row(recordLayout, HomeTerminalView.Actions(report, PosView.Label("From", 11), from, PosView.Label("Through", 11), through,
+        HomeTerminalView.Row(recordLayout, PosView.FilterRow(report, PosView.Label("From", 11), from, PosView.Label("Through", 11), through,
             Button("Load Records", async () => { reportPage = 0; await LoadRecordsAsync(); })));
         HomeTerminalView.Row(recordLayout, records, true);
         HomeTerminalView.Row(recordLayout, HomeTerminalView.Actions(Button("Previous", async () => { reportPage = Math.Max(0, reportPage - 1); await LoadRecordsAsync(); }),
@@ -165,16 +165,16 @@ internal sealed class HomeTerminalForm : PosForm
             if(basketGrid.CurrentRow?.Cells["Id"].Value is Guid id) basket.RemoveAll(item => item.Request.Id == id);
             RefreshBasket();
         };
-        HomeTerminalView.Row(orderLayout, PosView.Label("Order draft · selling units", 12, FontStyle.Bold));
+        HomeTerminalView.Row(orderLayout, PosView.Label("Items to request · selling units", 12, FontStyle.Bold));
         HomeTerminalView.Row(orderLayout, basketGrid, true);
-        HomeTerminalView.Row(orderLayout, HomeTerminalView.Actions(Button("Purchasing / Receiving", OpenPurchasingAsync), remove, Button("Send Order", SubmitAsync, true), Button("Refresh Status", LoadOrdersAsync)));
-        HomeTerminalView.Row(orderLayout, PosView.Label("Store review is required before requests enter the supplier order draft.", 11));
+        HomeTerminalView.Row(orderLayout, HomeTerminalView.Actions(remove, Button("Send Order", SubmitAsync, true), Button("Refresh Status", LoadOrdersAsync)));
+        HomeTerminalView.Row(orderLayout, PosView.Label("The store reviews requests before adding them to order quantities.", 11));
         HomeTerminalView.Row(orderLayout, history, true);
         HomeTerminalView.Row(orderLayout, HomeTerminalView.Actions(Button("Previous", async () => { orderPage = Math.Max(0, orderPage - 1); await LoadOrdersAsync(); }),
             Button("Next", async () => { if(ordersMore) orderPage++; await LoadOrdersAsync(); }), ExportButton(history)));
-        Page("Orders", orderLayout);
+        Page("Order Requests", orderLayout);
         var supplierLayout = HomeTerminalView.Layout();
-        HomeTerminalView.Row(supplierLayout, HomeTerminalView.Actions(Button("Refresh Suppliers", LoadSuppliersAsync), ExportButton(suppliers)));
+        HomeTerminalView.Row(supplierLayout, HomeTerminalView.Actions(Button("Vendor Directory…", OpenVendorsAsync), Button("Refresh Suppliers", LoadSuppliersAsync), ExportButton(suppliers)));
         HomeTerminalView.Row(supplierLayout, suppliers, true); Page("Suppliers", supplierLayout);
         var terminalLayout = HomeTerminalView.Layout();
         HomeTerminalView.Row(terminalLayout, PosView.Label("Remote Connection views store records. Store Terminal rings sales. Host Terminal stays at the store.", 11));
@@ -194,6 +194,8 @@ internal sealed class HomeTerminalForm : PosForm
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(connection, connectionSetup, paste, connect, disconnect, Button("Download Backup", BackupAsync), refresh, sound));
         HomeTerminalView.Row(layout, pairing);
         HomeTerminalView.Row(layout, totals);
+        HomeTerminalView.Row(layout, PosView.FilterRow(Button("Orders…", OpenOrdersAsync), Button("Item Catalog…", OpenCatalogAsync),
+            Button("Sales Records…", OpenRecordsAsync)));
         HomeTerminalView.Row(layout, status);
         HomeTerminalView.Row(layout, tabs, true);
         Controls.Add(layout);
@@ -221,8 +223,35 @@ internal sealed class HomeTerminalForm : PosForm
         },live.Token);
     }
     private async Task RefreshLiveAsync() { await LoadInventoryAsync(); await LoadCurrentAsync(); }
-    private Task OpenPurchasingAsync()
-    { var source=Connected; using var window=new PurchasingForm(PurchasingSource.Remote(source,hostInfo!.StoreId,closing.Token),remote:source);window.ShowDialog(this);return Task.CompletedTask; }
+    private Task OpenOrdersAsync()
+    {
+        using var window = new OrderForm(Connected, hostInfo!, closing.Token);
+        window.ShowDialog(this);
+        return Task.CompletedTask;
+    }
+
+    private async Task OpenCatalogAsync()
+    {
+        var source = Connected;
+        var catalog = await source.CatalogAsync(closing.Token);
+        if (IsDisposed) return;
+        using var window = new ProductListForm(source, catalog, hostInfo!.BusinessDate, closing.Token);
+        window.ShowDialog(this);
+    }
+
+    private Task OpenRecordsAsync()
+    {
+        using var window = new RecordsForm(Connected, hostInfo!.BusinessDate, closing.Token);
+        window.ShowDialog(this);
+        return Task.CompletedTask;
+    }
+
+    private async Task OpenVendorsAsync()
+    {
+        using var window = new VendorDirectory(Connected, closing.Token);
+        window.ShowDialog(this);
+        await LoadSuppliersAsync();
+    }
     private async Task BackupAsync()
     {
         var source=Connected;using var picker=new SaveFileDialog { Filter="Backup ZIP (*.zip)|*.zip",FileName="kPOS-backup-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".zip" };

@@ -62,14 +62,13 @@ internal sealed class SettingsForm : PosForm
         var miscKey = Shortcut(keys.Misc);
         var refundKey = Shortcut(keys.Refund);
         var expenseKey = Shortcut(keys.Expense);
-        var stockKey = Shortcut(keys.Stock);
         var autoScan = Option("Submit fast barcode scans without Enter", keys.AutoScan);
         var extraKeys = RegisterKeys.DefaultExtras().Keys.ToDictionary(action => action, action => Shortcut(keys[action]));
         var shortcutRows = new List<(string? Label, Control Input)>
         {
             (null, PosView.Label("Type a shortcut and press Enter. Leave it blank to search products instead.", 10, color: PosView.Muted)),
             ("Quantity", quantityKey), ("Lottery", lotteryKey), ("Misc", miscKey), ("Refund", refundKey),
-            ("Drawer expense", expenseKey), ("Stock in Orders (F6)", stockKey)
+            ("Drawer expense", expenseKey)
         };
         shortcutRows.AddRange(extraKeys.Select(pair => ((string?)pair.Key, (Control)pair.Value)));
         shortcutRows.Add((null, autoScan)); AddTab("Shortcuts", shortcutRows.ToArray());
@@ -118,7 +117,7 @@ internal sealed class SettingsForm : PosForm
         {
             if (CurrentTaxes() != data.ReadTaxes() || hardware.Value != data.ReadHardware() || duration.Value != data.ChangeSeconds ||
                 requireCount.Checked != data.RequireItemCount || maximize.Checked != data.StartMaximized ||
-                showKeys.Checked != data.ShowRegisterKeys || showChange.Checked != data.ShowLastChange || !CurrentKeys().SaleCommands.SequenceEqual(keys.SaleCommands) || CurrentKeys().Stock != keys.Stock || CurrentKeys().AutoScan != keys.AutoScan)
+                showKeys.Checked != data.ShowRegisterKeys || showChange.Checked != data.ShowLastChange || !CurrentKeys().SaleCommands.SequenceEqual(keys.SaleCommands) || CurrentKeys().AutoScan != keys.AutoScan)
             {
                 MessageBox.Show(this, "Save your settings before installing an update.", "kPOS Updates");
                 return;
@@ -175,7 +174,7 @@ internal sealed class SettingsForm : PosForm
         ResumeLayout();
 
         RegisterKeys CurrentKeys() => new(quantityKey.Text, lotteryKey.Text, miscKey.Text,
-            stockKey.Text, autoScan.Checked, refundKey.Text, expenseKey.Text, extraKeys.ToDictionary(pair => pair.Key, pair => pair.Value.Text));
+            keys.Stock, autoScan.Checked, refundKey.Text, expenseKey.Text, extraKeys.ToDictionary(pair => pair.Key, pair => pair.Value.Text));
 
         Label IdleMessage(string text)
         {

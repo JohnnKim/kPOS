@@ -97,7 +97,7 @@ public static class KposExecutableTest
                 WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen") &&
                     HasText(settings, "Show last change on the sales screen"), "show both display settings");
                 Send(WaitForChildWithText(settings, "Shortcuts"), 0x00F5, 0);
-                WaitUntil(() => HasText(settings, "Stock in Orders (F6)") && HasText(settings, "Submit fast barcode scans without Enter"),
+                WaitUntil(() => HasText(settings, "Drawer expense") && HasText(settings, "Submit fast barcode scans without Enter"),
                     "reach the expanded shortcut settings by scrolling");
                 Send(WaitForChildWithText(settings, "Display"), 0x00F5, 0);
                 WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen"), "return to display settings");
@@ -252,20 +252,15 @@ public static class KposExecutableTest
                 Send(records, 0x0010, 0); // WM_CLOSE
                 Send(FindChildWithText(register, "Or&ders"), 0x00F5, 0); // BM_CLICK
                 IntPtr orders = FindWindow(desktop, process.ProcessId, "Orders");
-                WaitUntil(() => HasText(orders, "&Purchase Order…") && HasText(orders, "&Stock… (Alt+S)"), "open the order worksheet");
-                Send(FindChildWithText(orders, "&Item Details…"), 0x00F5, 0);
-                IntPtr itemDetails = FindWindow(desktop, process.ProcessId, "Order Item Details");
-                Send(itemDetails, 0x0010, 0);
-                WaitUntil(() => !IsWindow(itemDetails), "close order item details");
-                Send(FindChildWithText(orders, "&Stock… (Alt+S)"), 0x00F5, 0);
-                IntPtr stock = FindWindow(desktop, process.ProcessId, "Inventory Stock");
-                Send(stock, 0x0010, 0);
-                WaitUntil(() => !IsWindow(stock), "close stock entry");
-                Send(FindChildWithText(orders, "&Purchase Order…"), 0x00F5, 0);
-                IntPtr purchase = FindWindow(desktop, process.ProcessId, "Purchase Order");
-                WaitUntil(() => HasText(purchase, "Printable HTML") && HasText(purchase, "Spreadsheet CSV"), "show order output formats");
-                Send(purchase, 0x0010, 0);
-                WaitUntil(() => !IsWindow(purchase), "close purchase order");
+                WaitUntil(() => HasText(orders, "&Distributor") && HasText(orders, "&Purchase Order…") &&
+                    HasText(orders, "&Receive Order…") && HasText(orders, "Use &Suggestion") && HasText(orders, "Reset quantities"),
+                    "open the distributor order worksheet");
+                Send(WaitForChildWithText(orders, "&Receive Order…"), 0x00F5, 0);
+                IntPtr receiving = FindWindow(desktop, process.ProcessId, "Receive Order");
+                WaitUntil(() => HasText(receiving, "Show hidden orders") && HasText(receiving, "Receive Remaining"),
+                    "show purchase orders and receiving actions");
+                Send(receiving, 0x0010, 0);
+                WaitUntil(() => !IsWindow(receiving) && IsWindowEnabled(orders), "return to the order worksheet");
                 Send(orders, 0x0010, 0); // WM_CLOSE
                 Send(FindChildWithText(register, "Catalo&g"), 0x00F5, 0); // BM_CLICK
                 IntPtr catalog = FindWindow(desktop, process.ProcessId, "Product List");

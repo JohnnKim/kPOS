@@ -238,8 +238,11 @@ internal sealed partial class HomeTerminalClient : IDisposable
     }
     public Task<HomeItemDetails> ItemAsync(string barcode, CancellationToken token) =>
         ReadAsync<HomeItemDetails>("api/v1/item?barcode=" + Uri.EscapeDataString(barcode), token);
+    internal Task<CatalogBrowseRow[]> CatalogAsync(CancellationToken token) => ReadAsync<CatalogBrowseRow[]>("api/v1/catalog", token);
     public Task<HomeOrderHistory> OrdersAsync(int page, CancellationToken token) =>
         ReadAsync<HomeOrderHistory>("api/v1/order-requests?page=" + page, token);
+    internal Task<string> PeriodReportAsync(DateOnly start, DateOnly end, int kind, CancellationToken token) =>
+        ReadAsync<string>($"api/v1/period-report?start={start:yyyy-MM-dd}&end={end:yyyy-MM-dd}&kind={kind}", token);
     public Task<HomeTable> ReportAsync(RecordReport kind, DateOnly start, DateOnly end, int page, string? barcode, string? saleId, CancellationToken token, string? search = null) =>
         ReadAsync<HomeTable>($"api/v1/reports?kind={kind}&start={start:yyyy-MM-dd}&end={end:yyyy-MM-dd}&page={page}" +
             (barcode is null ? "" : "&barcode=" + Uri.EscapeDataString(barcode)) + (saleId is null ? "" : "&saleId=" + Uri.EscapeDataString(saleId)) +

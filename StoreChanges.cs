@@ -80,13 +80,16 @@ internal sealed class LocalDataWatch : IDisposable
 {
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 400 };
     internal LocalDataWatch(Form form, RegisterData data, Action changed)
+        : this(form, data, revision => changed()) { }
+
+    internal LocalDataWatch(Form form, RegisterData data, Action<long> changed)
     {
         long revision = data.Revision();
         timer.Tick += (_, _) =>
         {
             if(form.IsDisposed || !form.Visible) return;
             long current; try { current=data.Revision(); } catch(Microsoft.Data.Sqlite.SqliteException) { return; }
-            if(current != revision) { revision = current; changed(); }
+            if(current != revision) { revision = current; changed(current); }
         };
         form.Shown += (_, _) => timer.Start(); form.Disposed += (_, _) => Dispose();
     }
@@ -95,6 +98,13 @@ internal sealed class LocalDataWatch : IDisposable
 
 internal static class LiveUi
 {
+    internal static void WatchRemoteChanges(this Form form, HomeTerminalClient client, Action<long> changed, CancellationToken token)
+    {
+        var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token);
+        form.Disposed += (_, _) => { lifetime.Cancel(); lifetime.Dispose(); };
+        form.Shown += (_, _) => _ = client.WatchChangesAsync(revision => form.PostIfOpen(() => changed(revision)), lifetime.Token);
+    }
+
     internal static void PostIfOpen(this Control control, Action action)
     {
         if(control.IsDisposed || !control.IsHandleCreated) return;

@@ -5,235 +5,339 @@ namespace Kpos;
 
 internal sealed class PurchaseOrderForm : PosForm
 {
-    private readonly RegisterData data;
-    private readonly IReadOnlyList<OrderItem> draft;
+    private readonly IReadOnlyList<OrderItem> quantities;
     private readonly DateOnly day;
-    private readonly ListBox distributors = new() { Dock = DockStyle.Fill, DisplayMember = "Name", AccessibleName = "Distributors" };
+    private readonly Func<OrderContact, Task> saveBusiness;
+    private readonly Func<long?, OrderContact, Task<long>> saveDistributor;
+    private readonly Func<PlacePurchaseRequest, Task>? place;
+    private readonly List<Distributor> distributors;
+    private readonly ComboBox distributorChoice = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 285, AccessibleName = "Distributor" };
     private readonly ContactFields business = new("Business name", "Ship-to address", "Buyer account (optional)");
     private readonly ContactFields vendor = new("Distributor name", "Distributor address", "Your account with this distributor");
-    private readonly TextBox number = new() { Width = 178, MaxLength = 32, AccessibleName = "Order number" };
-    private readonly DateTimePicker delivery = new() { Width = 137, Format = DateTimePickerFormat.Short, ShowCheckBox = true };
-    private readonly TextBox notes = new() { Width = 235, MaxLength = 1200, AccessibleName = "Order notes" };
+    private readonly TextBox number = new() { Width = 188, MaxLength = 32, AccessibleName = "Order number" };
+    private readonly DateTimePicker delivery = new() { Width = 185, Format = DateTimePickerFormat.Custom, CustomFormat = "'No date'", Enabled = false, AccessibleName = "Requested delivery" };
+    private readonly Button deliveryToggle = PosView.Button("Set date", size: 10);
+    private readonly TextBox notes = new() { Width = 310, MaxLength = 1200, AccessibleName = "Order notes" };
     private readonly RadioButton printable = new() { Text = "Printable HTML", AutoSize = true, Checked = true };
     private readonly RadioButton csv = new() { Text = "Spreadsheet CSV", AutoSize = true };
-    private readonly CheckBox includeUnassigned = new() { Text = "Include unassigned items", AutoSize = true };
     private readonly Label status = PosView.Label("", 10, color: PosView.Muted);
+    private readonly System.Windows.Forms.Timer autosave = new() { Interval = 350 };
+    private readonly SemaphoreSlim saveLock = new(1);
+    private OrderContact savedBusiness, savedVendor;
     private long? selectedId;
+    private bool hasDeliveryDate, loading, busy, allowClose, placed;
+    private PlacePurchaseRequest? pending;
+    private sealed record DistributorChoice(long Id, string Name);
 
-    private sealed record DistributorOption(long Id, string Name, OrderContact Details);
+    public PurchaseOrderForm(RegisterData data, IReadOnlyList<OrderItem> lines, DateOnly day)
+        : this(lines, day, data.ReadOrderBusiness(), data.ReadDistributors(), null,
+            contact => { data.SaveOrderBusiness(contact); return Task.CompletedTask; },
+            (id, contact) => Task.FromResult(data.SaveDistributor(id, contact)), null) { }
 
-    public PurchaseOrderForm(RegisterData data, IReadOnlyList<OrderItem> draft, DateOnly day)
+    internal PurchaseOrderForm(IReadOnlyList<OrderItem> lines, DateOnly day, OrderContact buyer, Distributor seller,
+        Func<OrderContact, Task> saveBusiness, Func<long?, OrderContact, Task<long>> saveDistributor,
+        Func<PlacePurchaseRequest, Task> place)
+        : this(lines, day, buyer, [seller], seller.Id, saveBusiness, saveDistributor, place) { }
+
+    private PurchaseOrderForm(IReadOnlyList<OrderItem> lines, DateOnly day, OrderContact buyer, IReadOnlyList<Distributor> sellers,
+        long? sellerId, Func<OrderContact, Task> saveBusiness, Func<long?, OrderContact, Task<long>> saveDistributor,
+        Func<PlacePurchaseRequest, Task>? place)
     {
-        this.data = data;
-        this.draft = draft;
+        quantities = lines;
         this.day = day;
+        this.saveBusiness = saveBusiness;
+        this.saveDistributor = saveDistributor;
+        this.place = place;
+        distributors = sellers.ToList();
         Text = "Purchase Order";
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(1140, 686);
-        MinimumSize = new Size(910, 550);
+        ClientSize = new Size(1140, 690);
+        MinimumSize = new Size(800, 510);
         ShowInTaskbar = false;
         Font = PosView.Text(11);
         BackColor = PosView.Canvas;
         number.Text = $"PO-{DateTime.Now:yyyyMMdd-HHmmss}";
-        delivery.AccessibleName = "Requested delivery";
-        delivery.Checked = false;
-        business.Set(data.ReadOrderBusiness());
+        business.Set(savedBusiness = buyer);
+        savedVendor = new();
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, ColumnCount = 3, RowCount = 6, Padding = new Padding(14) };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 23));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 39));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 385));
-        for (int i = 2; i < 6; i++)
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        Wide(PosView.Label("Purchase Order", 23, FontStyle.Bold), 0);
+        var layout = HomeTerminalView.Layout();
+        HomeTerminalView.Row(layout, PosView.Label("Purchase Order", 23, FontStyle.Bold));
+        if (sellerId is null)
+        {
+            var add = PosView.Button("New Distributor", size: 10);
+            HomeTerminalView.Row(layout, PosView.FilterRow(Caption("Distributor"), distributorChoice, add));
+            distributorChoice.DisplayMember = "Name";
+            foreach (Distributor seller in distributors)
+                distributorChoice.Items.Add(new DistributorChoice(seller.Id, seller.Details.Name));
+            distributorChoice.SelectedIndexChanged += async (_, _) =>
+            {
+                if (loading || distributorChoice.SelectedItem is not DistributorChoice choice) return;
+                if (await ChangeDistributor(choice.Id)) return;
+                loading = true;
+                distributorChoice.SelectedItem = distributorChoice.Items.Cast<DistributorChoice>().FirstOrDefault(item => item.Id == selectedId);
+                loading = false;
+            };
+            add.Click += async (_, _) =>
+            {
+                if (!await ChangeDistributor(null)) return;
+                loading = true;
+                distributorChoice.SelectedIndex = -1;
+                loading = false;
+                vendor.FocusName();
+            };
+            var assigned = quantities.Select(row => row.DistributorId).Distinct().ToArray();
+            sellerId = assigned.Length == 1 ? assigned[0] : null;
+            if (sellerId is long suggested)
+            {
+                loading = true;
+                distributorChoice.SelectedItem = distributorChoice.Items.Cast<DistributorChoice>().FirstOrDefault(item => item.Id == suggested);
+                loading = false;
+            }
+        }
+        LoadDistributor(sellerId);
 
-        var list = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
-        list.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        list.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        list.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        list.Controls.Add(PosView.Label("Distributors", 14, FontStyle.Bold), 0, 0);
-        list.Controls.Add(distributors, 0, 1);
-        var addVendor = PosView.Button("&New Distributor", size: 10);
-        list.Controls.Add(addVendor, 0, 2);
-        layout.Controls.Add(PosView.Frame(list, new Padding(8)), 0, 1);
-        layout.Controls.Add(PosView.Frame(PosView.Scroll(business.Layout("Business / Ship To")), new Padding(8)), 1, 1);
-        layout.Controls.Add(PosView.Frame(PosView.Scroll(vendor.Layout("Distributor Details")), new Padding(8)), 2, 1);
+        var profiles = new TableLayoutPanel { ColumnCount = 2, RowCount = 1, Dock = DockStyle.Fill };
+        profiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        profiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        profiles.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        profiles.Controls.Add(PosView.Frame(PosView.Scroll(business.Layout("Business / Ship To")), new Padding(8)), 0, 0);
+        profiles.Controls.Add(PosView.Frame(PosView.Scroll(vendor.Layout("Distributor Details")), new Padding(8)), 1, 0);
+        HomeTerminalView.Row(layout, profiles, fill: true);
 
-        var options = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
-        options.Controls.AddRange([Caption("Order number"), number, Caption("Requested delivery"), delivery, Caption("Notes"), notes]);
-        Wide(options, 2);
-        var formats = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
-        formats.Controls.AddRange([Caption("File type"), printable, csv, includeUnassigned]);
-        Wide(formats, 3);
-        Wide(status, 4);
+        deliveryToggle.Click += (_, _) => SetDeliveryDate(!hasDeliveryDate);
+        HomeTerminalView.Row(layout, PosView.FilterRow(Caption("Order number"), number, Caption("Requested delivery"), delivery, deliveryToggle));
+        HomeTerminalView.Row(layout, PosView.FilterRow(Caption("Notes"), notes, Caption("File type"), printable, csv));
+        HomeTerminalView.Row(layout, status);
 
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
-        var saveProfiles = PosView.Button("&Save Details", size: 10);
-        var saveFile = PosView.Button("&Export File…", primary: true, size: 10);
-        var print = PosView.Button("Print &Preview…", size: 10);
-        var printNow = PosView.Button("&Print…", size: 10);
+        var saveFile = PosView.Button("&Export File…", size: 10);
+        var preview = PosView.Button("Print &Preview…", size: 10);
+        var print = PosView.Button("&Print…", size: 10);
+        var placeOrder = PosView.Button("&Place Order", primary: true, size: 10);
         var close = PosView.Button("Close", size: 10);
         close.DialogResult = DialogResult.Cancel;
-        actions.Controls.AddRange([saveFile, printNow, print, saveProfiles, close]);
-        Wide(actions, 5);
+        HomeTerminalView.Row(layout, place is null ? PosView.FilterRow(saveFile, preview, print, close)
+            : PosView.FilterRow(placeOrder, saveFile, preview, print, close));
+        if (place is null) placeOrder.Dispose();
         Controls.Add(layout);
         CancelButton = close;
 
-        distributors.SelectedIndexChanged += (_, _) => LoadSelection();
-        includeUnassigned.CheckedChanged += (_, _) => UpdateStatus();
-        addVendor.Click += (_, _) =>
+        business.OnChanged(ScheduleSave);
+        vendor.OnChanged(ScheduleSave);
+        autosave.Tick += async (_, _) => await TrySaveProfiles();
+        saveFile.Click += async (_, _) => await Run(Export);
+        preview.Click += async (_, _) => await Run(async () =>
         {
-            distributors.ClearSelected();
-            selectedId = null;
-            vendor.Set(new OrderContact());
-            vendor.FocusName();
-            UpdateStatus();
-        };
-        saveProfiles.Click += (_, _) => Run(() =>
-        {
-            SaveDetails(requireNames: false);
-            status.Text = "Business and distributor details saved.";
+            using var window = PurchaseOrderPrinting.Preview(await Build());
+            if (!IsDisposed) window.ShowDialog(this);
         });
-        saveFile.Click += (_, _) => Run(Export);
-        print.Click += (_, _) => Run(Preview);
-        printNow.Click += (_, _) => Run(() => PurchaseOrderPrinting.Print(this, Build()));
-        var assigned = draft.Where(item => item.DistributorId is not null).Select(item => item.DistributorId).Distinct().ToArray();
-        ReloadDistributors(assigned.Length == 1 ? assigned[0] : null);
-        includeUnassigned.Checked = draft.All(item => item.DistributorId is null);
-
-        void Wide(Control control, int row)
+        print.Click += async (_, _) => await Run(async () => await PurchaseOrderPrinting.Print(this, await Build()));
+        if (place is not null)
+            placeOrder.Click += async (_, _) =>
+            {
+                await Run(Place);
+                if (!IsDisposed)
+                {
+                    placeOrder.Enabled = !placed;
+                    placeOrder.Text = pending is null ? "&Place Order" : "&Retry Order";
+                }
+            };
+        FormClosing += async (_, args) =>
         {
-            layout.Controls.Add(control, 0, row);
-            layout.SetColumnSpan(control, 3);
-        }
-    }
-
-    private void LoadSelection()
-    {
-        if (distributors.SelectedItem is DistributorOption entry)
-        {
-            selectedId = entry.Id;
-            vendor.Set(entry.Details);
-        }
-        else
-        {
-            selectedId = null;
-            vendor.Set(new OrderContact());
-        }
+            if (allowClose) return;
+            if (busy) { args.Cancel = true; return; }
+            if (!HasUnsavedProfiles && saveLock.CurrentCount > 0) return;
+            args.Cancel = true;
+            if (await TrySaveProfiles() && !IsDisposed)
+            {
+                allowClose = true;
+                BeginInvoke(Close);
+            }
+        };
         UpdateStatus();
     }
 
-    private void ReloadDistributors(long? id)
+    private void ScheduleSave()
     {
-        distributors.BeginUpdate();
-        distributors.Items.Clear();
-        foreach (Distributor distributor in data.ReadDistributors())
-            distributors.Items.Add(new DistributorOption(distributor.Id, distributor.Details.Name, distributor.Details));
-        if (id is long match)
+        if (loading || IsDisposed) return;
+        autosave.Stop();
+        autosave.Start();
+    }
+
+    private bool HasUnsavedProfiles =>
+        (business.Read() is OrderContact buyer && buyer.Name.Length > 0 && buyer != savedBusiness) ||
+        (vendor.Read() is OrderContact seller && seller.Name.Length > 0 && seller != savedVendor);
+
+    private async Task<bool> TrySaveProfiles()
+    {
+        try { await SaveProfiles(); return true; }
+        catch (Exception error) when (IsOrderError(error))
         {
-            for (int i = 0; i < distributors.Items.Count; i++)
+            if (!IsDisposed) status.Text = $"Could not save order details. {error.Message}";
+            return false;
+        }
+    }
+
+    private async Task SaveProfiles()
+    {
+        autosave.Stop();
+        await saveLock.WaitAsync();
+        try
+        {
+            if (IsDisposed) return;
+            OrderContact buyer = business.Read();
+            OrderContact seller = vendor.Read();
+            if (buyer.Name.Length > 0 && buyer != savedBusiness)
             {
-                if (((DistributorOption)distributors.Items[i]).Id == match)
+                await saveBusiness(buyer);
+                savedBusiness = buyer;
+            }
+            if (seller.Name.Length > 0 && seller != savedVendor)
+            {
+                long id = await saveDistributor(selectedId, seller);
+                selectedId = id;
+                savedVendor = seller;
+                distributors.RemoveAll(option => option.Id == id);
+                distributors.Add(new Distributor(id, seller));
+                if (!IsDisposed && distributorChoice.Parent is not null)
                 {
-                    distributors.SelectedIndex = i;
-                    break;
+                    loading = true;
+                    var old = distributorChoice.Items.Cast<DistributorChoice>().FirstOrDefault(option => option.Id == id);
+                    var updated = new DistributorChoice(id, seller.Name);
+                    if (old is not null) distributorChoice.Items[distributorChoice.Items.IndexOf(old)] = updated;
+                    else distributorChoice.Items.Add(updated);
+                    distributorChoice.SelectedItem = updated;
+                    loading = false;
                 }
             }
         }
-        distributors.EndUpdate();
-        UpdateStatus();
+        finally { saveLock.Release(); }
     }
 
-    private IReadOnlyList<OrderItem> IncludedLines() => draft.Where(item =>
-        (selectedId is long id && item.DistributorId == id) || (item.DistributorId is null && includeUnassigned.Checked)).ToArray();
+    private async Task<bool> ChangeDistributor(long? id)
+    {
+        if (!await TrySaveProfiles() || IsDisposed) return false;
+        LoadDistributor(id);
+        UpdateStatus();
+        return true;
+    }
+
+    private void LoadDistributor(long? id)
+    {
+        loading = true;
+        selectedId = id;
+        savedVendor = distributors.FirstOrDefault(option => option.Id == id)?.Details ?? new OrderContact();
+        vendor.Set(savedVendor);
+        loading = false;
+    }
+
+    private void SetDeliveryDate(bool enabled)
+    {
+        hasDeliveryDate = enabled;
+        delivery.Enabled = enabled;
+        delivery.CustomFormat = enabled ? System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.ShortDatePattern : "'No date'";
+        deliveryToggle.Text = enabled ? "Clear date" : "Set date";
+        if (enabled) delivery.Focus();
+    }
+
+    private IReadOnlyList<OrderItem> IncludedLines() => selectedId is long id
+        ? quantities.Where(item => item.DistributorId == id && item.Draft > 0).ToArray() : [];
 
     private void UpdateStatus()
     {
-        int assigned = draft.Count(item => selectedId is long id && item.DistributorId == id);
-        int unassigned = draft.Count(item => item.DistributorId is null);
-        status.Text = draft.Count == 0 ? "Save these details for future orders."
-            : $"{assigned:N0} assigned to this distributor · {unassigned:N0} unassigned · {IncludedLines().Count:N0} included in this order";
+        var lines = IncludedLines();
+        status.Text = lines.Count == 0 ? "Select a distributor with order quantities."
+            : $"{lines.Count:N0} items · {lines.Sum(line => line.Draft):N0} units";
     }
 
-    private void SaveDetails(bool requireNames)
+    private async Task<PurchaseOrder> Build()
     {
+        if (number.Text.Trim().Length == 0) throw new InvalidOperationException("Enter an order number.");
         OrderContact buyer = business.Read();
         OrderContact seller = vendor.Read();
-        if (requireNames && (buyer.Name.Length == 0 || seller.Name.Length == 0))
-            throw new InvalidOperationException("Enter the business name and select or add a distributor.");
-        if (seller.Name.Length == 0 && (selectedId is not null || seller != new OrderContact()))
-            throw new InvalidOperationException("Enter a distributor name to save its details.");
-        if (buyer.Name.Length > 0)
-            data.SaveOrderBusiness(buyer);
-        if (seller.Name.Length > 0)
+        if (buyer.Name.Length == 0 || seller.Name.Length == 0)
+            throw new InvalidOperationException("Enter a business name and a distributor name.");
+        await SaveProfiles();
+        var lines = IncludedLines();
+        if (lines.Count == 0) throw new InvalidOperationException("Enter order quantities for the selected distributor.");
+        return new PurchaseOrder(number.Text.Trim(), day, hasDeliveryDate ? DateOnly.FromDateTime(delivery.Value) : null,
+            buyer, seller, seller.Account.Length > 0 ? seller.Account : buyer.Account, notes.Text.Trim(), lines);
+    }
+
+    private async Task Place()
+    {
+        if (place is null || placed) return;
+        if (pending is null)
         {
-            long id = data.SaveDistributor(selectedId, seller);
-            ReloadDistributors(id);
+            PurchaseOrder order = await Build();
+            pending = new PlacePurchaseRequest(Guid.NewGuid(), selectedId!.Value, order.Number, order.DeliveryDate, order.Notes,
+                order.Lines.Select(item => new OrderQuantity(item.Product.Barcode, item.Draft, item.Draft)).ToArray(),
+                RequireAssignedDistributor: true);
         }
+        try { await place(pending); }
+        catch (Exception error) when (PurchasingForm.IsDefiniteRejection(error))
+        {
+            pending = null;
+            throw;
+        }
+        finally
+        {
+            number.Enabled = notes.Enabled = deliveryToggle.Enabled = pending is null;
+            delivery.Enabled = hasDeliveryDate && pending is null;
+        }
+        pending = null;
+        placed = true;
+        status.Text = "Purchase order placed. Open Receive Order when the delivery arrives.";
     }
 
-    private PurchaseOrder Build()
+    private async Task Export()
     {
-        if (number.Text.Trim().Length == 0)
-            throw new InvalidOperationException("Enter an order number.");
-        SaveDetails(requireNames: true);
-        IReadOnlyList<OrderItem> lines = IncludedLines();
-        if (lines.Count == 0)
-            throw new InvalidOperationException("Assign draft items to this distributor or choose Include unassigned items.");
-        OrderContact seller = vendor.Read();
-        return new PurchaseOrder(number.Text.Trim(), day,
-            delivery.Checked ? DateOnly.FromDateTime(delivery.Value) : null, business.Read(), seller,
-            seller.Account.Length > 0 ? seller.Account : business.Read().Account, notes.Text.Trim(), lines);
-    }
-
-    private void Export()
-    {
-        PurchaseOrder order = Build();
-        bool html = printable.Checked;
+        PurchaseOrder order = await Build();
         using var picker = new SaveFileDialog
         {
             Title = "Export Purchase Order",
-            Filter = html ? "Printable order (*.html)|*.html" : "Spreadsheet (*.csv)|*.csv",
-            FileName = $"kPOS-order-{day:yyyy-MM-dd}.{(html ? "html" : "csv")}"
+            Filter = printable.Checked ? "Printable order (*.html)|*.html" : "Spreadsheet (*.csv)|*.csv",
+            FileName = $"kPOS-order-{day:yyyy-MM-dd}.{(printable.Checked ? "html" : "csv")}"
         };
-        if (picker.ShowDialog(this) == DialogResult.OK)
-        {
-            PurchaseOrderOutput.Write(picker.FileName, order, html ? OrderFileType.Printable : OrderFileType.Csv);
-            status.Text = $"Exported {order.Lines.Count:N0} lines to {Path.GetFileName(picker.FileName)}.";
-        }
+        if (picker.ShowDialog(this) != DialogResult.OK) return;
+        PurchaseOrderOutput.Write(picker.FileName, order, printable.Checked ? OrderFileType.Printable : OrderFileType.Csv);
+        status.Text = $"Exported {order.Lines.Count:N0} lines to {Path.GetFileName(picker.FileName)}.";
     }
 
-    private void Preview()
+    private async Task Run(Func<Task> action)
     {
-        PurchaseOrder order = Build();
-        using var preview = PurchaseOrderPrinting.Preview(order);
-        preview.ShowDialog(this);
+        if (busy) return;
+        busy = true;
+        try { await action(); }
+        catch (Exception error) when (IsOrderError(error))
+        {
+            if (!IsDisposed) status.Text = error.Message;
+        }
+        finally { busy = false; }
     }
 
-    private void Run(Action action)
+    private static bool IsOrderError(Exception error) => error is IOException or UnauthorizedAccessException or SqliteException or
+        InvalidOperationException or InvalidPrinterException or System.ComponentModel.Win32Exception or
+        HttpRequestException or ArgumentException or OperationCanceledException;
+
+    private static Label Caption(string title) => PosView.Label(title, 11);
+
+    protected override void Dispose(bool disposing)
     {
-        try
+        if (disposing)
         {
-            action();
+            autosave.Dispose();
+            if (distributorChoice.Parent is null) distributorChoice.Dispose();
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or SqliteException or
-            InvalidOperationException or InvalidPrinterException or System.ComponentModel.Win32Exception)
-        {
-            MessageBox.Show(this, error.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
+        base.Dispose(disposing);
     }
-
-    private static Label Caption(string title) => new() { Text = title, AutoSize = true, Margin = new Padding(5, 7, 3, 3) };
 }
 
 internal sealed class ContactFields(string nameLabel, string addressLabel, string accountLabel)
 {
     private readonly TextBox[] fields = Enumerable.Range(0, 6).Select(i => new TextBox
     {
-        Dock = DockStyle.Fill, MaxLength = i == 4 ? 450 : 110, Multiline = i == 4, Height = i == 4 ? 59 : 26,
-        ScrollBars = i == 4 ? ScrollBars.Both : ScrollBars.None, WordWrap = false
+        Dock = DockStyle.Fill, MaxLength = i == 4 ? 450 : 110, Multiline = i == 4, Height = i == 4 ? 70 : 26,
+        ScrollBars = i == 4 ? ScrollBars.Vertical : ScrollBars.None, WordWrap = i == 4
     }).ToArray();
 
     public void Set(OrderContact info)
@@ -245,6 +349,10 @@ internal sealed class ContactFields(string nameLabel, string addressLabel, strin
 
     public OrderContact Read() => new(Value(0), Value(1), Value(2), Value(3), Value(4), Value(5));
     public void FocusName() => fields[0].Focus();
+    internal void OnChanged(Action changed)
+    {
+        foreach (var input in fields) input.TextChanged += (_, _) => changed();
+    }
 
     public Control Layout(string title)
     {

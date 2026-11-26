@@ -6,33 +6,56 @@ namespace Kpos;
 internal sealed class VendorDirectory : PosForm
 {
     public VendorDirectory(RegisterData data)
+        : this(() => Task.FromResult(data.ReadDistributors()), (id, contact) => Task.FromResult(data.SaveDistributor(id, contact))) { }
+
+    internal VendorDirectory(HomeTerminalClient client, CancellationToken token)
+        : this(async () => (await client.PurchasingAsync(token)).Vendors,
+            async (id, contact) => (await client.SaveOrderDistributorAsync(new(id, contact), token)).Id) { }
+
+    private VendorDirectory(Func<Task<IReadOnlyList<Distributor>>> load, Func<long?, OrderContact, Task<long>> save)
     {
         Text = "Vendors";
         ClientSize = new Size(1050, 590);
         var grid = HomeTerminalView.Grid();
-        void Reload() => grid.DataSource = data.ReadDistributors().Select(v => v.Details).ToArray();
-        void Edit(bool existing)
+        IReadOnlyList<Distributor> distributors = [];
+        async Task Reload()
+        {
+            distributors = await load();
+            if (!IsDisposed) grid.DataSource = distributors.Select(v => v.Details).ToArray();
+        }
+        async Task Edit(bool existing)
         {
             var vendor = existing ? grid.CurrentRow?.DataBoundItem as OrderContact : new OrderContact();
             if (vendor is null) return;
-            long? id = existing ? data.ReadDistributors().FirstOrDefault(v => v.Details == vendor)?.Id : null;
-            if (existing && id is null) { Reload(); return; }
+            long? id = existing ? distributors.FirstOrDefault(v => v.Details == vendor)?.Id : null;
+            if (existing && id is null) { await Reload(); return; }
             using var form = new TextFieldsForm(existing ? "Edit Vendor" : "New Vendor", ("Name", vendor.Name),
                 ("Contact", vendor.Contact), ("Phone", vendor.Phone), ("Email", vendor.Email),
                 ("Address", vendor.Address), ("Account", vendor.Account));
             if (form.ShowDialog(this) != DialogResult.OK) return;
             var values = form.Values;
             if (string.IsNullOrWhiteSpace(values[0])) { MessageBox.Show(this,"Enter a vendor name."); return; }
-            try { data.SaveDistributor(id, new(values[0].Trim(),values[1],values[2],values[3],values[4],values[5])); Reload(); }
-            catch (SqliteException ex) { MessageBox.Show(this,ex.Message,"Vendor could not be saved"); }
+            await save(id, new(values[0].Trim(), values[1], values[2], values[3], values[4], values[5]));
+            await Reload();
         }
-        var add = PosView.Button("New Vendor"); add.Click += (_, _) => Edit(false);
-        var edit = PosView.Button("Edit Vendor"); edit.Click += (_, _) => Edit(true);
+        var add = PosView.Button("New Vendor");
+        var edit = PosView.Button("Edit Vendor");
+        add.Click += async (_, _) => await Run(() => Edit(false));
+        edit.Click += async (_, _) => await Run(() => Edit(true));
         var layout = HomeTerminalView.Layout();
         HomeTerminalView.Row(layout, grid, true);
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(add, edit));
         Controls.Add(layout);
-        Reload();
+        Shown += async (_, _) => await Run(Reload);
+
+        async Task Run(Func<Task> action)
+        {
+            add.Enabled = edit.Enabled = false;
+            try { await action(); }
+            catch (Exception error) when (error is SqliteException or IOException or HttpRequestException or OperationCanceledException or ArgumentException)
+            { if (!IsDisposed) MessageBox.Show(this, error.Message, "Vendor directory"); }
+            finally { if (!IsDisposed) add.Enabled = edit.Enabled = true; }
+        }
     }
 }
 

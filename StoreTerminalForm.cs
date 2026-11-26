@@ -129,6 +129,8 @@ internal sealed class StoreTerminalForm : PosForm
         heading.Controls.Add(new RegisterClock { ForeColor = PosView.Ink, AutoSize = true, TextAlign = ContentAlignment.MiddleRight, Anchor = AnchorStyles.Right, Padding = new Padding(0, 2, 6, 6), Margin = new Padding(0, 0, 4, 4) }, 1, 0);
         HomeTerminalView.Row(layout, heading);
         HomeTerminalView.Row(layout, PosView.Label("Checkout station · connects to Host Terminal in the store", 11));
+        connection.Anchor = AnchorStyles.Left;
+        connection.TextAlign = ContentAlignment.MiddleLeft;
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(connection, setupToggle, paste, connect, disconnect));
         HomeTerminalView.Row(layout, setup);
         HomeTerminalView.Row(layout, store);
@@ -507,6 +509,7 @@ internal sealed class StoreLookupForm : PosForm
                 if(grid.Columns["OnHand"] is DataGridViewColumn stock) { stock.DisplayIndex = 5; stock.HeaderText = "Qty"; stock.DefaultCellStyle.NullValue = "N/A"; }
                 foreach(var (columnName, index, width) in new[] { ("Barcode",0,130), ("Brand",1,110), ("Description",2,200), ("Size",3,100), ("UnitPrice",4,105), ("OnHand",5,105), ("Supplier",6,160) })
                     if(grid.Columns[columnName] is DataGridViewColumn column) { column.DisplayIndex = index; column.MinimumWidth = 24; column.SortMode = DataGridViewColumnSortMode.Programmatic; column.FillWeight = (columnName == "Brand" ? 160 : width) * (columnName == expanded ? 1.65f : 1); column.HeaderText = columnName == "Supplier" ? "Vendor" : columnName == "UnitPrice" ? "Price" : column.HeaderText; }
+                if (grid.Columns["Barcode"] is DataGridViewColumn barcode) barcode.AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
                 if(grid.Columns["Description"] is DataGridViewColumn name) { name.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; name.MinimumWidth = 30; }
                 if(grid.Columns["UnitPrice"] is DataGridViewColumn price) price.DefaultCellStyle.Format = "C2";
                 next.Enabled = (page+1)*100 < result.ItemCount; previous.Enabled = page > 0;

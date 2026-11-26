@@ -22,11 +22,14 @@ internal sealed class ProductListForm : PosForm
     private readonly Button delete = PosView.Button("&Delete Product", size: 10);
     private readonly RegisterData? data;
     private readonly RegisterFolders? folders;
+    private readonly HomeTerminalClient? remote;
+    private readonly DateOnly remoteDay;
+    private readonly CancellationToken remoteToken;
     private readonly bool selectItem;
     private readonly bool allowAddCode;
     private readonly TextBox search = new() { Dock = DockStyle.Fill, AccessibleName = "Find product", MaxLength = 80 };
     private string? sortField;
-    private string? expanded;
+    private bool refreshingCatalog, refreshAgain;
     private Dictionary<string, string> searchText = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, float> weights = new();
     private readonly ComboBox field = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 152, AccessibleName = "Search by" };
@@ -45,13 +48,25 @@ internal sealed class ProductListForm : PosForm
 
     public ProductListForm(IReadOnlyList<Product> products, bool selectItem, string initialSearch = "",
         RegisterData? data = null, RegisterFolders? folders = null, bool allowAddCode = false)
+        : this(products, selectItem, initialSearch, data, folders, allowAddCode, null, default, default, null) { }
+
+    internal ProductListForm(HomeTerminalClient remote, CatalogBrowseRow[] snapshot, DateOnly day, CancellationToken token)
+        : this(snapshot.Select(row => row.Product).ToArray(), false, "", null, null, false, remote, day, token, snapshot) { }
+
+    private ProductListForm(IReadOnlyList<Product> products, bool selectItem, string initialSearch,
+        RegisterData? data, RegisterFolders? folders, bool allowAddCode, HomeTerminalClient? remote,
+        DateOnly remoteDay, CancellationToken remoteToken, CatalogBrowseRow[]? snapshot)
     {
         this.products = products;
         this.selectItem = selectItem;
         this.data = data;
         this.folders = folders;
+        this.remote = remote;
+        this.remoteDay = remoteDay;
+        this.remoteToken = remoteToken;
         this.allowAddCode = allowAddCode;
-        LoadStock();
+        if (snapshot is null) LoadStock();
+        else LoadRemoteRows(snapshot);
         IndexSearch();
         Text = selectItem ? "Item Lookup" : "Product List";
         StartPosition = FormStartPosition.CenterParent;
@@ -152,6 +167,14 @@ internal sealed class ProductListForm : PosForm
                 ReloadProducts();
             };
         }
+        if (remote is not null)
+        {
+            var details = PosView.Button("Full &Details", size: 10);
+            details.Click += async (_, _) => await OpenRemoteItem();
+            var history = PosView.Button("Item &History", size: 10);
+            history.Click += (_, _) => ShowItemHistory();
+            footer.Controls.AddRange([details, history]);
+        }
         if (allowAddCode)
         {
             add.Click += (_, _) =>
@@ -198,14 +221,14 @@ internal sealed class ProductListForm : PosForm
             if (e.RowIndex >= 0 && e.ColumnIndex >= 0)
                 e.ToolTipText = grid[e.ColumnIndex, e.RowIndex].FormattedValue?.ToString();
         };
-        grid.ScrollBars = selectItem ? ScrollBars.Vertical : ScrollBars.Both;
+        grid.ScrollBars = ScrollBars.Both;
         foreach (DataGridViewColumn column in grid.Columns)
         {
             column.SortMode = DataGridViewColumnSortMode.Programmatic;
             if (selectItem)
             {
-                column.MinimumWidth = column.Name switch { "OnHand" => 68, "Barcode" => 138, _ => 20 };
-                column.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+                column.MinimumWidth = column.Name switch { "OnHand" => 68, "Barcode" => 24, _ => 20 };
+                column.AutoSizeMode = column.Name == "Barcode" ? DataGridViewAutoSizeColumnMode.AllCells : DataGridViewAutoSizeColumnMode.Fill;
                 column.FillWeight = weights[column.Name];
             }
         }
@@ -214,19 +237,8 @@ internal sealed class ProductListForm : PosForm
             if (e.ColumnIndex < 0) return;
             var clicked = grid.Columns[e.ColumnIndex];
             sortField = clicked.Name;
-            expanded = expanded == sortField ? null : sortField;
             foreach (DataGridViewColumn column in grid.Columns)
-            {
-                float width = weights[column.Name] * (column.Name == expanded ? 1.65f : 1);
-                if (selectItem) column.FillWeight = width;
-                else
-                {
-                    column.MinimumWidth = 32;
-                    column.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
-                    column.Width = (int)(width * (expanded != null && column.Name != expanded ? .88 : 1) * grid.DeviceDpi / 96);
-                }
                 column.HeaderCell.SortGlyphDirection = column == clicked ? SortOrder.Ascending : SortOrder.None;
-            }
             Filter();
         };
         if(grid.Columns["Price"] is DataGridViewColumn priceColumn)
@@ -271,6 +283,7 @@ internal sealed class ProductListForm : PosForm
             ReloadProducts(); SelectBarcode(selected);
             if(top>=0&&grid.RowCount>0&&grid.DisplayedRowCount(false)>0)grid.FirstDisplayedScrollingRowIndex=Math.Min(top,grid.RowCount-1);grid.HorizontalScrollingOffset=horizontal;
         });
+        if (remote is not null) this.WatchRemoteChanges(remote, revision => _ = RefreshRemoteCatalog(), remoteToken);
 
         void AddFilterLabel(string title, int column)
         {
@@ -283,7 +296,7 @@ internal sealed class ProductListForm : PosForm
 
     protected override bool ProcessCmdKey(ref Message message, Keys keys)
     {
-        if (keys == Keys.Enter && (search.Focused || grid.ContainsFocus) && (selectItem || data is not null))
+        if (keys == Keys.Enter && (search.Focused || grid.ContainsFocus) && (selectItem || data is not null || remote is not null))
         {
             if ((message.LParam.ToInt64() & (1L << 30)) == 0)
                 OpenSelectedProduct();
@@ -372,6 +385,7 @@ internal sealed class ProductListForm : PosForm
         if (matches.Length > 0 && grid.IsHandleCreated && grid.CurrentCell?.RowIndex != 0)
             grid.CurrentCell = grid.Rows[0].Cells["Description"];
         grid.Invalidate();
+        if (selectItem) grid.AutoResizeColumn(grid.Columns["Barcode"]!.Index, DataGridViewAutoSizeColumnMode.AllCells);
         grid.ResetScrollPosition();
         previousPage.Visible = nextPage.Visible = products.Count > PageSize;
         previousPage.Enabled = pageStart > 0;
@@ -392,6 +406,41 @@ internal sealed class ProductListForm : PosForm
         stock = snapshot.Stock;
         catalog = snapshot.Details;
         if(!selectItem)activity=data.ReadItemActivity();
+    }
+
+    private void LoadRemoteRows(CatalogBrowseRow[] snapshot)
+    {
+        products = snapshot.Select(row => row.Product).ToArray();
+        catalog = snapshot.ToDictionary(row => row.Product.Barcode, row => row.Details);
+        stock = snapshot.ToDictionary(row => row.Product.Barcode, row => row.OnHand);
+        draft = snapshot.ToDictionary(row => row.Product.Barcode, row => row.Units);
+        activity = snapshot.Where(row => row.Activity is not null).ToDictionary(row => row.Product.Barcode, row => row.Activity!);
+    }
+
+    private async Task RefreshRemoteCatalog()
+    {
+        if (refreshingCatalog) { refreshAgain = true; return; }
+        refreshingCatalog = true;
+        try
+        {
+            do
+            {
+                refreshAgain = false;
+                var rows = await remote!.CatalogAsync(remoteToken);
+                if (IsDisposed) return;
+                var selection = CurrentProduct?.Barcode;
+                int offset = grid.HorizontalScrollingOffset;
+                LoadRemoteRows(rows);
+                IndexSearch();
+                Filter();
+                SelectBarcode(selection);
+                grid.HorizontalScrollingOffset = offset;
+            } while (refreshAgain);
+        }
+        catch (OperationCanceledException) when (IsDisposed || remoteToken.IsCancellationRequested) { }
+        catch (Exception error) when (error is HttpRequestException or IOException or OperationCanceledException)
+        { if (!IsDisposed) matchCount.Text = "Store catalog could not be refreshed."; }
+        finally { refreshingCatalog = false; }
     }
 
     private void ReloadProducts()
@@ -425,10 +474,11 @@ internal sealed class ProductListForm : PosForm
 
     private void ShowItemHistory()
     {
-        if (data is null || folders is null || CurrentProduct is not Product product)
+        if (CurrentProduct is not Product product || (remote is null && (data is null || folders is null)))
             return;
 
-        using var history = new RecordsForm(data, folders, product);
+        using var history = remote is not null ? new RecordsForm(remote, remoteDay, remoteToken, product)
+            : new RecordsForm(data!, folders!, product);
         history.ShowDialog(this);
         search.Focus();
     }
@@ -443,6 +493,8 @@ internal sealed class ProductListForm : PosForm
             SelectedProduct = product;
             DialogResult = DialogResult.OK;
         }
+        else if (remote is not null)
+            _ = OpenRemoteItem();
         else if (data is not null && !deleted.Checked)
         {
             using var editor = new ProductEditorForm(product.Barcode, updated => data.SaveProduct(updated, product), product, data);
@@ -453,6 +505,23 @@ internal sealed class ProductListForm : PosForm
                 LoadStock();
                 Filter();
             }
+        }
+    }
+
+    private async Task OpenRemoteItem()
+    {
+        if (remote is null || CurrentProduct is not Product product) return;
+        try
+        {
+            var item = await remote.ItemAsync(product.Barcode, remoteToken);
+            if (IsDisposed) return;
+            using var details = new CatalogDetailsForm(item);
+            details.ShowDialog(this);
+        }
+        catch (OperationCanceledException) when (remoteToken.IsCancellationRequested || IsDisposed) { }
+        catch (Exception error) when (error is IOException or HttpRequestException or OperationCanceledException)
+        {
+            if (!IsDisposed) MessageBox.Show(this, error.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }

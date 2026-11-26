@@ -117,6 +117,18 @@ internal static class PosView
 
     public static Label BannerAmount(string text, float size) => new AmountLabel(text,size);
 
+    internal static FlowLayoutPanel FilterRow(params Control[] controls)
+    {
+        var row = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
+        foreach (Control control in controls)
+        {
+            control.Anchor = AnchorStyles.Left;
+            control.Margin = new Padding(4, 3, 4, 3);
+            row.Controls.Add(control);
+        }
+        return row;
+    }
+
     public static void FitTicketColumns(DataGridView grid, string description, params string[] numbers)
     {
         grid.Columns[description]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
@@ -125,7 +137,7 @@ internal static class PosView
         grid.RowTemplate.MinimumHeight = 34;
         grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders;
         foreach (string name in numbers)
-            grid.Columns[name]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
+            grid.Columns[name]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
     }
 
     public static void Grid(DataGridView grid, float size = 13, int rowHeight = 44)
@@ -144,6 +156,7 @@ internal static class PosView
         grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = Color.White;
         grid.ColumnHeadersDefaultCellStyle.Font = Text(12, FontStyle.Bold);
         grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(5, 0, 5, 0);
+        grid.ShowCellToolTips = true;
         grid.DefaultCellStyle.Font = Text(size);
         grid.DefaultCellStyle.ForeColor = Ink;
         grid.DefaultCellStyle.Padding = new Padding(5, 0, 5, 0);

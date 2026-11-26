@@ -69,6 +69,7 @@ public sealed class WindowLayoutTests
         var sale = new Sale();
         sale.Add(product, false);
         var orderItem = new OrderItem(product, 2, 20, 18, 1);
+        data.SaveDistributor(null, new("Example distributor"));
         Func<PosForm>[] windows =
         [
             () => new RegisterForm(data, folders),
@@ -78,6 +79,9 @@ public sealed class WindowLayoutTests
             () => new ProductEditorForm(product.Barcode, _ => null, product, data),
             () => new CatalogDetailsForm(data, product),
             () => new CatalogImportForm(data),
+            () => new ItemSelectionForm(data, true),
+            () => new ItemSelectionForm(data, false),
+            () => new VendorDirectory(data),
             () => new NumberEntryForm("Quantity", "Quantity", 1, 1, 9999, 0, _ => ""),
             () => new SaleLineEditorForm(sale.Lines[0]),
             () => new CheckoutForm(sale, sale.GetTotals(data.TaxRate), 8, _ => { }, maximize: false),
@@ -114,6 +118,7 @@ public sealed class WindowLayoutTests
             Application.DoEvents();
             Assert.IsTrue(window.Width <= width - 24 && window.Height <= height - 72, window.Text);
             CheckControls(window);
+            if (width == 1280 && !Descendants(window).OfType<TabControl>().Any()) VerifyTableFonts(window);
             foreach (TabControl tabs in Descendants(window).OfType<TabControl>())
             {
                 foreach (TabPage page in tabs.TabPages)
@@ -121,10 +126,31 @@ public sealed class WindowLayoutTests
                     tabs.SelectedTab = page;
                     Application.DoEvents();
                     CheckControls(window);
+                    if (width == 1280) VerifyTableFonts(window);
                 }
             }
             window.Close();
         }
+    }
+
+    internal static void VerifyTableFonts(Form window)
+    {
+        var tables = Descendants(window).OfType<DataGridView>().Where(grid => grid.Visible && grid.ColumnCount > 0).ToArray();
+        if (tables.Length == 0) return;
+        var size = window.Size;
+        string[][] before = tables.Select(Fonts).ToArray();
+        foreach (Size resized in new[] { new Size(size.Width - 150, size.Height - 60), new Size(size.Width + 100, size.Height + 40), size })
+        {
+            window.Size = resized;
+            Application.DoEvents();
+        }
+        for (int i = 0; i < tables.Length; i++)
+            CollectionAssert.AreEqual(before[i], Fonts(tables[i]), $"{window.Text}: table fonts must return to their original sizes.");
+
+        static string[] Fonts(DataGridView grid) => grid.Columns.Cast<DataGridViewColumn>()
+            .Where(column => column.Visible).Select(column =>
+                $"{column.HeaderText}: {column.InheritedStyle?.Font?.Size:F2} / {column.HeaderCell.InheritedStyle.Font?.Size:F2}")
+            .ToArray();
     }
 
     internal static void CheckControls(Form window)
