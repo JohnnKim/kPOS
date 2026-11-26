@@ -157,8 +157,14 @@ public sealed class WorkstationFeaturesTests
             var hardware = new HardwareSettings(Output: ReceiptOutput.NetworkPrinter, Host: "127.0.0.1", Port: ((IPEndPoint)listener.LocalEndpoint).Port,
                 DrawerPin: 1, PulseOn: 100, PulseOff: 500);
             Task<string> sending = ReceiptHardware.SendAsync(hardware, root, "TEST", true);
-            using var printer = await listener.AcceptTcpClientAsync(); using var received = new MemoryStream();
-            await printer.GetStream().CopyToAsync(received); await sending;
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var accepting = listener.AcceptTcpClientAsync(timeout.Token).AsTask();
+            // Surface a failed connection immediately instead of leaving the listener waiting.
+            if (await Task.WhenAny(sending, accepting) == sending) await sending;
+            using var printer = await accepting;
+            using var received = new MemoryStream();
+            await printer.GetStream().CopyToAsync(received, timeout.Token);
+            await sending.WaitAsync(timeout.Token);
             CollectionAssert.AreEqual(ReceiptHardware.BuildRequest(hardware, "TEST", true), received.ToArray());
             CollectionAssert.AreEqual(new byte[] { 27, 112, 1, 50, 250 }, received.ToArray()[^5..]);
             var capture = new HardwareSettings(PrintAfterSale: false, CashOnly: true);

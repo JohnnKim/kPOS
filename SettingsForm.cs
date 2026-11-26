@@ -99,7 +99,7 @@ internal sealed class SettingsForm : PosForm
             {
                 RegisterInstallation.ValidateDestination(folders, picker.SelectedPath);
                 if (MessageBox.Show(this, $"Copy kPOS, the database, and all records to:\n{picker.SelectedPath}\n\nkPOS will reopen in the new folder. The original folder will be kept.",
-                    "Change Directory", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes) return;
+                    "Change Directory", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes) return;
 
                 data.SaveSettings(rate.Value, (int)duration.Value, requireCount.Checked, maximize.Checked,
                     CurrentKeys(), showKeys.Checked, showChange.Checked, CurrentTaxes(), hardware.Value);

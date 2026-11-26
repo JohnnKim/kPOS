@@ -290,7 +290,7 @@ internal sealed class CloseoutForm : PosForm
     private void SaveCloseout()
     {
         if (Draft(requireDrawers: true) is not DayCloseout closeout ||
-            MessageBox.Show(this, "Finish count and closeout?", Text, MessageBoxButtons.YesNo,
+            MessageBox.Show(this, "Finish count and closeout?", Text, MessageBoxButtons.YesNoCancel,
                 MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes)
             return;
 

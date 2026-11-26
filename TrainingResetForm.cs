@@ -134,7 +134,7 @@ internal sealed class TrainingResetForm : PosForm
     {
         if (!reset.Enabled || sales is null || MessageBox.Show(this,
                 $"Clear sales, refunds, drawer expenses, and closeout for {ConfirmationDate}? Use this only for test data.",
-                Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button1) != DialogResult.Yes)
+                Text, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button1) != DialogResult.Yes)
             return;
 
         try

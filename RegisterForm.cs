@@ -885,7 +885,7 @@ dialog.AcceptButton = import;
 dialog.CancelButton = cancel;
 if (dialog.ShowDialog(this) != DialogResult.OK) return;
 bool replaceAllData = deleteAll.Checked;
-if (replaceAllData && MessageBox.Show(this, "Permanently delete all current products, sales, closeouts, vendors, orders, and history before importing? A recovery backup will be saved first.", "Import catalog", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+if (replaceAllData && MessageBox.Show(this, "Permanently delete all current products, sales, closeouts, vendors, orders, and history before importing? A recovery backup will be saved first.", "Import catalog", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
 try
 {
 UseWaitCursor = true;
@@ -1054,7 +1054,7 @@ finally { UseWaitCursor = false; }
     }
 
     private bool Confirm(string message, string title) =>
-        MessageBox.Show(this, message, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+        MessageBox.Show(this, message, title, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question,
             MessageBoxDefaultButton.Button1) == DialogResult.Yes;
 
     private void RefreshTicket(int selected = 0)

@@ -41,7 +41,7 @@ internal sealed class HardwareSettingsPanel : TableLayoutPanel
         testDrawer.Click += async (_, _) =>
         {
             if(Value.Output != ReceiptOutput.Capture && MessageBox.Show(FindForm(), "Send a cash-drawer pulse to the configured printer?", "Test Drawer",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes) return;
+                MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes) return;
             await TestAsync(true);
         };
         async Task TestAsync(bool pulse)

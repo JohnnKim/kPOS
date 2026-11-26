@@ -8,7 +8,12 @@ internal sealed class ProductListForm : PosForm
     protected override bool ScrollWholeWindow => false;
 
     private IReadOnlyList<Product> products;
+    private const int PageSize = 60;
+    private Product[] results = [];
     private Product[] matches = [];
+    private int pageStart;
+    private readonly Button previousPage = PosView.Button("Previous", size: 10);
+    private readonly Button nextPage = PosView.Button("Next", size: 10);
     private IReadOnlyDictionary<string,long> draft=new Dictionary<string,long>();
     private IReadOnlyDictionary<string, long?> stock = new Dictionary<string, long?>();
     private IReadOnlyDictionary<string, ItemActivity> activity = new Dictionary<string, ItemActivity>();
@@ -88,7 +93,13 @@ internal sealed class ProductListForm : PosForm
         var footer = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
         matchCount.Anchor = AnchorStyles.Left;
         matchCount.Margin = new Padding(3, 10, 9, 3);
+        matchCount.AutoSize = false;
+        matchCount.Size = new Size(210, 28);
+        matchCount.TextAlign = ContentAlignment.MiddleLeft;
         footer.Controls.Add(matchCount);
+        footer.Controls.AddRange([previousPage, nextPage]);
+        previousPage.Click += (_, _) => ShowPage(pageStart - PageSize);
+        nextPage.Click += (_, _) => ShowPage(pageStart + PageSize);
         if (data is not null && !selectItem)
         {
             var create = PosView.Button("&Add Item", primary: true, size: 10);
@@ -99,9 +110,7 @@ internal sealed class ProductListForm : PosForm
                 {
                     search.Clear();
                     ReloadProducts();
-                    int index = Array.IndexOf(matches, added);
-                    if (index >= 0)
-                        grid.CurrentCell = grid.Rows[index].Cells["Description"];
+                    SelectBarcode(added.Barcode);
                 }
             };
             footer.Controls.Add(create);
@@ -179,6 +188,7 @@ internal sealed class ProductListForm : PosForm
                 ("UnitCost", "Unit cost"), ("CaseUnits", "Units per case"), ("Taxable", "Taxable"), ("OnOrder","On order"),("Draft","Draft units"),("Sold7","Sold 7 days"),("Sold30","Sold 30 days"),("Sold90","Sold 90 days"),("MTD","Month to date"),("YTD","Year to date"),("LastSale","Last sale"),("LastReceived","Last received"),("Class","Class"),("Bin","Bin / location"),("Par","Par units"),("Reorder","Reorder point"),("Shelf","On shelf"),("ShelfCapacity","Shelf capacity"),("OrderLot","Order by"),("Notes","Notes"),("Margin","Margin %") })
                 grid.Columns.Add(new DataGridViewTextBoxColumn { Name = name, HeaderText = caption, Width = 140 });
         }
+        foreach (DataGridViewColumn column in grid.Columns) weights[column.Name] = column.Width;
         grid.Columns["Description"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
         grid.ShowCellToolTips = true;
         grid.DefaultCellStyle.WrapMode = DataGridViewTriState.False;
@@ -192,10 +202,9 @@ internal sealed class ProductListForm : PosForm
         foreach (DataGridViewColumn column in grid.Columns)
         {
             column.SortMode = DataGridViewColumnSortMode.Programmatic;
-            weights[column.Name] = column.Width;
             if (selectItem)
             {
-                column.MinimumWidth = 20;
+                column.MinimumWidth = column.Name switch { "OnHand" => 68, "Barcode" => 138, _ => 20 };
                 column.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
                 column.FillWeight = weights[column.Name];
             }
@@ -259,7 +268,7 @@ internal sealed class ProductListForm : PosForm
         if(data is not null)_=new LocalDataWatch(this,data,()=>
         {
             string? selected=CurrentProduct?.Barcode;int horizontal=grid.HorizontalScrollingOffset;int top=grid.FirstDisplayedScrollingRowIndex;
-            ReloadProducts();int row=Array.FindIndex(matches,item=>item.Barcode==selected);if(row>=0)grid.CurrentCell=grid.Rows[row].Cells["Description"];
+            ReloadProducts(); SelectBarcode(selected);
             if(top>=0&&grid.RowCount>0&&grid.DisplayedRowCount(false)>0)grid.FirstDisplayedScrollingRowIndex=Math.Min(top,grid.RowCount-1);grid.HorizontalScrollingOffset=horizontal;
         });
 
@@ -329,17 +338,10 @@ internal sealed class ProductListForm : PosForm
         if (sortField is string column)
             found = found.OrderBy(p => CellValue(p, column), Comparer<object?>.Create(CompareValues))
                 .ThenBy(p => p.Barcode, StringComparer.OrdinalIgnoreCase);
-        matches = found.ToArray();
-
-        grid.RowCount = matches.Length;
-        if (matches.Length > 0 && grid.IsHandleCreated)
-            grid.CurrentCell = grid.Rows[0].Cells["Description"];
-        grid.Invalidate();
-        grid.ResetScrollPosition();
-        matchCount.Text = query.Length == 0 ? $"{products.Count:N0} items"
-            : $"{matches.Length:N0} of {products.Count:N0} items";
-        select.Enabled = delete.Enabled = matches.Length > 0;
-        add.Enabled = allowAddCode && query.Length >= 2 && matches.Length == 0 &&
+        results = found.ToArray();
+        ShowPage(0);
+        select.Enabled = delete.Enabled = results.Length > 0;
+        add.Enabled = allowAddCode && query.Length >= 2 && results.Length == 0 &&
             !products.Any(product => string.Equals(product.Code, query, StringComparison.OrdinalIgnoreCase) ||
                                      string.Equals(product.Barcode, query, StringComparison.OrdinalIgnoreCase));
 
@@ -351,6 +353,32 @@ internal sealed class ProductListForm : PosForm
             return StringComparer.CurrentCultureIgnoreCase.Compare(left.ToString(), right.ToString());
         }
         bool Contains(string value) => value.Contains(query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void SelectBarcode(string? barcode)
+    {
+        int index = Array.FindIndex(results, item => item.Barcode == barcode);
+        if (index < 0) return;
+        int start = index / PageSize * PageSize;
+        if (start != pageStart) ShowPage(start);
+        grid.CurrentCell = grid.Rows[index - start].Cells["Description"];
+    }
+
+    private void ShowPage(int start)
+    {
+        pageStart = Math.Clamp(start, 0, Math.Max(0, (results.Length - 1) / PageSize * PageSize));
+        matches = results.Skip(pageStart).Take(PageSize).ToArray();
+        if (grid.RowCount != matches.Length) grid.RowCount = matches.Length;
+        if (matches.Length > 0 && grid.IsHandleCreated && grid.CurrentCell?.RowIndex != 0)
+            grid.CurrentCell = grid.Rows[0].Cells["Description"];
+        grid.Invalidate();
+        grid.ResetScrollPosition();
+        previousPage.Visible = nextPage.Visible = products.Count > PageSize;
+        previousPage.Enabled = pageStart > 0;
+        nextPage.Enabled = pageStart + matches.Length < results.Length;
+        matchCount.Text = results.Length > PageSize
+            ? $"{pageStart + 1:N0}–{pageStart + matches.Length:N0} of {results.Length:N0} items"
+            : search.TextLength == 0 ? $"{results.Length:N0} items" : $"{results.Length:N0} of {products.Count:N0} items";
     }
 
     private Product? CurrentProduct => grid.CurrentRow is DataGridViewRow row ? matches[row.Index] : null;
@@ -382,7 +410,7 @@ internal sealed class ProductListForm : PosForm
         bool removing = !deleted.Checked;
         if (removing && MessageBox.Show(this,
                 $"Delete {product.Description} ({product.Code}) from the catalog? Past sales will remain available.",
-                "Delete Product", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes)
+                "Delete Product", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes)
             return;
         try
         {

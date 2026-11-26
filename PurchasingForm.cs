@@ -221,11 +221,11 @@ internal sealed class PurchasingForm : PosForm
     {
         CheckPending(); var order=CurrentOrder??throw new ArgumentException("Select a purchase order."); var remaining=order.Lines.Where(line=>line.Remaining>0).Select(line=>new OrderQuantity(line.Product.Barcode,line.Remaining)).ToArray();
         if(remaining.Length==0)throw new ArgumentException("Nothing remains to receive.");
-        if(MessageBox.Show(this,"Receive all remaining items and add them to store inventory?","Receive Order",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button1)!=DialogResult.Yes)return;
+        if(MessageBox.Show(this,"Receive all remaining items and add them to store inventory?","Receive Order",MessageBoxButtons.YesNoCancel,MessageBoxIcon.Question,MessageBoxDefaultButton.Button1)!=DialogResult.Yes)return;
         pending=new(Receive:new(Guid.NewGuid(),order.Id,remaining)); await RetryAsync();
     }
     private async Task CancelAsync()
-    { CheckPending(); var order=CurrentOrder??throw new ArgumentException("Select an order."); if(MessageBox.Show(this,"Cancel the outstanding items? Previously received stock will be kept.","Cancel Remaining",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button1)==DialogResult.Yes){await source.Cancel(order.Id);await LoadAsync();} }
+    { CheckPending(); var order=CurrentOrder??throw new ArgumentException("Select an order."); if(MessageBox.Show(this,"Cancel the outstanding items? Previously received stock will be kept.","Cancel Remaining",MessageBoxButtons.YesNoCancel,MessageBoxIcon.Question,MessageBoxDefaultButton.Button1)==DialogResult.Yes){await source.Cancel(order.Id);await LoadAsync();} }
     private async Task StockAsync()
     {
         CheckPending(); var item=CurrentItem??throw new ArgumentException("Select an item."); var stock=await source.Stock(item.Product.Barcode);

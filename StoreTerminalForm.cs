@@ -350,7 +350,7 @@ internal sealed class StoreTerminalForm : PosForm
     }
     private int SelectedRow() => grid.CurrentRow?.Index ?? throw new InvalidOperationException("Select a current sale line first.");
     private void RequireEditable() { if(!Ready || pending is not null) throw new InvalidOperationException("Connect and confirm any pending checkout before changing this sale."); }
-    private static bool Ask(string text, string title) => MessageBox.Show(text, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) == DialogResult.Yes;
+    private static bool Ask(string text, string title) => MessageBox.Show(text, title, MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) == DialogResult.Yes;
     private void ShowReceipt()
     {
         if(lastReceipt is null) return;

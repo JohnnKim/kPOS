@@ -316,7 +316,7 @@ internal sealed class OrderForm : PosForm
     private void ClearDraft()
     {
         if (!grid.EndEdit() || MessageBox.Show(this, "Clear all quantities in the order draft?", Text,
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes)
+                MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes)
             return;
         Run(() =>
         {

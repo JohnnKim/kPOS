@@ -27,8 +27,9 @@ internal sealed partial class RegisterData
         "WINE" or "CHAMPAGNE" or "WINE MISC" => "Wine",
         "BEER" or "BEER MISC" => "Beer",
         var t when t.StartsWith("TOBACCO", StringComparison.Ordinal) || t.StartsWith("CIG", StringComparison.Ordinal) => "Tobacco",
-        "GROCERY" or "SODA" or "ICE CREAM" or "DRUG/CBD" => "Grocery",
-        "SNACK" or "SNACKS" => "Snack",
+        // The legacy type totals distinguish grocery snacks (SNACK) from the Snack department (SNACKS).
+        "GROCERY" or "SODA" or "ICE CREAM" or "DRUG/CBD" or "SNACK" => "Grocery",
+        "SNACKS" => "Snack",
         "LOTTERY" or "LOTTO SALE" => "Lottery",
         "SUNDRY" or "SUNDRIES" => "Sundry",
         "CANDY" => "Candy",
@@ -40,8 +41,9 @@ internal sealed partial class RegisterData
         if (end < start || kind is < 0 or > 2) throw new ArgumentException("Invalid report period or report type.");
         using var tx = connection.BeginTransaction(deferred: true);
         using var groups = Command("""
-            SELECT substr(s.business_date,1,7), coalesce(l.item_type, 'Unclassified'), sum(l.net_cents),
-                   CASE WHEN count(l.cost_cents)=count(*) THEN sum(l.cost_cents) END
+            SELECT substr(s.business_date,1,7), coalesce(l.item_type, l.kind), sum(l.net_cents),
+                   CASE WHEN count(CASE WHEN l.kind='Lottery' THEN 0 ELSE l.cost_cents END)=count(*)
+                        THEN sum(coalesce(l.cost_cents,0)) END
             FROM sales s JOIN sale_lines l ON l.sale_id=s.id WHERE s.business_date BETWEEN $from AND $to
             GROUP BY 1,2 ORDER BY 1,2
             """, tx);
@@ -81,7 +83,7 @@ internal sealed partial class RegisterData
         var html = new StringBuilder("""
             <!doctype html><html lang="en"><meta charset="utf-8"><title>kPOS sales reports</title>
             <style>
-            @page{size:letter landscape;margin:.45in}*{box-sizing:border-box}body{color:#111;font:10pt Arial,sans-serif;max-width:11in;margin:24px auto}
+            @page{size:letter landscape;margin:.45in;@top-left{content:"Page " counter(page);font:10pt Arial}}*{box-sizing:border-box}body{color:#111;font:10pt Arial,sans-serif;max-width:11in;margin:24px auto}
             header{position:relative;text-align:center}header small{position:absolute;left:0;top:0}h1{margin:5px}h2{text-align:center;border-bottom:3px double;padding-bottom:6px}
             table{width:100%;border-collapse:collapse;font:10pt 'Courier New',monospace}td,th{text-align:right;padding:4px}th:first-child,td:first-child{text-align:left}
             th{border-bottom:1px solid}thead{display:table-header-group}tr{break-inside:avoid}.types{columns:2;column-gap:8%}.pair{display:flex;justify-content:space-between;break-inside:avoid;font:11pt 'Courier New';padding:3px 0}
@@ -90,7 +92,7 @@ internal sealed partial class RegisterData
             .matrix th{font:600 10pt Arial;text-align:center;border-bottom:2px solid;padding:0 0 5px}.matrix td{padding:5px 0;white-space:nowrap}
             .matrix td:first-child{text-align:right}.matrix tbody tr:first-child td{padding-top:18px}.matrix .totals td{text-align:left;padding-top:22px}
             .matrix th:last-child{width:10%}footer{text-align:center;font-style:italic;margin-top:20px}
-            @media print{button{display:none}body{margin:0;max-width:none}}button{padding:8px 18px}
+            @media print{button,.screenpage{display:none}body{margin:0;max-width:none}}button{padding:8px 18px}
             </style><button onclick="window.print()">Print report</button>
             """);
         void Header(string title) => html.Append($"<header><small>{DateTime.Now:g}</small><h1>{E(company)}</h1><h1>{title}</h1><h3>From {start:MMMM d, yyyy} To {end:MMMM d, yyyy}</h3></header>");
@@ -122,7 +124,7 @@ internal sealed partial class RegisterData
         if (kind != 0)
         {
             if(kind==2) html.Append("<section class='block'>");
-            html.Append($"<header class='department'><small>Page {(kind == 2 ? 3 : 1)}</small><h1>Department Gross Profit</h1><h3>From {start:MMMM d, yyyy} To {end:MMMM d, yyyy}</h3></header>");
+            html.Append($"<header class='department'><small class='screenpage'>{(kind == 1 ? "Page 1" : "")}</small><h1>Department Gross Profit</h1><h3>From {start:MMMM d, yyyy} To {end:MMMM d, yyyy}</h3></header>");
             string[] band = ["Liquor","Wine","Beer","Tobacco","Grocery","Snack","Sundry","Candy","Misc","Lottery"];
             html.Append("<table class='matrix'><thead><tr><th>Date</th>");
             foreach(string d in band)html.Append($"<th>{E(d)}</th>");
