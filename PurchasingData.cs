@@ -23,6 +23,8 @@ internal sealed record OrderWorksheet(DateOnly Day, OrderItem[] Items, Distribut
 
 internal sealed partial class RegisterData
 {
+    private const int PurchaseOrderVisibilitySchemaVersion = 19;
+
     private void AddPurchasing(SqliteTransaction transaction)
     {
         using var schema = Command("""
@@ -80,7 +82,7 @@ internal sealed partial class RegisterData
             row.IsDBNull(9) ? null : DateTimeOffset.Parse(row.GetString(9)));
         return result;
     }
-    internal PurchasingSnapshot ReadPurchasing()
+    internal PurchasingSnapshot ReadPurchasing(bool hasOrderVisibility = true)
     {
         DateOnly day = CurrentBusinessDate(); var details = ReadCatalogDetails(); var activity = ReadItemActivity();
         Dictionary<string, long?> StockAt(DateOnly at) =>
@@ -88,11 +90,13 @@ internal sealed partial class RegisterData
         var lastWeek = StockAt(day.AddDays(-7));
         var lastMonth = StockAt(day.AddDays(-30));
         return new(day, ReadOrderItems(day.AddDays(-29), day, day).Select(item => new PurchasingRow(item.Product, details[item.Product.Barcode], item.OnHand, item.Draft, activity[item.Product.Barcode], lastWeek.GetValueOrDefault(item.Product.Barcode), lastMonth.GetValueOrDefault(item.Product.Barcode))).ToArray(),
-            ReadDistributors().ToArray(), ReadPurchaseOrders());
+            ReadDistributors().ToArray(), ReadPurchaseOrders(hasOrderVisibility));
     }
-    internal SavedPurchaseOrder[] ReadPurchaseOrders()
+    internal SavedPurchaseOrder[] ReadPurchaseOrders(bool hasOrderVisibility = true)
     {
-        using var query = Command("SELECT payload_json,status,hidden FROM purchase_orders ORDER BY created_at DESC LIMIT 500");
+        using var query = Command(hasOrderVisibility
+            ? "SELECT payload_json,status,hidden FROM purchase_orders ORDER BY created_at DESC LIMIT 500"
+            : "SELECT payload_json,status,0 FROM purchase_orders ORDER BY created_at DESC LIMIT 500");
         using var rows = query.ExecuteReader(); var orders = new List<SavedPurchaseOrder>();
         while(rows.Read()) orders.Add(JsonSerializer.Deserialize<SavedPurchaseOrder>(rows.GetString(0))! with { Status = rows.GetString(1), Hidden = rows.GetBoolean(2) });
         rows.Close();
