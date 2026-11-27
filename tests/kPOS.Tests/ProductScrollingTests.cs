@@ -7,6 +7,46 @@ namespace Kpos.Tests;
 public sealed class ProductScrollingTests
 {
     [TestMethod]
+    public void ItemLookupScrollsAndSearchesTheFullCatalogWithVirtualRows()
+    {
+        Product[] products = Enumerable.Range(0, 25_000).Select(index => new Product(
+            $"ITEM-{index:D5}", $"000000{index:D6}", $"Product {index:D5}", "750 mL", 12m, 12, 120m)).ToArray();
+        products[^1] = products[^1] with { Barcode = "0000000000024999000000" };
+        using var window = new ProductListForm(products, selectItem: true) { Opacity = 0, ShowInTaskbar = false };
+        var grid = Descendants(window).OfType<ProductGrid>().Single();
+        var search = Descendants(window).OfType<TextBox>().Single();
+        int cellRequests = 0;
+        grid.CellValueNeeded += (_, _) => cellRequests++;
+        window.Show();
+        Application.DoEvents();
+
+        Assert.IsTrue(grid.VirtualMode);
+        Assert.AreEqual(products.Length, grid.RowCount);
+        Assert.IsFalse(Descendants(window).OfType<Button>().Any(button => button.Visible && button.Text is "Previous" or "Next"));
+
+        int lastRow = products.Length - 1;
+        var barcode = grid.Columns["Barcode"]!;
+        var description = grid.Columns["Description"]!;
+        grid.FirstDisplayedScrollingRowIndex = lastRow;
+        Application.DoEvents();
+        Assert.AreEqual(products[^1].Barcode, grid[barcode.Index, lastRow].Value);
+        var style = barcode.InheritedStyle!;
+        Assert.IsTrue(TextRenderer.MeasureText(products[^1].Barcode, style.Font).Width + style.Padding.Horizontal <= barcode.Width,
+            "Scrolling must show the full barcode of the newly visible item.");
+
+        search.Text = "Product 249";
+        Assert.AreEqual(100, grid.RowCount);
+        Assert.AreEqual(0, grid.FirstDisplayedScrollingRowIndex);
+        Assert.AreEqual(products[^1].Description, grid[description.Index, 99].Value);
+        search.Text = products[^1].Barcode;
+        Assert.AreEqual(1, grid.RowCount);
+        Assert.AreEqual(products[^1].Description, grid[description.Index, 0].Value);
+        search.Clear();
+        Assert.AreEqual(products.Length, grid.RowCount);
+        Assert.IsTrue(cellRequests < products.Length / 2, $"Only visible rows should be measured or rendered. Requested {cellRequests} cells.");
+    }
+
+    [TestMethod]
     public void TouchpadMessagesScrollTheTableWhileSearchAndButtonsStayFixed()
     {
         using var data = new RegisterData(":memory:");

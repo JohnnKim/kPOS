@@ -16,7 +16,7 @@ Open **Activity → Order and Receive** and choose one distributor. Select a sev
 
 ## Records and connected terminals
 
-Sales Records columns fill the table, and table text returns to its original size when you restore the window size. Item Lookup sizes the barcode column to its contents. In **Sales Records**, choose **Department Gross Profit** and **Detailed report** to print the landscape department matrix.
+Sales Records columns fill the table, and table text returns to its original size when you restore the window size. Item Lookup scrolls through every match and sizes the barcode column to the visible rows. In **Sales Records**, choose **Department Gross Profit** and **Detailed report** to print the landscape department matrix.
 
 Remote Connection opens the same full-size Orders, Item Catalog, and Sales Records screens with the connected store’s data. Update the store host and remote client to the same build. Store Terminal (LAN) is the separate checkout window for tills that share the store’s sales and inventory. [Remote Connection guide](docs/Home-Terminal.md) · [Store Terminal guide](docs/Store-Terminals.md)
 

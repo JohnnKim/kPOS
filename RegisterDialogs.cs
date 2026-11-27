@@ -11,6 +11,7 @@ internal sealed class ProductListForm : PosForm
     private const int PageSize = 60;
     private Product[] results = [];
     private Product[] matches = [];
+    private Product[]? sortedProducts;
     private int pageStart;
     private readonly Button previousPage = PosView.Button("Previous", size: 10);
     private readonly Button nextPage = PosView.Button("Next", size: 10);
@@ -228,15 +229,22 @@ internal sealed class ProductListForm : PosForm
             if (selectItem)
             {
                 column.MinimumWidth = column.Name switch { "OnHand" => 68, "Barcode" => 24, _ => 20 };
-                column.AutoSizeMode = column.Name == "Barcode" ? DataGridViewAutoSizeColumnMode.AllCells : DataGridViewAutoSizeColumnMode.Fill;
+                column.AutoSizeMode = column.Name == "Barcode" ? DataGridViewAutoSizeColumnMode.DisplayedCells : DataGridViewAutoSizeColumnMode.Fill;
                 column.FillWeight = weights[column.Name];
             }
         }
+        if (selectItem)
+            grid.Scroll += (_, e) =>
+            {
+                if (e.ScrollOrientation == ScrollOrientation.VerticalScroll)
+                    FitVisibleBarcodes();
+            };
         grid.ColumnHeaderMouseClick += (_, e) =>
         {
             if (e.ColumnIndex < 0) return;
             var clicked = grid.Columns[e.ColumnIndex];
             sortField = clicked.Name;
+            sortedProducts = null;
             foreach (DataGridViewColumn column in grid.Columns)
                 column.HeaderCell.SortGlyphDirection = column == clicked ? SortOrder.Ascending : SortOrder.None;
             Filter();
@@ -331,6 +339,7 @@ internal sealed class ProductListForm : PosForm
 
     private void IndexSearch()
     {
+        sortedProducts = null;
         searchText = products.ToDictionary(p => p.Barcode, p => {
             var detail = catalog.GetValueOrDefault(p.Barcode);
             return string.Join('\u001f', p.Description, p.Code, p.Barcode, p.Size, detail?.Brand, detail?.Supplier);
@@ -340,7 +349,12 @@ internal sealed class ProductListForm : PosForm
     private void Filter()
     {
         string query = search.Text.Trim();
-        IEnumerable<Product> found = query.Length == 0 ? products : products.Where(product => field.SelectedIndex switch
+        IReadOnlyList<Product> ordered = sortField is string column
+            ? sortedProducts ??= products.OrderBy(p => CellValue(p, column), Comparer<object?>.Create(CompareValues))
+                .ThenBy(p => p.Barcode, StringComparer.OrdinalIgnoreCase).ToArray()
+            : products;
+        int searchField = field.SelectedIndex;
+        IEnumerable<Product> found = query.Length == 0 ? ordered : ordered.Where(product => searchField switch
         {
             1 => Contains(product.Description),
             2 => Contains(product.Code),
@@ -348,10 +362,7 @@ internal sealed class ProductListForm : PosForm
             4 => Contains(product.Size),
             _ => Contains(searchText[product.Barcode])
         });
-        if (sortField is string column)
-            found = found.OrderBy(p => CellValue(p, column), Comparer<object?>.Create(CompareValues))
-                .ThenBy(p => p.Barcode, StringComparer.OrdinalIgnoreCase);
-        results = found.ToArray();
+        results = found as Product[] ?? found.ToArray();
         ShowPage(0);
         select.Enabled = delete.Enabled = results.Length > 0;
         add.Enabled = allowAddCode && query.Length >= 2 && results.Length == 0 &&
@@ -372,30 +383,42 @@ internal sealed class ProductListForm : PosForm
     {
         int index = Array.FindIndex(results, item => item.Barcode == barcode);
         if (index < 0) return;
-        int start = index / PageSize * PageSize;
+        int start = selectItem ? 0 : index / PageSize * PageSize;
         if (start != pageStart) ShowPage(start);
         grid.CurrentCell = grid.Rows[index - start].Cells["Description"];
     }
 
     private void ShowPage(int start)
     {
-        pageStart = Math.Clamp(start, 0, Math.Max(0, (results.Length - 1) / PageSize * PageSize));
-        matches = results.Skip(pageStart).Take(PageSize).ToArray();
-        if (grid.RowCount != matches.Length) grid.RowCount = matches.Length;
+        pageStart = selectItem ? 0 : Math.Clamp(start, 0, Math.Max(0, (results.Length - 1) / PageSize * PageSize));
+        matches = selectItem ? results : results.Skip(pageStart).Take(PageSize).ToArray();
+        if (grid.RowCount != matches.Length)
+        {
+            // Reducing RowCount directly removes rows one by one and resizes the columns after each removal.
+            if (grid.RowCount > matches.Length) grid.Rows.Clear();
+            grid.RowCount = matches.Length;
+        }
         if (matches.Length > 0 && grid.IsHandleCreated && grid.CurrentCell?.RowIndex != 0)
             grid.CurrentCell = grid.Rows[0].Cells["Description"];
         grid.Invalidate();
-        if (selectItem) grid.AutoResizeColumn(grid.Columns["Barcode"]!.Index, DataGridViewAutoSizeColumnMode.AllCells);
         grid.ResetScrollPosition();
-        previousPage.Visible = nextPage.Visible = products.Count > PageSize;
+        if (selectItem) FitVisibleBarcodes();
+        previousPage.Visible = nextPage.Visible = !selectItem && products.Count > PageSize;
         previousPage.Enabled = pageStart > 0;
         nextPage.Enabled = pageStart + matches.Length < results.Length;
-        matchCount.Text = results.Length > PageSize
+        matchCount.Text = !selectItem && results.Length > PageSize
             ? $"{pageStart + 1:N0}–{pageStart + matches.Length:N0} of {results.Length:N0} items"
             : search.TextLength == 0 ? $"{results.Length:N0} items" : $"{results.Length:N0} of {products.Count:N0} items";
     }
 
-    private Product? CurrentProduct => grid.CurrentRow is DataGridViewRow row ? matches[row.Index] : null;
+    private void FitVisibleBarcodes()
+    {
+        if (grid.IsHandleCreated)
+            grid.AutoResizeColumn(grid.Columns["Barcode"]!.Index, DataGridViewAutoSizeColumnMode.DisplayedCells);
+    }
+
+    private Product? CurrentProduct => grid.CurrentCell is DataGridViewCell cell && (uint)cell.RowIndex < (uint)matches.Length
+        ? matches[cell.RowIndex] : null;
 
     private void LoadStock()
     {
@@ -503,6 +526,7 @@ internal sealed class ProductListForm : PosForm
                 products = products.Select(item => item == product ? updated : item)
                     .OrderBy(item => item.Description, StringComparer.OrdinalIgnoreCase).ToArray();
                 LoadStock();
+                IndexSearch();
                 Filter();
             }
         }
