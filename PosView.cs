@@ -129,6 +129,17 @@ internal static class PosView
         return row;
     }
 
+    internal static Control DateRange(DateTimePicker from, DateTimePicker to)
+    {
+        from.AccessibleName = "From";
+        to.AccessibleName = "To";
+        var range = FilterRow(Label("From", 11), from, Label("To", 11), to);
+        range.Dock = DockStyle.None;
+        range.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        range.WrapContents = false;
+        return range;
+    }
+
     public static void FitTicketColumns(DataGridView grid, string description, params string[] numbers)
     {
         grid.Columns[description]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;

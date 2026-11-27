@@ -32,8 +32,8 @@ internal sealed class HomeTerminalForm : PosForm
     private Control? connectionFields;
     private Guid? pendingStore;
     private readonly TabControl tabs = new() { Dock = DockStyle.Fill };
-    private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 175, Value = DateTime.Today.AddDays(-7), AccessibleName = "From" };
-    private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 175, AccessibleName = "Through" };
+    private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 175, Value = DateTime.Today.AddDays(-7) };
+    private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 175 };
     private readonly ComboBox report = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 225, AccessibleName = "Report type" };
     private readonly Button submit = PosView.Button("Request Order", primary: true, size: 11);
     private readonly List<(HomeStock Stock, HomeOrderRequest Request)> basket = [];
@@ -150,7 +150,7 @@ internal sealed class HomeTerminalForm : PosForm
             new ReportChoice(RecordReport.TerminalSales, "Sales by terminal") });
         report.SelectedIndex = 0;
         var recordLayout = HomeTerminalView.Layout();
-        HomeTerminalView.Row(recordLayout, PosView.FilterRow(report, PosView.Label("From", 11), from, PosView.Label("Through", 11), through,
+        HomeTerminalView.Row(recordLayout, PosView.FilterRow(report, PosView.DateRange(from, through),
             Button("Load Records", async () => { reportPage = 0; await LoadRecordsAsync(); })));
         HomeTerminalView.Row(recordLayout, records, true);
         HomeTerminalView.Row(recordLayout, HomeTerminalView.Actions(Button("Previous", async () => { reportPage = Math.Max(0, reportPage - 1); await LoadRecordsAsync(); }),

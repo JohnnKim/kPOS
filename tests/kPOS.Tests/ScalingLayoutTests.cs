@@ -98,5 +98,36 @@ public sealed class ScalingLayoutTests
             Assert.IsLessThanOrEqualTo(4, Math.Abs(occupied - grid.ClientSize.Width), "Sales columns must use the table width.");
         }
     }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void SalesRecordDatePickersStayAlignedWhenFiltersWrap(bool remote)
+    {
+        using var data = new RegisterData(":memory:");
+        using Form window = remote ? new HomeTerminalForm() : new RecordsForm(data, new RegisterFolders(Path.GetTempPath()));
+        window.Opacity = 0;
+        window.Show();
+        if (remote)
+        {
+            var tabs = Children(window).OfType<TabControl>().Single();
+            tabs.SelectedTab = tabs.TabPages.Cast<TabPage>().Single(page => page.Text == "Records");
+        }
+        var dates = Children(window).OfType<DateTimePicker>().ToArray();
+        var from = dates.Single(picker => picker.AccessibleName == "From");
+        var to = dates.Single(picker => picker.AccessibleName == "To");
+        foreach (int width in new[] { 1280, 860, 1024, 1280 })
+        {
+            window.Size = new Size(width, 680);
+            Application.DoEvents();
+            var fromBounds = from.RectangleToScreen(from.ClientRectangle);
+            var toBounds = to.RectangleToScreen(to.ClientRectangle);
+            Assert.IsTrue(from.Visible && to.Visible);
+            Assert.AreEqual(fromBounds.Top, toBounds.Top, $"Both dates must be on the same row at width {width}.");
+            Assert.AreEqual(fromBounds.Size, toBounds.Size, $"Both date inputs must be the same size at width {width}.");
+            Assert.IsTrue(fromBounds.Right < toBounds.Left);
+        }
+    }
+
     private static IEnumerable<Control> Children(Control root){foreach(Control child in root.Controls){yield return child;foreach(var nested in Children(child))yield return nested;}}
 }

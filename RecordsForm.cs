@@ -12,8 +12,8 @@ internal sealed class RecordsForm : PosForm
     private readonly CancellationToken remoteToken;
     private readonly RegisterFolders folders;
     private readonly string? barcode;
-    private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 185, AccessibleName = "From" };
-    private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 185, AccessibleName = "Through" };
+    private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 185 };
+    private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 185 };
     private readonly TabControl tabs = new() { Multiline = true, Appearance = TabAppearance.Buttons, Dock = DockStyle.Fill };
     private readonly Button previous = PosView.Button("&Previous", size: 10);
     private readonly Button next = PosView.Button("&Next", size: 10);
@@ -54,7 +54,7 @@ internal sealed class RecordsForm : PosForm
 
         through.Value = day.ToDateTime(TimeOnly.MinValue);
         from.Value = product is null ? through.Value : through.Value.AddDays(-30);
-        var filters = PosView.FilterRow(PosView.Label("From", 11), from, PosView.Label("Through", 11), through);
+        var filters = PosView.FilterRow(PosView.DateRange(from, through));
         if (product is null)
         {
             var period = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 185, Anchor = AnchorStyles.Left, AccessibleName = "Report period" };
