@@ -1,9 +1,28 @@
 # kPOS
-Independent liquor store POS system
 
-The ordering worksheet under **Activity → Order and Receive** shows vendor items, selling units sold, prior and current stock, and unit and case costs. Choose a seven-day or thirty-day period. Under **Purchase Orders / Receiving**, **Receive from image** reads a scanned invoice with Tesseract OCR. Confirm the order item, selling units and unit cost for each invoice line before posting.
+Native Windows point-of-sale and back-office software for independent liquor stores.
 
-In **Sales Records**, choose **Department Gross Profit** and **Detailed report** to print the landscape department matrix. **Set Promotions** supports barcode or name searches, dated fixed prices and percentage discounts. **Current promotions** lists active and scheduled offers and allows cancellation.
+## Install or update
+
+- **New installation.** Download the Windows x64 ZIP, extract `kPOS.exe`, and open it to start setup. Choose the default folder or select an installation folder. The package includes the .NET runtime. [GitHub releases](https://github.com/JohnnKim/kPOS/releases)
+- **Existing installation.** Open **Settings → Updates → Check for Updates**, then choose **Install and Restart**. kPOS backs up the database before a schema upgrade.
+- **Windows app listing.** Starting with preview 52, setup and startup register kPOS for the current Windows account. Search for **kPOS** in Start to launch it, or look under **Settings → Apps → Installed apps** for its version.
+
+## Orders and receiving
+
+Open **Activity → Order and Receive** and choose one distributor. Select a seven-day or thirty-day sales period. Use Up/Down to move between items and Left/Right or the on-screen arrows to change **Order Units**. Quantities save as you edit. **Reset quantities** clears the selected distributor’s quantities.
+
+**Purchase Order** opens the order details, export, and print preview. Contact details save automatically. Use **Receive Order** to record partial or complete deliveries. **Receive from image** reads scanned invoices with Tesseract OCR and lets you confirm items, units, and costs before posting. Use **Show hidden orders** to find and restore orders hidden from the receiving list.
+
+## Records and connected terminals
+
+Sales Records columns fill the table, and table text returns to its original size when you restore the window size. Item Lookup sizes the barcode column to its contents. In **Sales Records**, choose **Department Gross Profit** and **Detailed report** to print the landscape department matrix.
+
+Remote Connection opens the same full-size Orders, Item Catalog, and Sales Records screens with the connected store’s data. Update the store host and remote client to the same build. Store Terminal (LAN) is the separate checkout window for tills that share the store’s sales and inventory. [Remote Connection guide](docs/Home-Terminal.md) · [Store Terminal guide](docs/Store-Terminals.md)
+
+## Earlier preview notes
+
+**Set Promotions** supports barcode or name searches, dated fixed prices and percentage discounts. **Current promotions** lists active and scheduled offers and allows cancellation.
 
 Preview.42 adds inventory and vendor import, dated promotions, Avery label printing, and printable period sales and department profit reports.
 
@@ -33,10 +52,10 @@ and hardware/connection options are in [Home-Terminal.md](docs/Home-Terminal.md)
 
 ## kPOS – Product / Development Report
 
-November 24th 2026
+Planning snapshot from November 24, 2026.
 
 Windows oriented Point-Of-Sale and back office software for independent liquor retail
-Current Stage: Windows testing preview, v0.1.0-preview.41
+Stage at the time of this report: Windows testing preview, v0.1.0-preview.41
 
 ## Executive Summary
 kPOS is being built to replace an aging LiquorPOS system that the store uses to ring up sales, manage products, track inventory, place orders, and close the day. The current Windows XP based system contains years of work that would be expensive to recreate and easy to lose in a haphazard transition. The mission statement is to preserve that progress while also modernizing the current system.
