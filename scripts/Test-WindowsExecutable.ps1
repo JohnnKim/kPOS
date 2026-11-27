@@ -93,27 +93,25 @@ public static class KposExecutableTest
                 IntPtr settings = FindWindow(desktop, process.ProcessId, "Settings");
                 WaitUntil(() => TextIsInBounds(settings, "Change display duration (seconds)") &&
                     TextIsInBounds(settings, "&Save Settings"), "show the Settings form and its save button");
-                IntPtr tabs = FindChildByClass(settings, "WindowsForms10.SysTabControl32.");
-                Send(tabs, 0x1330, 1); Send(tabs, 0x0100, 0x20); Send(tabs, 0x0101, 0x20); // Select Display tab
+                Send(WaitForChildWithText(settings, "Display"), 0x00F5, 0);
                 WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen") &&
                     HasText(settings, "Show last change on the sales screen"), "show both display settings");
-                Send(tabs, 0x1330, 3); Send(tabs, 0x0100, 0x20); Send(tabs, 0x0101, 0x20); // Select Shortcuts tab
-                WaitUntil(() => HasText(settings, "Stock in Orders (F6)") && HasText(settings, "Submit fast barcode scans without Enter"),
+                Send(WaitForChildWithText(settings, "Shortcuts"), 0x00F5, 0);
+                WaitUntil(() => HasText(settings, "Drawer expense") && HasText(settings, "Submit fast barcode scans without Enter"),
                     "reach the expanded shortcut settings by scrolling");
-                Send(tabs, 0x1330, 1); Send(tabs, 0x0100, 0x20); Send(tabs, 0x0101, 0x20); // Return to Display tab
+                Send(WaitForChildWithText(settings, "Display"), 0x00F5, 0);
                 WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen"), "return to display settings");
                 IntPtr showKeys = FindChildWithText(settings, "Show Register Keys on the sales screen");
                 IntPtr showChange = FindChildWithText(settings, "Show last change on the sales screen");
                 Send(showKeys, 0x00F5, 0);
                 Send(showChange, 0x00F5, 0);
                 Send(FindChildWithText(settings, "&Save Settings"), 0x00F5, 0);
-                WaitUntil(() => HasText(register, "Settings saved.") && !TextIsInBounds(register, "Register Keys") &&
+                WaitUntil(() => !IsWindow(settings) && HasText(register, "Settings saved.") && !TextIsInBounds(register, "Register Keys") &&
                     !TextIsInBounds(register, "Last change"), "apply display settings to the register");
 
                 Send(FindChildWithText(register, "Se&ttings"), 0x00F5, 0);
                 settings = FindWindow(desktop, process.ProcessId, "Settings");
-                tabs = FindChildByClass(settings, "WindowsForms10.SysTabControl32.");
-                Send(tabs, 0x1330, 1); Send(tabs, 0x0100, 0x20); Send(tabs, 0x0101, 0x20); // Reopen Display tab
+                Send(WaitForChildWithText(settings, "Display"), 0x00F5, 0);
                 WaitUntil(() => HasText(settings, "Show Register Keys on the sales screen"), "reopen display settings");
                 Send(FindChildWithText(settings, "Show Register Keys on the sales screen"), 0x00F5, 0);
                 Send(FindChildWithText(settings, "Show last change on the sales screen"), 0x00F5, 0);
@@ -254,20 +252,15 @@ public static class KposExecutableTest
                 Send(records, 0x0010, 0); // WM_CLOSE
                 Send(FindChildWithText(register, "Or&ders"), 0x00F5, 0); // BM_CLICK
                 IntPtr orders = FindWindow(desktop, process.ProcessId, "Orders");
-                WaitUntil(() => HasText(orders, "&Purchase Order…") && HasText(orders, "&Stock… (Alt+S)"), "open the order worksheet");
-                Send(FindChildWithText(orders, "&Item Details…"), 0x00F5, 0);
-                IntPtr itemDetails = FindWindow(desktop, process.ProcessId, "Order Item Details");
-                Send(itemDetails, 0x0010, 0);
-                WaitUntil(() => !IsWindow(itemDetails), "close order item details");
-                Send(FindChildWithText(orders, "&Stock… (Alt+S)"), 0x00F5, 0);
-                IntPtr stock = FindWindow(desktop, process.ProcessId, "Inventory Stock");
-                Send(stock, 0x0010, 0);
-                WaitUntil(() => !IsWindow(stock), "close stock entry");
-                Send(FindChildWithText(orders, "&Purchase Order…"), 0x00F5, 0);
-                IntPtr purchase = FindWindow(desktop, process.ProcessId, "Purchase Order");
-                WaitUntil(() => HasText(purchase, "Printable HTML") && HasText(purchase, "Spreadsheet CSV"), "show order output formats");
-                Send(purchase, 0x0010, 0);
-                WaitUntil(() => !IsWindow(purchase), "close purchase order");
+                WaitUntil(() => HasText(orders, "&Distributor") && HasText(orders, "&Purchase Order…") &&
+                    HasText(orders, "&Receive Order…") && HasText(orders, "Use &Suggestion") && HasText(orders, "Reset quantities"),
+                    "open the distributor order worksheet");
+                Send(WaitForChildWithText(orders, "&Receive Order…"), 0x00F5, 0);
+                IntPtr receiving = FindWindow(desktop, process.ProcessId, "Receive Order");
+                WaitUntil(() => HasText(receiving, "Show hidden orders") && HasText(receiving, "Receive Remaining"),
+                    "show purchase orders and receiving actions");
+                Send(receiving, 0x0010, 0);
+                WaitUntil(() => !IsWindow(receiving) && IsWindowEnabled(orders), "return to the order worksheet");
                 Send(orders, 0x0010, 0); // WM_CLOSE
                 Send(FindChildWithText(register, "Catalo&g"), 0x00F5, 0); // BM_CLICK
                 IntPtr catalog = FindWindow(desktop, process.ProcessId, "Product List");
@@ -431,6 +424,8 @@ public static class KposExecutableTest
                 else
                 {
                     home = FindWindow(desktop, process.ProcessId, storeTerminal ? "kPOS — Store Terminal (LAN)" : "kPOS — Remote Connection");
+                    if (storeTerminal)
+                        Send(WaitForChildWithText(home, "Connection Setup"), 0x00F5, 0);
                     WaitUntil(() => storeTerminal
                         ? HasText(home, "Paste Store Pairing") && HasText(home, "Connect to Host") && HasText(home, "Store checkout key")
                         : HasText(home, "Connect / Refresh") && HasText(home, "Request Order") && HasText(home, "Certificate SHA256"),
@@ -738,8 +733,11 @@ public static class KposExecutableTest
         for (IntPtr parent = GetParent(child); parent != IntPtr.Zero; parent = GetParent(parent))
         {
             WindowRect bounds;
-            if (!GetWindowRect(parent, out bounds) || label.Left < bounds.Left || label.Top < bounds.Top ||
-                label.Right > bounds.Right || label.Bottom > bounds.Bottom)
+            // WinForms can round a proportionally scaled child one pixel beyond its parent.
+            const int layoutRoundingTolerance = 2;
+            if (!GetWindowRect(parent, out bounds) ||
+                label.Left < bounds.Left - layoutRoundingTolerance || label.Top < bounds.Top - layoutRoundingTolerance ||
+                label.Right > bounds.Right + layoutRoundingTolerance || label.Bottom > bounds.Bottom + layoutRoundingTolerance)
                 return false;
             if (parent == root)
                 return true;

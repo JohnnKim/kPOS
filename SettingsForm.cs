@@ -47,11 +47,7 @@ internal sealed class SettingsForm : PosForm
         var showKeys = Option("Show Register Keys on the sales screen", data.ShowRegisterKeys);
         var showChange = Option("Show last change on the sales screen", data.ShowLastChange);
         AddTab("Checkout", ("Change display duration (seconds)", duration), (null, requireCount));
-        var displayText=new TextBox{Text=data.DisplayMessage,MaxLength=RegisterData.RegisterMessageLimit,Multiline=false,Dock=DockStyle.Top,Height=72,Width=400,AccessibleName="Register display text"};
-        var charactersLeft=PosView.Label("",10,color:PosView.Muted);charactersLeft.AccessibleName="Register text characters left";
-        void UpdateCharactersLeft()=>charactersLeft.Text=$"{displayText.MaxLength-displayText.Text.Length} characters left";
-        displayText.TextChanged+=(_,_)=>UpdateCharactersLeft();UpdateCharactersLeft();
-        AddTab("Display", (null, maximize), (null, showKeys), (null, showChange),(null,PosView.Label("Register text (optional, 24 characters)",11)),(null,displayText),(null,charactersLeft));
+        AddTab("Display", (null, maximize), (null, showKeys), (null, showChange));
         OrderContact company = data.ReadOrderBusiness();
         TextBox CompanyField(string value) => new() { Text = value, Dock = DockStyle.Top };
         var companyName = CompanyField(company.Name);
@@ -66,14 +62,13 @@ internal sealed class SettingsForm : PosForm
         var miscKey = Shortcut(keys.Misc);
         var refundKey = Shortcut(keys.Refund);
         var expenseKey = Shortcut(keys.Expense);
-        var stockKey = Shortcut(keys.Stock);
         var autoScan = Option("Submit fast barcode scans without Enter", keys.AutoScan);
         var extraKeys = RegisterKeys.DefaultExtras().Keys.ToDictionary(action => action, action => Shortcut(keys[action]));
         var shortcutRows = new List<(string? Label, Control Input)>
         {
             (null, PosView.Label("Type a shortcut and press Enter. Leave it blank to search products instead.", 10, color: PosView.Muted)),
             ("Quantity", quantityKey), ("Lottery", lotteryKey), ("Misc", miscKey), ("Refund", refundKey),
-            ("Drawer expense", expenseKey), ("Stock in Orders (F6)", stockKey)
+            ("Drawer expense", expenseKey)
         };
         shortcutRows.AddRange(extraKeys.Select(pair => ((string?)pair.Key, (Control)pair.Value)));
         shortcutRows.Add((null, autoScan)); AddTab("Shortcuts", shortcutRows.ToArray());
@@ -103,8 +98,8 @@ internal sealed class SettingsForm : PosForm
             {
                 RegisterInstallation.ValidateDestination(folders, picker.SelectedPath);
                 if (MessageBox.Show(this, $"Copy kPOS, the database, and all records to:\n{picker.SelectedPath}\n\nkPOS will reopen in the new folder. The original folder will be kept.",
-                    "Change Directory", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes) return;
-                data.DisplayMessage=displayText.Text;
+                    "Change Directory", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes) return;
+
                 data.SaveSettings(rate.Value, (int)duration.Value, requireCount.Checked, maximize.Checked,
                     CurrentKeys(), showKeys.Checked, showChange.Checked, CurrentTaxes(), hardware.Value);
                 data.SaveOrderBusiness(company with { Name = companyName.Text.Trim(), Address = companyAddress.Text.Trim(), Phone = companyPhone.Text.Trim(), Email = companyEmail.Text.Trim() });
@@ -120,9 +115,9 @@ internal sealed class SettingsForm : PosForm
         updates.Enabled = registerIdle;
         updates.Click += (_, _) =>
         {
-            if (displayText.Text != data.DisplayMessage || CurrentTaxes() != data.ReadTaxes() || hardware.Value != data.ReadHardware() || duration.Value != data.ChangeSeconds ||
+            if (CurrentTaxes() != data.ReadTaxes() || hardware.Value != data.ReadHardware() || duration.Value != data.ChangeSeconds ||
                 requireCount.Checked != data.RequireItemCount || maximize.Checked != data.StartMaximized ||
-                showKeys.Checked != data.ShowRegisterKeys || showChange.Checked != data.ShowLastChange || !CurrentKeys().SaleCommands.SequenceEqual(keys.SaleCommands) || CurrentKeys().Stock != keys.Stock || CurrentKeys().AutoScan != keys.AutoScan)
+                showKeys.Checked != data.ShowRegisterKeys || showChange.Checked != data.ShowLastChange || !CurrentKeys().SaleCommands.SequenceEqual(keys.SaleCommands) || CurrentKeys().AutoScan != keys.AutoScan)
             {
                 MessageBox.Show(this, "Save your settings before installing an update.", "kPOS Updates");
                 return;
@@ -156,7 +151,7 @@ internal sealed class SettingsForm : PosForm
         };
         actions.Controls.AddRange([cancel, save]);
         layout.Controls.Add(header, 0, 0);
-        layout.Controls.Add(tabs, 0, 1);
+        layout.Controls.Add(PosView.Navigation(tabs), 0, 1);
         layout.Controls.Add(actions, 0, 2);
         Controls.Add(layout);
         AcceptButton = save;
@@ -165,7 +160,7 @@ internal sealed class SettingsForm : PosForm
         {
             try
             {
-                data.DisplayMessage=displayText.Text;
+
                 data.SaveSettings(rate.Value, (int)duration.Value, requireCount.Checked, maximize.Checked,
                     CurrentKeys(), showKeys.Checked, showChange.Checked, CurrentTaxes(), hardware.Value);
                 data.SaveOrderBusiness(company with { Name = companyName.Text.Trim(), Address = companyAddress.Text.Trim(), Phone = companyPhone.Text.Trim(), Email = companyEmail.Text.Trim() });
@@ -179,7 +174,7 @@ internal sealed class SettingsForm : PosForm
         ResumeLayout();
 
         RegisterKeys CurrentKeys() => new(quantityKey.Text, lotteryKey.Text, miscKey.Text,
-            stockKey.Text, autoScan.Checked, refundKey.Text, expenseKey.Text, extraKeys.ToDictionary(pair => pair.Key, pair => pair.Value.Text));
+            keys.Stock, autoScan.Checked, refundKey.Text, expenseKey.Text, extraKeys.ToDictionary(pair => pair.Key, pair => pair.Value.Text));
 
         Label IdleMessage(string text)
         {

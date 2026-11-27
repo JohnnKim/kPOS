@@ -7,11 +7,13 @@ namespace Kpos;
 internal sealed class RecordsForm : PosForm
 {
     private const int PageSize = 200;
-    private readonly RegisterData data;
+    private readonly RegisterData? data;
+    private readonly HomeTerminalClient? remote;
+    private readonly CancellationToken remoteToken;
     private readonly RegisterFolders folders;
     private readonly string? barcode;
-    private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 160 };
-    private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 160 };
+    private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 185, AccessibleName = "From" };
+    private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 185, AccessibleName = "Through" };
     private readonly TabControl tabs = new() { Multiline = true, Appearance = TabAppearance.Buttons, Dock = DockStyle.Fill };
     private readonly Button previous = PosView.Button("&Previous", size: 10);
     private readonly Button next = PosView.Button("&Next", size: 10);
@@ -20,10 +22,21 @@ internal sealed class RecordsForm : PosForm
     private readonly Label status = new() { AutoSize = true, Margin = new Padding(6, 8, 3, 3) };
     private long offset;
     private bool saving;
+    private int reportVersion;
 
     public RecordsForm(RegisterData data, RegisterFolders folders, Product? product = null)
+        : this(data, folders, product, null, data.CurrentBusinessDate(), default) { }
+
+    internal RecordsForm(HomeTerminalClient client, DateOnly day, CancellationToken token, Product? product = null)
+        : this(null, new RegisterFolders(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "kPOS", "RemoteReports")), product, client, day, token) { }
+
+    private RecordsForm(RegisterData? data, RegisterFolders folders, Product? product, HomeTerminalClient? remote,
+        DateOnly day, CancellationToken token)
     {
         this.data = data;
+        this.remote = remote;
+        remoteToken = token;
         this.folders = folders;
         barcode = product?.Barcode;
         Text = product is null ? "Sales Records" : $"Item History - {product.Description}";
@@ -39,31 +52,28 @@ internal sealed class RecordsForm : PosForm
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        var filters = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
-        from.Value = product is null ? DateTime.Today : DateTime.Today.AddDays(-30);
-        through.Value = data.CurrentBusinessDate().ToDateTime(TimeOnly.MinValue);
-        filters.Controls.AddRange([
-            new Label { Text = "From", AutoSize = true, Margin = new Padding(3, 8, 3, 3) }, from,
-            new Label { Text = "Through", AutoSize = true, Margin = new Padding(8, 8, 3, 3) }, through]);
+        through.Value = day.ToDateTime(TimeOnly.MinValue);
+        from.Value = product is null ? through.Value : through.Value.AddDays(-30);
+        var filters = PosView.FilterRow(PosView.Label("From", 11), from, PosView.Label("Through", 11), through);
         if (product is null)
         {
-            var period = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170 };
+            var period = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 185, Anchor = AnchorStyles.Left, AccessibleName = "Report period" };
             period.Items.AddRange(["Today", "Month to date", "Date period"]);
             period.SelectedIndexChanged += (_, _) =>
             {
                 bool custom = period.SelectedIndex == 2;
                 from.Enabled = through.Enabled = custom;
                 if (custom) return;
-                var day = data.CurrentBusinessDate().ToDateTime(TimeOnly.MinValue);
-                from.Value = period.SelectedIndex == 0 ? day : new DateTime(day.Year, day.Month, 1);
-                through.Value = day;
+                var current = (data?.CurrentBusinessDate() ?? day).ToDateTime(TimeOnly.MinValue);
+                from.Value = period.SelectedIndex == 0 ? current : new DateTime(current.Year, current.Month, 1);
+                through.Value = current;
             };
             filters.Controls.Add(period);
             filters.Controls.SetChildIndex(period, 0);
             period.SelectedIndex = 0;
         }
         layout.Controls.Add(filters, 0, 0);
-        layout.Controls.Add(tabs, 0, 1);
+
         if (product is null)
         {
             AddTab("Totals", RecordReport.Totals);
@@ -77,6 +87,7 @@ internal sealed class RecordsForm : PosForm
         AddTab("Item Sales History", RecordReport.SaleLines);
         AddTab("Price History", RecordReport.PriceHistory);
 
+        layout.Controls.Add(PosView.Navigation(tabs), 0, 1);
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         var close = PosView.Button("Close", size: 10);
         close.DialogResult = DialogResult.Cancel;
@@ -84,32 +95,39 @@ internal sealed class RecordsForm : PosForm
         actions.Controls.AddRange([previous, next, details, archive, close, status]);
         if (product is null)
         {
-            var reportKind = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 245 };
+            var reportKind = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 275, Anchor = AnchorStyles.Left };
             reportKind.Items.AddRange(["Sales Period Report", "Department Gross Profit", "Both reports"]);
             reportKind.SelectedIndex = 0;
             var print = PosView.Button("Detailed report…", size: 10);
-            print.Click += (_, _) =>
+            print.Click += async (_, _) =>
             {
                 var (start, end) = Dates();
                 if (end < start) { status.Text = "Choose a valid date period."; return; }
-                try { PeriodReport.Open(data.BuildPeriodReport(start, end, reportKind.SelectedIndex), folders); }
-                catch (Exception ex) when (ex is SqliteException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+                try
+                {
+                    string html = data is not null ? data.BuildPeriodReport(start, end, reportKind.SelectedIndex)
+                        : await remote!.PeriodReportAsync(start, end, reportKind.SelectedIndex, remoteToken);
+                    if (!IsDisposed) PeriodReport.Open(html, folders);
+                }
+                catch (OperationCanceledException) when (IsDisposed || remoteToken.IsCancellationRequested) { }
+                catch (Exception ex) when (ex is SqliteException or IOException or HttpRequestException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
                 { MessageBox.Show(this, ex.Message, "Detailed report"); }
             };
             filters.Controls.AddRange([reportKind, print]);
         }
-        details.Click += (_, _) => OpenSelectedSale();
-        archive.Visible = product is null;
+        details.Click += async (_, _) => await OpenSelectedSale();
+        archive.Visible = product is null && data is not null;
         layout.Controls.Add(actions, 0, 2);
         Controls.Add(layout);
 
-        Shown += (_, _) => RefreshReport(reset: true);
-        _=new LocalDataWatch(this,data,()=>{if(!saving)RefreshReport(reset:false);});
-        tabs.SelectedIndexChanged += (_, _) => RefreshReport(reset: true);
-        from.ValueChanged += (_, _) => RefreshReport(reset: true);
-        through.ValueChanged += (_, _) => RefreshReport(reset: true);
-        previous.Click += (_, _) => { offset -= PageSize; RefreshReport(reset: false); };
-        next.Click += (_, _) => { offset += PageSize; RefreshReport(reset: false); };
+        Shown += async (_, _) => await RefreshReport(reset: true);
+        if (data is not null) _ = new LocalDataWatch(this, data, async () => { if (!saving) await RefreshReport(reset: false); });
+        if (remote is not null) this.WatchRemoteChanges(remote, revision => _ = RefreshReport(reset: false), remoteToken);
+        tabs.SelectedIndexChanged += async (_, _) => await RefreshReport(reset: true);
+        from.ValueChanged += async (_, _) => await RefreshReport(reset: true);
+        through.ValueChanged += async (_, _) => await RefreshReport(reset: true);
+        previous.Click += async (_, _) => { offset = Math.Max(0, offset - ReportPageSize); await RefreshReport(reset: false); };
+        next.Click += async (_, _) => { offset += ReportPageSize; await RefreshReport(reset: false); };
         archive.Click += async (_, _) => await ArchiveDay();
     }
 
@@ -119,7 +137,7 @@ internal sealed class RecordsForm : PosForm
         var grid = CreateGrid();
         if (report == RecordReport.Sales)
         {
-            grid.CellDoubleClick += (_, args) => { if (args.RowIndex >= 0) OpenSelectedSale(); };
+            grid.CellDoubleClick += async (_, args) => { if (args.RowIndex >= 0) await OpenSelectedSale(); };
             grid.SelectionChanged += (_, _) => details.Enabled = grid.CurrentRow is not null;
         }
         page.Controls.Add(grid);
@@ -130,26 +148,30 @@ internal sealed class RecordsForm : PosForm
     {
         if (keys == Keys.Enter && tabs.SelectedTab?.Tag is RecordReport.Sales && tabs.SelectedTab.ContainsFocus)
         {
-            OpenSelectedSale();
+            _ = OpenSelectedSale();
             return true;
         }
         return base.ProcessCmdKey(ref message, keys);
     }
 
-    private void OpenSelectedSale()
+    private async Task OpenSelectedSale()
     {
         if (tabs.SelectedTab?.Tag is RecordReport.Sales && tabs.SelectedTab.Controls[0] is DataGridView grid &&
             grid.CurrentRow?.DataBoundItem is DataRowView row && row["Sale ID"] is string id)
-            ViewSale(id, row.Row);
+            await ViewSale(id, row.Row);
     }
 
-    private void RefreshReport(bool reset)
+    private int ReportPageSize => remote is null ? PageSize : 100;
+
+    private async Task RefreshReport(bool reset)
     {
         if (tabs.SelectedTab is not TabPage page || page.Tag is not RecordReport report)
             return;
 
         if (reset)
             offset = 0;
+        int version = ++reportVersion;
+        long pageNumber = offset / ReportPageSize;
         var grid = (DataGridView)page.Controls[0];
         previous.Visible = next.Visible = report != RecordReport.Totals;
         details.Visible = report == RecordReport.Sales;
@@ -166,28 +188,43 @@ internal sealed class RecordsForm : PosForm
 
         try
         {
-            DataTable results = data.ReadReport(report, start, end, barcode, limit: PageSize + 1, offset: offset);
-            next.Enabled = results.Rows.Count > PageSize;
-            if (next.Enabled)
-                results.Rows.RemoveAt(PageSize);
+            DataTable results;
+            bool more;
+            if (data is not null)
+            {
+                results = data.ReadReport(report, start, end, barcode, limit: PageSize + 1, offset: offset);
+                more = results.Rows.Count > PageSize;
+                if (more) results.Rows.RemoveAt(PageSize);
+            }
+            else
+            {
+                previous.Enabled = next.Enabled = false;
+                HomeTable table = await remote!.ReportAsync(report, start, end, (int)pageNumber, barcode, null, remoteToken);
+                if (IsDisposed || version != reportVersion) return;
+                results = table.ToDataTable(typed: true);
+                more = table.More;
+            }
+            next.Enabled = more;
             previous.Enabled = offset > 0;
             Bind(grid, results, report);
             status.Text = report switch
             {
                 RecordReport.Totals => "",
                 RecordReport.Sales when results.Rows.Count > 0 =>
-                    $"Page {offset / PageSize + 1}. Open a sale to see its items and receipt.",
-                _ => results.Rows.Count == 0 ? "No records for these dates." : $"Page {offset / PageSize + 1}"
+                    $"Page {pageNumber + 1}. Open a sale to see its items and receipt.",
+                _ => results.Rows.Count == 0 ? "No records for these dates." : $"Page {pageNumber + 1}"
             };
         }
-        catch (SqliteException error)
+        catch (OperationCanceledException) when (IsDisposed || remoteToken.IsCancellationRequested) { }
+        catch (Exception error) when (error is SqliteException or IOException or HttpRequestException or OperationCanceledException)
         {
+            if (IsDisposed || version != reportVersion) return;
             status.Text = "The report could not be read.";
             MessageBox.Show(this, error.Message, "Report Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
-    private void ViewSale(string saleId, DataRow sale)
+    private async Task ViewSale(string saleId, DataRow sale)
     {
         (DateOnly start, DateOnly end) = Dates();
         using var details = new PosForm
@@ -198,7 +235,20 @@ internal sealed class RecordsForm : PosForm
         var grid = CreateGrid();
         try
         {
-            DataTable lines = data.ReadReport(RecordReport.SaleLines, start, end, saleId: saleId);
+            DataTable lines;
+            if (data is not null)
+                lines = data.ReadReport(RecordReport.SaleLines, start, end, saleId: saleId);
+            else
+            {
+                HomeTable page = await remote!.ReportAsync(RecordReport.SaleLines, start, end, 0, null, saleId, remoteToken);
+                lines = page.ToDataTable(typed: true);
+                while (page.More)
+                {
+                    page = await remote.ReportAsync(RecordReport.SaleLines, start, end, page.Page + 1, null, saleId, remoteToken);
+                    lines.Merge(page.ToDataTable(typed: true));
+                }
+                if (IsDisposed) return;
+            }
             if (lines.Rows.Count == 0)
             {
                 status.Text = "This sale is no longer available.";
@@ -223,7 +273,8 @@ internal sealed class RecordsForm : PosForm
             details.Controls.Add(actions);
             details.ShowDialog(this);
         }
-        catch (SqliteException error)
+        catch (OperationCanceledException) when (IsDisposed || remoteToken.IsCancellationRequested) { }
+        catch (Exception error) when (error is SqliteException or IOException or HttpRequestException or OperationCanceledException)
         {
             MessageBox.Show(this, error.Message, "Sale Items Unavailable", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
@@ -235,6 +286,7 @@ internal sealed class RecordsForm : PosForm
         string directory = Path.Combine(folders.DailyArchives, day.ToString("yyyy", CultureInfo.InvariantCulture),
             day.ToString("MM", CultureInfo.InvariantCulture));
         string destination = Path.Combine(directory, $"{day:yyyy-MM-dd}_{DateTime.Now:HHmmssfff}.zip");
+        if (data is null) return;
         string databasePath = data.DatabasePath;
         try
         {
@@ -301,7 +353,7 @@ internal sealed class RecordsForm : PosForm
             if (e.ColumnIndex >= 0 && grid.Columns[e.ColumnIndex].DataPropertyName is "Sold at" or "Recorded at" &&
                 e.Value is string value && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
             {
-                e.Value = time.ToString("MM/dd/yyyy'\n'HH:mm", CultureInfo.InvariantCulture);
+                e.Value = time.ToString("MM/dd/yyyy HH:mm", CultureInfo.InvariantCulture);
                 e.FormattingApplied = true;
             }
         };
@@ -310,6 +362,20 @@ internal sealed class RecordsForm : PosForm
 
     private static void Bind(DataGridView grid, DataTable table, RecordReport report, bool individualSale = false)
     {
+        if (grid.Columns.Cast<DataGridViewColumn>().Select(column => column.DataPropertyName)
+            .SequenceEqual(table.Columns.Cast<DataColumn>().Select(column => column.ColumnName)))
+        {
+            grid.DataSource = table;
+            return;
+        }
+        grid.DataSource = null;
+        grid.AutoGenerateColumns = false;
+        grid.Columns.Clear();
+        foreach (DataColumn field in table.Columns)
+            grid.Columns.Add(new DataGridViewTextBoxColumn {
+                Name = field.ColumnName, HeaderText = field.ColumnName, DataPropertyName = field.ColumnName,
+                DefaultCellStyle = new DataGridViewCellStyle { NullValue = "" }
+            });
         grid.DataSource = table;
         foreach (DataGridViewColumn column in grid.Columns)
         {
@@ -365,6 +431,6 @@ internal sealed class RecordsForm : PosForm
                 column.DefaultCellStyle.FormatProvider = CultureInfo.GetCultureInfo("en-US");
                 column.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
             }
-        } grid.AutoSizeColumnsMode = report is RecordReport.Closeout or RecordReport.PriceHistory ? DataGridViewAutoSizeColumnsMode.AllCells : DataGridViewAutoSizeColumnsMode.Fill;
+        }
     }
 }

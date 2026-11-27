@@ -5,19 +5,32 @@ using Microsoft.AspNetCore.Http;
 
 namespace Kpos;
 
-internal sealed record HomeTable(string[] Columns, string?[][] Rows, bool More = false, int Page = 0)
+internal sealed record HomeTable(string[] Columns, string?[][] Rows, bool More = false, int Page = 0, string[]? ColumnTypes = null)
 {
     internal static HomeTable From(DataTable table, int page = 0, int pageSize = 100) => new(
         table.Columns.Cast<DataColumn>().Select(column => column.ColumnName).ToArray(),
         table.Rows.Cast<DataRow>().Take(pageSize).Select(row => row.ItemArray.Select(value =>
             value is null or DBNull ? null : Convert.ToString(value, CultureInfo.InvariantCulture)).ToArray()).ToArray(),
-        table.Rows.Count > pageSize, page);
+        table.Rows.Count > pageSize, page, table.Columns.Cast<DataColumn>().Select(column => column.DataType.Name).ToArray());
 
-    internal DataTable ToDataTable()
+    internal DataTable ToDataTable(bool typed = false)
     {
         var table = new DataTable();
-        foreach (string column in Columns) table.Columns.Add(column);
-        foreach (string?[] row in Rows) table.Rows.Add(row.Select(value => (object?)value ?? DBNull.Value).ToArray());
+        for (int i = 0; i < Columns.Length; i++)
+        {
+            Type type = typed && ColumnTypes is not null && i < ColumnTypes.Length ? ColumnTypes[i] switch
+            {
+                nameof(Decimal) => typeof(decimal),
+                nameof(Int32) => typeof(int),
+                nameof(Int64) => typeof(long),
+                nameof(Double) => typeof(double),
+                _ => typeof(string)
+            } : typeof(string);
+            table.Columns.Add(Columns[i], type);
+        }
+        foreach (string?[] row in Rows)
+            table.Rows.Add(row.Select((value, i) => value is null ? DBNull.Value
+                : Convert.ChangeType(value, table.Columns[i].DataType, CultureInfo.InvariantCulture)).ToArray());
         return table;
     }
 }
@@ -25,6 +38,7 @@ internal sealed record HomeTable(string[] Columns, string?[][] Rows, bool More =
 internal sealed record HomeItemDetails(Product Product, CatalogDetails Catalog, long? OnHand, long Draft,
     OrderContact? Supplier, HomeTable StockHistory, HomeTable PriceHistory, HomeTable SalesHistory, ItemActivity? Activity = null);
 internal sealed record HomeOrderHistory(HomeOrderReceipt[] Items, bool More, int Page);
+internal sealed record CatalogBrowseRow(Product Product, CatalogDetails Details, ItemActivity? Activity, long? OnHand, long Units);
 
 internal static class HomeManagement
 {
@@ -46,12 +60,29 @@ internal static class HomeManagement
     {
         app.MapGet("/api/v1/suppliers", () =>
         { using var data = RegisterData.OpenHomeConnection(databasePath); return Results.Ok(data.ReadDistributors().Select(distributor => distributor.Details).ToArray()); });
+        app.MapGet("/api/v1/catalog", () =>
+        {
+            using var data = RegisterData.OpenHomeConnection(databasePath);
+            var day = data.CurrentBusinessDate();
+            var details = data.ReadCatalogDetails();
+            var activity = data.ReadItemActivity();
+            return Results.Ok(data.ReadOrderItems(day, day, day).Select(item => new CatalogBrowseRow(
+                item.Product, details.GetValueOrDefault(item.Product.Barcode) ?? new(),
+                activity.GetValueOrDefault(item.Product.Barcode), item.OnHand, item.Draft)).ToArray());
+        });
         app.MapGet("/api/v1/item", (string barcode) =>
         {
             if (barcode.Length is < 1 or > 100) return Results.BadRequest();
             using var data = RegisterData.OpenHomeConnection(databasePath);
             HomeItemDetails? item = Item(data, barcode);
             return item is null ? Results.NotFound() : Results.Ok(item);
+        });
+        app.MapGet("/api/v1/period-report", (DateOnly start, DateOnly end, int kind) =>
+        {
+            if (start > end || end.DayNumber - start.DayNumber > 3660 || kind is < 0 or > 2)
+                return Results.BadRequest();
+            using var data = RegisterData.OpenHomeConnection(databasePath);
+            return Results.Ok(data.BuildPeriodReport(start, end, kind));
         });
         app.MapGet("/api/v1/reports", (string kind, DateOnly start, DateOnly end, int? page, string? barcode, string? saleId, string? search) =>
         {

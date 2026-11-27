@@ -6,33 +6,56 @@ namespace Kpos;
 internal sealed class VendorDirectory : PosForm
 {
     public VendorDirectory(RegisterData data)
+        : this(() => Task.FromResult(data.ReadDistributors()), (id, contact) => Task.FromResult(data.SaveDistributor(id, contact))) { }
+
+    internal VendorDirectory(HomeTerminalClient client, CancellationToken token)
+        : this(async () => (await client.PurchasingAsync(token)).Vendors,
+            async (id, contact) => (await client.SaveOrderDistributorAsync(new(id, contact), token)).Id) { }
+
+    private VendorDirectory(Func<Task<IReadOnlyList<Distributor>>> load, Func<long?, OrderContact, Task<long>> save)
     {
         Text = "Vendors";
         ClientSize = new Size(1050, 590);
         var grid = HomeTerminalView.Grid();
-        void Reload() => grid.DataSource = data.ReadDistributors().Select(v => v.Details).ToArray();
-        void Edit(bool existing)
+        IReadOnlyList<Distributor> distributors = [];
+        async Task Reload()
+        {
+            distributors = await load();
+            if (!IsDisposed) grid.DataSource = distributors.Select(v => v.Details).ToArray();
+        }
+        async Task Edit(bool existing)
         {
             var vendor = existing ? grid.CurrentRow?.DataBoundItem as OrderContact : new OrderContact();
             if (vendor is null) return;
-            long? id = existing ? data.ReadDistributors().FirstOrDefault(v => v.Details == vendor)?.Id : null;
-            if (existing && id is null) { Reload(); return; }
+            long? id = existing ? distributors.FirstOrDefault(v => v.Details == vendor)?.Id : null;
+            if (existing && id is null) { await Reload(); return; }
             using var form = new TextFieldsForm(existing ? "Edit Vendor" : "New Vendor", ("Name", vendor.Name),
                 ("Contact", vendor.Contact), ("Phone", vendor.Phone), ("Email", vendor.Email),
                 ("Address", vendor.Address), ("Account", vendor.Account));
             if (form.ShowDialog(this) != DialogResult.OK) return;
             var values = form.Values;
             if (string.IsNullOrWhiteSpace(values[0])) { MessageBox.Show(this,"Enter a vendor name."); return; }
-            try { data.SaveDistributor(id, new(values[0].Trim(),values[1],values[2],values[3],values[4],values[5])); Reload(); }
-            catch (SqliteException ex) { MessageBox.Show(this,ex.Message,"Vendor could not be saved"); }
+            await save(id, new(values[0].Trim(), values[1], values[2], values[3], values[4], values[5]));
+            await Reload();
         }
-        var add = PosView.Button("New Vendor"); add.Click += (_, _) => Edit(false);
-        var edit = PosView.Button("Edit Vendor"); edit.Click += (_, _) => Edit(true);
+        var add = PosView.Button("New Vendor");
+        var edit = PosView.Button("Edit Vendor");
+        add.Click += async (_, _) => await Run(() => Edit(false));
+        edit.Click += async (_, _) => await Run(() => Edit(true));
         var layout = HomeTerminalView.Layout();
         HomeTerminalView.Row(layout, grid, true);
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(add, edit));
         Controls.Add(layout);
-        Reload();
+        Shown += async (_, _) => await Run(Reload);
+
+        async Task Run(Func<Task> action)
+        {
+            add.Enabled = edit.Enabled = false;
+            try { await action(); }
+            catch (Exception error) when (error is SqliteException or IOException or HttpRequestException or OperationCanceledException or ArgumentException)
+            { if (!IsDisposed) MessageBox.Show(this, error.Message, "Vendor directory"); }
+            finally { if (!IsDisposed) add.Enabled = edit.Enabled = true; }
+        }
     }
 }
 
@@ -45,15 +68,32 @@ internal sealed class ItemSelectionForm : PosForm
         Text = labels ? "Barcode Printer" : "Set Promotions";
         ClientSize = new Size(1160, 680);
         var products = labels ? data.LabelProducts() : data.ListProducts();
-        var matches = products.ToArray();
+        var offers = labels ? [] : data.CurrentPromotions();
+        var today = data.CurrentBusinessDate().ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var active = offers.Where(p => string.CompareOrdinal(p.From, today) <= 0).Select(p => p.Barcode)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var matches = products.Where(p => !active.Contains(p.Barcode)).ToArray();
+        var field = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140, AccessibleName = "Search by" };
+        field.Items.AddRange(["Barcode", "Name", "Item code"]);
+        field.SelectedIndex = 0;
         var search = new TextBox { Width = 360, PlaceholderText = "Scan a barcode or find an item by name" };
         var count = PosView.Label("0 selected", 11);
         var grid = new DataGridView { Dock = DockStyle.Fill, VirtualMode = true, RowHeadersVisible = false,
             AllowUserToAddRows = false, AllowUserToDeleteRows = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill };
         PosView.Grid(grid);
-        grid.RowTemplate.Height = 36; grid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Select", Width = 76, MinimumWidth = 72, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
+        grid.RowTemplate.Height = 36; grid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Select", Width = 108, MinimumWidth = 98, AutoSizeMode = DataGridViewAutoSizeColumnMode.None });
         foreach (var (caption, weight) in new[] { ("Barcode", 55), ("Item name", 120), ("Size", 40), ("Price", 35) })
             grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = caption, ReadOnly = true, FillWeight = weight });
+        grid.CellPainting += (_, e) =>
+        {
+            if (e.ColumnIndex != 0 || e.RowIndex < 0) return;
+            e.PaintBackground(e.ClipBounds, true);
+            int size = Math.Min(e.CellBounds.Height - 6, grid.LogicalToDeviceUnits(23));
+            var bounds = new Rectangle(e.CellBounds.X + (e.CellBounds.Width - size) / 2,
+                e.CellBounds.Y + (e.CellBounds.Height - size) / 2, size, size);
+            ControlPaint.DrawCheckBox(e.Graphics!, bounds, Equals(e.Value, true) ? ButtonState.Checked : ButtonState.Normal);
+            e.Handled = true;
+        };
         grid.CellValueNeeded += (_, e) =>
         {
             if ((uint)e.RowIndex >= (uint)matches.Length) return;
@@ -69,25 +109,29 @@ internal sealed class ItemSelectionForm : PosForm
         };
         grid.CurrentCellDirtyStateChanged += (_, _) => { if (grid.IsCurrentCellDirty) grid.CommitEdit(DataGridViewDataErrorContexts.Commit); };
         grid.RowCount = matches.Length;
-        search.TextChanged += (_, _) =>
+        void Filter()
         {
-            var q = search.Text.Trim();
-            matches = products.Where(p => p.Description.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                p.Barcode.Contains(q,StringComparison.OrdinalIgnoreCase) || p.Code.Contains(q,StringComparison.OrdinalIgnoreCase)).ToArray();
+            string q = search.Text.Trim();
+            matches = products.Where(p => !active.Contains(p.Barcode) &&
+                (field.SelectedIndex switch { 1 => p.Description, 2 => p.Code, _ => p.Barcode })
+                    .Contains(q, StringComparison.OrdinalIgnoreCase)).ToArray();
             grid.RowCount = matches.Length;
             grid.Invalidate();
-        };
+        }
+        search.TextChanged += (_, _) => Filter();
+        field.SelectedIndexChanged += (_, _) => { Filter(); search.Focus(); };
         search.KeyDown += (_, e) =>
         {
             if (e.KeyCode != Keys.Enter) return;
             e.SuppressKeyPress = true;
             var p = matches.FirstOrDefault(p => string.Equals(p.Barcode,search.Text.Trim(),StringComparison.OrdinalIgnoreCase));
-            p ??= data.FindScanProduct(search.Text.Trim());
-            if (p is null) return;
+            if (field.SelectedIndex == 0) p ??= data.FindScanProduct(search.Text.Trim());
+            else if (matches.Length == 1) p = matches[0];
+            if (p is null || active.Contains(p.Barcode)) return;
             selected.Add(labels ? p.ScannedBarcode ?? p.Barcode : p.Barcode); search.Clear(); count.Text = $"{selected.Count} selected"; grid.Invalidate();
         };
         var layout = HomeTerminalView.Layout();
-        HomeTerminalView.Row(layout, HomeTerminalView.Actions(search, count));
+        HomeTerminalView.Row(layout, HomeTerminalView.Actions(PosView.Label("Search by",11), field, search, count));
         HomeTerminalView.Row(layout, grid, true);
         var start = new DateTimePicker { Format = DateTimePickerFormat.Short, Width = 155 };
         var end = new DateTimePicker { Format = DateTimePickerFormat.Short, Width = 155 };
@@ -115,7 +159,41 @@ internal sealed class ItemSelectionForm : PosForm
             catch (Exception ex) when (ex is ArgumentException or InvalidPrinterException or SqliteException)
             { MessageBox.Show(this, ex.Message, Text); }
         };
-        HomeTerminalView.Row(layout, HomeTerminalView.Actions(apply));
+        var current = PosView.Button("Current promotions", size: 11);
+        current.Click += (_, _) =>
+        {
+            using var window = new PosForm { Text = "Current and scheduled promotions", ClientSize = new Size(900, 510) };
+            var list = HomeTerminalView.Grid();
+            var revoke = PosView.Button("Cancel selected promotion");
+            void RefreshOffers()
+            {
+                offers = data.CurrentPromotions();
+                list.DataSource = offers.Select(p => new { p.Barcode, p.Item, p.From, p.Through, p.Offer }).ToArray();
+                active.Clear();
+                active.UnionWith(offers.Where(p => string.CompareOrdinal(p.From, today) <= 0).Select(p => p.Barcode));
+                selected.ExceptWith(active);
+                count.Text = $"{selected.Count} selected";
+                Filter();
+            }
+            revoke.Click += (_, _) =>
+            {
+                if (list.CurrentRow is not { Index: >= 0 } row || row.Index >= offers.Count) return;
+                var offer = offers[row.Index];
+                if (MessageBox.Show(window, $"Cancel {offer.Offer} for {offer.Item}?", "Cancel promotion",
+                    MessageBoxButtons.OKCancel, MessageBoxIcon.Question) == DialogResult.OK)
+                {
+                    data.CancelPromotion(offer);
+                    RefreshOffers();
+                }
+            };
+            var panel = HomeTerminalView.Layout();
+            HomeTerminalView.Row(panel, list, true);
+            HomeTerminalView.Row(panel, HomeTerminalView.Actions(revoke));
+            window.Controls.Add(panel);
+            RefreshOffers();
+            window.ShowDialog(this);
+        };
+        HomeTerminalView.Row(layout, labels ? HomeTerminalView.Actions(apply) : HomeTerminalView.Actions(apply, current));
         Controls.Add(layout);
         Shown += (_, _) => search.Focus();
     }

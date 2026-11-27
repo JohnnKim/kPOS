@@ -5,18 +5,21 @@ namespace Kpos;
 
 internal sealed record ItemSetup(string Class = "Standard", string Bin = "", long Par = 0, long ReorderPoint = 0,
     long ShelfCapacity = 0, long ShelfQuantity = 0, bool OrderCases = false, string Notes = "", bool DiscountAllowed = true, bool CigTaxable = false);
-internal sealed record OrderQuantity(string Barcode, long Units, long? Expected = null);
-internal sealed record PlacePurchaseRequest(Guid Id, long SupplierId, string Number, DateOnly? Due, string Notes, OrderQuantity[] Lines);
+internal sealed record OrderQuantity(string Barcode, long Units, long? Expected = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] decimal? InvoiceUnitCost = null);
+internal sealed record PlacePurchaseRequest(Guid Id, long SupplierId, string Number, DateOnly? Due, string Notes, OrderQuantity[] Lines,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)] bool RequireAssignedDistributor = false);
 internal sealed record ReceivePurchaseRequest(Guid Id, Guid OrderId, OrderQuantity[] Lines);
 internal sealed record PurchaseLine(Product Product, long Ordered, long Received, decimal? UnitCost, string VendorCode)
 { public long Remaining => Ordered - Received; }
 internal sealed record SavedPurchaseOrder(Guid Id, string Number, DateTimeOffset Created, DateOnly? Due, string Notes,
-    OrderContact Business, OrderContact Supplier, PurchaseLine[] Lines, string Status)
+    OrderContact Business, OrderContact Supplier, PurchaseLine[] Lines, string Status, bool Hidden = false)
 { public decimal? Cost => Lines.Any(line => line.UnitCost is null) ? null : MoneyMath.Up(Lines.Sum(line => line.Ordered * line.UnitCost!.Value)); }
 internal sealed record ItemActivity(long Sold7, long Sold30, long Sold90, long MonthToDate, long YearToDate,
     DateOnly? LastSale, DateOnly? LastReceived, long OnOrder, DateTimeOffset? LastEdited);
-internal sealed record PurchasingRow(Product Product, CatalogDetails Details, long? OnHand, long Draft, ItemActivity Activity);
+internal sealed record PurchasingRow(Product Product, CatalogDetails Details, long? OnHand, long Draft, ItemActivity Activity, long? Stock7DaysAgo = null, long? Stock30DaysAgo = null);
 internal sealed record PurchasingSnapshot(DateOnly Day, PurchasingRow[] Items, Distributor[] Vendors, SavedPurchaseOrder[] Orders);
+internal sealed record OrderWorksheet(DateOnly Day, OrderItem[] Items, Distributor[] Distributors, OrderContact Business);
 
 internal sealed partial class RegisterData
 {
@@ -80,14 +83,18 @@ internal sealed partial class RegisterData
     internal PurchasingSnapshot ReadPurchasing()
     {
         DateOnly day = CurrentBusinessDate(); var details = ReadCatalogDetails(); var activity = ReadItemActivity();
-        return new(day, ReadOrderItems(day.AddDays(-29), day, day).Select(item => new PurchasingRow(item.Product, details[item.Product.Barcode], item.OnHand, item.Draft, activity[item.Product.Barcode])).ToArray(),
+        Dictionary<string, long?> StockAt(DateOnly at) =>
+            ReadOrderItems(at, at, at).ToDictionary(item => item.Product.Barcode, item => item.OnHand);
+        var lastWeek = StockAt(day.AddDays(-7));
+        var lastMonth = StockAt(day.AddDays(-30));
+        return new(day, ReadOrderItems(day.AddDays(-29), day, day).Select(item => new PurchasingRow(item.Product, details[item.Product.Barcode], item.OnHand, item.Draft, activity[item.Product.Barcode], lastWeek.GetValueOrDefault(item.Product.Barcode), lastMonth.GetValueOrDefault(item.Product.Barcode))).ToArray(),
             ReadDistributors().ToArray(), ReadPurchaseOrders());
     }
     internal SavedPurchaseOrder[] ReadPurchaseOrders()
     {
-        using var query = Command("SELECT payload_json,status,id FROM purchase_orders ORDER BY created_at DESC LIMIT 500");
+        using var query = Command("SELECT payload_json,status,hidden FROM purchase_orders ORDER BY created_at DESC LIMIT 500");
         using var rows = query.ExecuteReader(); var orders = new List<SavedPurchaseOrder>();
-        while(rows.Read()) orders.Add(JsonSerializer.Deserialize<SavedPurchaseOrder>(rows.GetString(0))! with { Status = rows.GetString(1) });
+        while(rows.Read()) orders.Add(JsonSerializer.Deserialize<SavedPurchaseOrder>(rows.GetString(0))! with { Status = rows.GetString(1), Hidden = rows.GetBoolean(2) });
         rows.Close();
         using var counts=Command("SELECT order_id,barcode,received FROM purchase_lines WHERE order_id IN (SELECT id FROM purchase_orders ORDER BY created_at DESC LIMIT 500)");
         using var lines=counts.ExecuteReader();var received=new Dictionary<(Guid,string),long>();
@@ -96,9 +103,9 @@ internal sealed partial class RegisterData
     }
     private SavedPurchaseOrder? ReadPurchase(Guid id, SqliteTransaction? transaction = null)
     {
-        using var query = Command("SELECT payload_json,status FROM purchase_orders WHERE id=$id", transaction); query.Parameters.AddWithValue("$id", id.ToString("N"));
+        using var query = Command("SELECT payload_json,status,hidden FROM purchase_orders WHERE id=$id", transaction); query.Parameters.AddWithValue("$id", id.ToString("N"));
         using var row = query.ExecuteReader(); if(!row.Read()) return null;
-        var order = JsonSerializer.Deserialize<SavedPurchaseOrder>(row.GetString(0))! with { Status = row.GetString(1) }; row.Close();
+        var order = JsonSerializer.Deserialize<SavedPurchaseOrder>(row.GetString(0))! with { Status = row.GetString(1), Hidden = row.GetBoolean(2) }; row.Close();
         using var counts = Command("SELECT barcode,received FROM purchase_lines WHERE order_id=$id", transaction); counts.Parameters.AddWithValue("$id", id.ToString("N"));
         using var lines = counts.ExecuteReader(); var received = new Dictionary<string,long>(); while(lines.Read()) received[lines.GetString(0)] = lines.GetInt64(1);
         return order with { Lines = order.Lines.Select(line => line with { Received = received[line.Product.Barcode] }).ToArray() };
@@ -116,13 +123,20 @@ internal sealed partial class RegisterData
         var lines = new List<PurchaseLine>();
         foreach(var line in request.Lines)
         {
+            if (request.RequireAssignedDistributor)
+            {
+                using var assignment = Command("SELECT distributor_id FROM distributor_items WHERE barcode=$barcode", transaction);
+                assignment.Parameters.AddWithValue("$barcode", line.Barcode);
+                if (assignment.ExecuteScalar() is not long id || id != request.SupplierId)
+                    throw new InvalidOperationException("An item changed distributors. Review the order before placing it.");
+            }
             if(line.Expected is long expected){using var draft=Command("SELECT units FROM order_draft WHERE barcode=$barcode",transaction);draft.Parameters.AddWithValue("$barcode",line.Barcode);if((draft.ExecuteScalar() is long current?current:0)!=expected)throw new InvalidOperationException("The vendor draft changed at another terminal. Review it before placing the order.");}
             using var product = Command($"SELECT {ProductColumns} FROM products WHERE barcode=$barcode AND archived=0", transaction); product.Parameters.AddWithValue("$barcode", line.Barcode);
             using var row = product.ExecuteReader(); if(!row.Read()) throw new ArgumentException("An ordered item is no longer available.");
             lines.Add(new(ReadProduct(row), line.Units, 0, details[line.Barcode].UnitCost, details[line.Barcode].VendorCode));
         }
         var order = new SavedPurchaseOrder(request.Id, request.Number.Trim(), DateTimeOffset.Now, request.Due, request.Notes, business, supplier, lines.ToArray(), "Placed");
-        using(var save = Command("INSERT INTO purchase_orders VALUES($id,$number,'Placed',$at,$request,$payload)", transaction))
+        using(var save = Command("INSERT INTO purchase_orders(id,number,status,created_at,request_json,payload_json) VALUES($id,$number,'Placed',$at,$request,$payload)", transaction))
         { save.Parameters.AddWithValue("$id", request.Id.ToString("N")); save.Parameters.AddWithValue("$number", order.Number); save.Parameters.AddWithValue("$at", order.Created.ToString("O")); save.Parameters.AddWithValue("$request", json); save.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(order)); save.ExecuteNonQuery(); }
         foreach(var line in lines)
         {
@@ -147,6 +161,19 @@ internal sealed partial class RegisterData
         {
             PurchaseLine item = order.Lines.SingleOrDefault(item => item.Product.Barcode == line.Barcode) ?? throw new ArgumentException("This item is not on the order.");
             if(line.Units > item.Remaining) throw new ArgumentException("Received units cannot exceed the outstanding order quantity.");
+            if (line.InvoiceUnitCost is decimal invoiceCost)
+            {
+                if (invoiceCost < 0 || invoiceCost > 999999.99m || decimal.Round(invoiceCost, 2) != invoiceCost)
+                    throw new ArgumentException("Enter a nonnegative unit cost with up to two decimal places.");
+                using var cost = Command("""
+                    INSERT INTO product_details(barcode, unit_cost_cents, edited_at) VALUES($barcode,$cost,$at)
+                    ON CONFLICT(barcode) DO UPDATE SET unit_cost_cents=excluded.unit_cost_cents, edited_at=excluded.edited_at
+                    """, transaction);
+                cost.Parameters.AddWithValue("$barcode", line.Barcode);
+                cost.Parameters.AddWithValue("$cost", Cents(invoiceCost));
+                cost.Parameters.AddWithValue("$at", DateTimeOffset.Now.ToString("O"));
+                cost.ExecuteNonQuery();
+            }
             using var update = Command("UPDATE purchase_lines SET received=received+$units WHERE order_id=$id AND barcode=$barcode; INSERT INTO inventory_receipts(barcode,business_date,units) VALUES($barcode,$day,$units) ON CONFLICT(barcode,business_date) DO UPDATE SET units=inventory_receipts.units+excluded.units", transaction);
             update.Parameters.AddWithValue("$units", line.Units); update.Parameters.AddWithValue("$id", order.Id.ToString("N")); update.Parameters.AddWithValue("$barcode", line.Barcode); update.Parameters.AddWithValue("$day", Day(day)); update.ExecuteNonQuery();
         }
@@ -161,7 +188,36 @@ internal sealed partial class RegisterData
         if(lines is null || lines.Length is < 1 or > 500 || lines.Any(line => line is null || string.IsNullOrWhiteSpace(line.Barcode) || line.Barcode.Length > 100 || line.Units < (allowZero ? 0 : 1) || line.Units > 999999) || lines.Select(line => line.Barcode).Distinct(StringComparer.OrdinalIgnoreCase).Count() != lines.Length)
             throw new ArgumentException("Choose different items and enter quantities up to 999999 selling units.");
     }
-    internal void SaveDraftChecked(OrderQuantity[] lines)
+
+    internal OrderWorksheet ReadOrderWorksheet(DateOnly start, DateOnly end)
+    {
+        DateOnly day = CurrentBusinessDate();
+        if (start > end || end > day || end.DayNumber - start.DayNumber > 30)
+            throw new ArgumentException("Choose a sales period through the current business day.");
+        return new(day, ReadOrderItems(start, end, day).ToArray(), ReadDistributors().ToArray(), ReadOrderBusiness());
+    }
+
+    internal void HidePurchase(Guid id, bool hidden)
+    {
+        using var update = Command("UPDATE purchase_orders SET hidden=$hidden WHERE id=$id AND hidden<>$hidden");
+        update.Parameters.AddWithValue("$id", id.ToString("N"));
+        update.Parameters.AddWithValue("$hidden", hidden);
+        update.ExecuteNonQuery();
+    }
+
+    internal void ResetOrderQuantities(long? distributorId)
+    {
+        using var clear = Command("""
+            DELETE FROM order_draft WHERE barcode IN (
+                SELECT p.barcode FROM products p
+                LEFT JOIN distributor_items d ON d.barcode=p.barcode
+                WHERE p.archived=0 AND d.distributor_id IS $id
+            )
+            """);
+        clear.Parameters.AddWithValue("$id", (object?)distributorId ?? DBNull.Value);
+        clear.ExecuteNonQuery();
+    }
+    internal long SaveDraftChecked(OrderQuantity[] lines)
     {
         ValidateQuantities(lines,true); using var transaction=connection.BeginTransaction(deferred:false);
         foreach(var line in lines)
@@ -173,6 +229,9 @@ internal sealed partial class RegisterData
             using var save=Command(line.Units==0?"DELETE FROM order_draft WHERE barcode=$barcode":"INSERT INTO order_draft(barcode,units) VALUES($barcode,$units) ON CONFLICT(barcode) DO UPDATE SET units=excluded.units",transaction);
             save.Parameters.AddWithValue("$barcode",line.Barcode);if(line.Units>0)save.Parameters.AddWithValue("$units",line.Units);save.ExecuteNonQuery();
         }
+        using var revision = Command("SELECT revision FROM data_revision WHERE id=1", transaction);
+        long savedRevision = (long)revision.ExecuteScalar()!;
         transaction.Commit();
+        return savedRevision;
     }
 }

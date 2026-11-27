@@ -21,6 +21,20 @@ internal sealed partial class RegisterData
         command.ExecuteNonQuery();
     }
 
+    internal sealed record LookupSnapshot(long Revision, DateOnly Day, Dictionary<string, long> Draft,
+        Dictionary<string, long?> Stock, IReadOnlyDictionary<string, CatalogDetails> Details);
+    private LookupSnapshot? lookupCache;
+
+    internal LookupSnapshot LookupStock()
+    {
+        var day = CurrentBusinessDate();
+        long revision = Revision();
+        if (lookupCache is { } cached && cached.Revision == revision && cached.Day == day) return cached;
+        var items = ReadOrderItems(day, day, day);
+        return lookupCache = new(revision, day, items.ToDictionary(i => i.Product.Barcode, i => i.Draft),
+            items.ToDictionary(i => i.Product.Barcode, i => i.OnHand), ReadCatalogDetails());
+    }
+
     public IReadOnlyDictionary<string, CatalogDetails> ReadCatalogDetails()
     {
         using var command = Command("""

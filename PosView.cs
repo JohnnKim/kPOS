@@ -50,6 +50,38 @@ internal static class PosView
         return button;
     }
 
+    internal static Control Navigation(TabControl pages)
+    {
+        var host = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        host.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        host.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        host.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var bar = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
+        pages.Appearance = TabAppearance.FlatButtons;
+        pages.SizeMode = TabSizeMode.Fixed;
+        pages.ItemSize = new Size(1, 1);
+        foreach (TabPage page in pages.TabPages)
+        {
+            var button = Button(page.Text, size: 10);
+            button.Padding = new Padding(7, 2, 7, 2);
+            button.MinimumSize = Size.Empty;
+            button.Click += (_, _) => pages.SelectedTab = page;
+            void Highlight()
+            {
+                bool active = pages.SelectedTab == page;
+                button.BackColor = active ? Blue : Color.White;
+                button.ForeColor = active ? Color.White : Ink;
+                button.FlatAppearance.MouseOverBackColor = active ? Navy : Canvas;
+            }
+            pages.SelectedIndexChanged += (_, _) => Highlight();
+            Highlight();
+            bar.Controls.Add(button);
+        }
+        host.Controls.Add(bar, 0, 0);
+        host.Controls.Add(pages, 0, 1);
+        return host;
+    }
+
     public static Panel Frame(Control content, Padding padding, Color? edge = null, bool fitContent = false, bool stretchWidth = false)
     {
         Panel frame = stretchWidth ? new WidthFittingPanel() : new Panel();
@@ -85,6 +117,18 @@ internal static class PosView
 
     public static Label BannerAmount(string text, float size) => new AmountLabel(text,size);
 
+    internal static FlowLayoutPanel FilterRow(params Control[] controls)
+    {
+        var row = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
+        foreach (Control control in controls)
+        {
+            control.Anchor = AnchorStyles.Left;
+            control.Margin = new Padding(4, 3, 4, 3);
+            row.Controls.Add(control);
+        }
+        return row;
+    }
+
     public static void FitTicketColumns(DataGridView grid, string description, params string[] numbers)
     {
         grid.Columns[description]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
@@ -93,7 +137,7 @@ internal static class PosView
         grid.RowTemplate.MinimumHeight = 34;
         grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders;
         foreach (string name in numbers)
-            grid.Columns[name]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
+            grid.Columns[name]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
     }
 
     public static void Grid(DataGridView grid, float size = 13, int rowHeight = 44)
@@ -112,6 +156,7 @@ internal static class PosView
         grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = Color.White;
         grid.ColumnHeadersDefaultCellStyle.Font = Text(12, FontStyle.Bold);
         grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(5, 0, 5, 0);
+        grid.ShowCellToolTips = true;
         grid.DefaultCellStyle.Font = Text(size);
         grid.DefaultCellStyle.ForeColor = Ink;
         grid.DefaultCellStyle.Padding = new Padding(5, 0, 5, 0);

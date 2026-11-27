@@ -19,7 +19,7 @@ internal sealed class HardwareSettingsPanel : TableLayoutPanel
     {
         AutoSize = true; Dock = DockStyle.Top; ColumnCount = 2; RowCount = 0; Padding = new Padding(10);
         ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        output.Items.AddRange(["Capture / test (no hardware)", "Windows printer", "ESC/POS Windows queue", "ESC/POS network printer"]);
+        output.Items.AddRange(["Capture / test (no hardware)", "Windows printer", "ESC/POS Windows queue (USB / LPT)", "ESC/POS network printer"]);
         pin.Items.AddRange(["Pin 2 (channel 0)", "Pin 5 (channel 1)"]);
         output.SelectedIndex = (int)settings.Output; printer.Text = settings.Printer; host.Text = settings.Host; port.Value = settings.Port;
         print.Checked = settings.PrintAfterSale; drawer.Checked = settings.OpenAfterSale; cash.Checked = settings.CashOnly;
@@ -27,6 +27,9 @@ internal sealed class HardwareSettingsPanel : TableLayoutPanel
         Add("Output", output); Add("Windows printer name", printer); Add("Printer IP / host", host); Add("TCP port", port);
         Add(null, print); Add(null, drawer); Add(null, cash); Add("Drawer connector", pin); Add("Pulse on (ms)", on); Add("Pulse off (ms)", off);
         var status = PosView.Label("Capture mode saves a receipt preview and drawer bytes for hardware testing.", 10, color: PosView.Muted);
+        var parallel = PosView.Label("For a parallel-port printer, select its installed Windows printer name on LPT1, LPT2 or LPT3. The ESC/POS queue sends drawer pulses through that printer.", 10);
+        parallel.MaximumSize = new Size(550, 0);
+        Add(null, parallel);
         status.MaximumSize = new Size(480, 0);
         var testPrint = PosView.Button("Test &Print", size: 10); var testDrawer = PosView.Button("Test &Drawer", size: 10);
         var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill }; actions.Controls.AddRange([testPrint, testDrawer]);
@@ -38,7 +41,7 @@ internal sealed class HardwareSettingsPanel : TableLayoutPanel
         testDrawer.Click += async (_, _) =>
         {
             if(Value.Output != ReceiptOutput.Capture && MessageBox.Show(FindForm(), "Send a cash-drawer pulse to the configured printer?", "Test Drawer",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes) return;
+                MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes) return;
             await TestAsync(true);
         };
         async Task TestAsync(bool pulse)

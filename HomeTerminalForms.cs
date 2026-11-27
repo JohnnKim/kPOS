@@ -190,7 +190,7 @@ internal sealed class HomeHostForm : PosForm
     }
 
     private bool AskToStop() => ConfirmStop?.Invoke() ?? MessageBox.Show(this,
-        "Stop hosting and disconnect all connected terminals?", "Stop Host", MessageBoxButtons.YesNo,
+        "Stop hosting and disconnect all connected terminals?", "Stop Host", MessageBoxButtons.YesNoCancel,
         MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) == DialogResult.Yes;
 
     protected override void OnFormClosing(FormClosingEventArgs e)

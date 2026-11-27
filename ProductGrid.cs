@@ -2,6 +2,8 @@ namespace Kpos;
 
 internal sealed class ProductGrid : DataGridView, IMessageFilter
 {
+    internal ProductGrid() => DoubleBuffered = true;
+
     private const int WheelMessage = 0x020A;
     private const int HorizontalWheelMessage = 0x020E;
     private double horizontalRemainder;
@@ -79,11 +81,12 @@ internal sealed class ProductGrid : DataGridView, IMessageFilter
         horizontalRemainder = verticalRemainder = 0;
         if (IsHandleCreated && RowCount > 0 && DisplayedRowCount(false) > 0)
         {
-            FirstDisplayedScrollingRowIndex = 0;
-            FirstDisplayedScrollingColumnIndex = Columns.Cast<DataGridViewColumn>()
-                .Where(column => column.Visible && !column.Frozen).OrderBy(column => column.DisplayIndex).First().Index;
+            if (FirstDisplayedScrollingRowIndex > 0) FirstDisplayedScrollingRowIndex = 0;
+            if (FirstDisplayedScrollingColumnIndex > 0)
+                FirstDisplayedScrollingColumnIndex = Columns.Cast<DataGridViewColumn>()
+                    .Where(column => column.Visible && !column.Frozen).OrderBy(column => column.DisplayIndex).First().Index;
         }
-        if (IsHandleCreated) HorizontalScrollingOffset = 0;
+        if (IsHandleCreated && HorizontalScrollingOffset != 0) HorizontalScrollingOffset = 0;
     }
 
     private bool HandleWheel(int message, IntPtr parameters,IntPtr position)

@@ -55,7 +55,7 @@ internal sealed class StockEntryForm : PosForm
         save.Click += (_, _) => Store(ParseUnits(), deleting: false);
         remove.Click += (_, _) =>
         {
-            if (MessageBox.Show(this, "Remove this inventory entry?", Text, MessageBoxButtons.YesNo,
+            if (MessageBox.Show(this, "Remove this inventory entry?", Text, MessageBoxButtons.YesNoCancel,
                     MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) == DialogResult.Yes)
                 Store(null, deleting: true);
         };

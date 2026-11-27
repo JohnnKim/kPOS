@@ -312,7 +312,7 @@ internal sealed class CheckoutForm : PosForm
         PosView.Grid(grid);
         grid.Columns.Add("Item", "Item");
         grid.Columns.Add("Size", "Size");
-        grid.Columns["Size"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells;
+        grid.Columns["Size"]!.AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
         grid.Columns["Size"]!.MinimumWidth = 70;
         grid.Columns.Add("Quantity", "Qty");
         grid.Columns.Add("UnitPrice", "Unit Price");

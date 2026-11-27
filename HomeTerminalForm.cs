@@ -20,21 +20,21 @@ internal sealed class HomeTerminalForm : PosForm
     private readonly Label totals = PosView.Label("Connect to check the store.", 14, FontStyle.Bold);
     private readonly Label status = PosView.Label("Home / office PC: paste the store's pairing details, then Connect.", 11);
     private readonly Label pages = PosView.Label("", 11);
-    private readonly DataGridView items = HomeTerminalView.Grid();
-    private readonly DataGridView catalog = HomeTerminalView.Grid();
-    private readonly DataGridView records = HomeTerminalView.Grid();
-    private readonly DataGridView history = HomeTerminalView.Grid();
-    private readonly DataGridView basketGrid = HomeTerminalView.Grid();
-    private readonly DataGridView suppliers = HomeTerminalView.Grid();
-    private readonly DataGridView terminals = HomeTerminalView.Grid();
+    private readonly DataGridView items = CompactGrid();
+    private readonly DataGridView catalog = CompactGrid();
+    private readonly DataGridView records = CompactGrid();
+    private readonly DataGridView history = CompactGrid();
+    private readonly DataGridView basketGrid = CompactGrid();
+    private readonly DataGridView suppliers = CompactGrid();
+    private readonly DataGridView terminals = CompactGrid();
     private readonly Guid connectionId = Guid.NewGuid();
     private StoreConnectionInfo? hostInfo;
     private Control? connectionFields;
     private Guid? pendingStore;
     private readonly TabControl tabs = new() { Dock = DockStyle.Fill };
-    private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 110, Value = DateTime.Today.AddDays(-7) };
-    private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 110 };
-    private readonly ComboBox report = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170 };
+    private readonly DateTimePicker from = new() { Format = DateTimePickerFormat.Short, Width = 175, Value = DateTime.Today.AddDays(-7), AccessibleName = "From" };
+    private readonly DateTimePicker through = new() { Format = DateTimePickerFormat.Short, Width = 175, AccessibleName = "Through" };
+    private readonly ComboBox report = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 225, AccessibleName = "Report type" };
     private readonly Button submit = PosView.Button("Request Order", primary: true, size: 11);
     private readonly List<(HomeStock Stock, HomeOrderRequest Request)> basket = [];
     private readonly List<Button> operationButtons = [];
@@ -150,7 +150,7 @@ internal sealed class HomeTerminalForm : PosForm
             new ReportChoice(RecordReport.TerminalSales, "Sales by terminal") });
         report.SelectedIndex = 0;
         var recordLayout = HomeTerminalView.Layout();
-        HomeTerminalView.Row(recordLayout, HomeTerminalView.Actions(report, PosView.Label("From", 11), from, PosView.Label("Through", 11), through,
+        HomeTerminalView.Row(recordLayout, PosView.FilterRow(report, PosView.Label("From", 11), from, PosView.Label("Through", 11), through,
             Button("Load Records", async () => { reportPage = 0; await LoadRecordsAsync(); })));
         HomeTerminalView.Row(recordLayout, records, true);
         HomeTerminalView.Row(recordLayout, HomeTerminalView.Actions(Button("Previous", async () => { reportPage = Math.Max(0, reportPage - 1); await LoadRecordsAsync(); }),
@@ -165,16 +165,16 @@ internal sealed class HomeTerminalForm : PosForm
             if(basketGrid.CurrentRow?.Cells["Id"].Value is Guid id) basket.RemoveAll(item => item.Request.Id == id);
             RefreshBasket();
         };
-        HomeTerminalView.Row(orderLayout, PosView.Label("Order draft · selling units", 12, FontStyle.Bold));
+        HomeTerminalView.Row(orderLayout, PosView.Label("Items to request · selling units", 12, FontStyle.Bold));
         HomeTerminalView.Row(orderLayout, basketGrid, true);
-        HomeTerminalView.Row(orderLayout, HomeTerminalView.Actions(Button("Purchasing / Receiving", OpenPurchasingAsync), remove, Button("Send Order", SubmitAsync, true), Button("Refresh Status", LoadOrdersAsync)));
-        HomeTerminalView.Row(orderLayout, PosView.Label("Store review is required before requests enter the supplier order draft.", 11));
+        HomeTerminalView.Row(orderLayout, HomeTerminalView.Actions(remove, Button("Send Order", SubmitAsync, true), Button("Refresh Status", LoadOrdersAsync)));
+        HomeTerminalView.Row(orderLayout, PosView.Label("The store reviews requests before adding them to order quantities.", 11));
         HomeTerminalView.Row(orderLayout, history, true);
         HomeTerminalView.Row(orderLayout, HomeTerminalView.Actions(Button("Previous", async () => { orderPage = Math.Max(0, orderPage - 1); await LoadOrdersAsync(); }),
             Button("Next", async () => { if(ordersMore) orderPage++; await LoadOrdersAsync(); }), ExportButton(history)));
-        Page("Orders", orderLayout);
+        Page("Order Requests", orderLayout);
         var supplierLayout = HomeTerminalView.Layout();
-        HomeTerminalView.Row(supplierLayout, HomeTerminalView.Actions(Button("Refresh Suppliers", LoadSuppliersAsync), ExportButton(suppliers)));
+        HomeTerminalView.Row(supplierLayout, HomeTerminalView.Actions(Button("Vendor Directory…", OpenVendorsAsync), Button("Refresh Suppliers", LoadSuppliersAsync), ExportButton(suppliers)));
         HomeTerminalView.Row(supplierLayout, suppliers, true); Page("Suppliers", supplierLayout);
         var terminalLayout = HomeTerminalView.Layout();
         HomeTerminalView.Row(terminalLayout, PosView.Label("Remote Connection views store records. Store Terminal rings sales. Host Terminal stays at the store.", 11));
@@ -190,7 +190,8 @@ internal sealed class HomeTerminalForm : PosForm
             catch(Exception error) when(error is IOException or UnauthorizedAccessException) { status.Text = "Sound preference could not be saved."; }
         };
         var layout = HomeTerminalView.Layout();
-        HomeTerminalView.Row(layout, PosView.Label("kPOS · Remote Connection", 20, FontStyle.Bold));
+        HomeTerminalView.Row(layout, PosView.FilterRow(PosView.Label("kPOS · Remote Connection", 20, FontStyle.Bold),
+            Button("Orders…", OpenOrdersAsync), Button("Item Catalog…", OpenCatalogAsync), Button("Sales Records…", OpenRecordsAsync)));
         HomeTerminalView.Row(layout, HomeTerminalView.Actions(connection, connectionSetup, paste, connect, disconnect, Button("Download Backup", BackupAsync), refresh, sound));
         HomeTerminalView.Row(layout, pairing);
         HomeTerminalView.Row(layout, totals);
@@ -221,8 +222,35 @@ internal sealed class HomeTerminalForm : PosForm
         },live.Token);
     }
     private async Task RefreshLiveAsync() { await LoadInventoryAsync(); await LoadCurrentAsync(); }
-    private Task OpenPurchasingAsync()
-    { var source=Connected; using var window=new PurchasingForm(PurchasingSource.Remote(source,hostInfo!.StoreId,closing.Token),remote:source);window.ShowDialog(this);return Task.CompletedTask; }
+    private Task OpenOrdersAsync()
+    {
+        using var window = new OrderForm(Connected, hostInfo!, closing.Token);
+        window.ShowDialog(this);
+        return Task.CompletedTask;
+    }
+
+    private async Task OpenCatalogAsync()
+    {
+        var source = Connected;
+        var catalog = await source.CatalogAsync(closing.Token);
+        if (IsDisposed) return;
+        using var window = new ProductListForm(source, catalog, hostInfo!.BusinessDate, closing.Token);
+        window.ShowDialog(this);
+    }
+
+    private Task OpenRecordsAsync()
+    {
+        using var window = new RecordsForm(Connected, hostInfo!.BusinessDate, closing.Token);
+        window.ShowDialog(this);
+        return Task.CompletedTask;
+    }
+
+    private async Task OpenVendorsAsync()
+    {
+        using var window = new VendorDirectory(Connected, closing.Token);
+        window.ShowDialog(this);
+        await LoadSuppliersAsync();
+    }
     private async Task BackupAsync()
     {
         var source=Connected;using var picker=new SaveFileDialog { Filter="Backup ZIP (*.zip)|*.zip",FileName="kPOS-backup-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+".zip" };
@@ -232,7 +260,19 @@ internal sealed class HomeTerminalForm : PosForm
 
     private Button Button(string text, Func<Task> action, bool primary = false)
     { var button = PosView.Button(text, primary, 11); button.Click += async (_, _) => await RunAsync(action); operationButtons.Add(button); return button; }
-    private void Page(string title, Control body) { var page = new TabPage(title); page.Controls.Add(body); tabs.TabPages.Add(page); }
+    private static DataGridView CompactGrid()
+    {
+        var grid = HomeTerminalView.Grid();
+        grid.MinimumSize = new Size(0, 36);
+        return grid;
+    }
+
+    private void Page(string title, Control body)
+    {
+        var page = new TabPage(title) { AutoScroll = true, AutoScrollMinSize = new Size(0, 295) };
+        page.Controls.Add(body);
+        tabs.TabPages.Add(page);
+    }
     private HomeTerminalClient Connected => client ?? throw new InvalidOperationException("Paste pairing details and connect to the store first.");
     private void SetConnection(string text, Color color) { connection.Text = "● " + text; connection.ForeColor = color; }
     private void DisableData() { foreach(var grid in new[] { items, catalog, records, history, suppliers, terminals }) grid.Enabled = false; totals.Text = "Connect to check the store."; }

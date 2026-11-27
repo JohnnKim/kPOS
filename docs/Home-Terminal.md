@@ -14,14 +14,13 @@ Assumption for this foundation: “orders” means supplier purchase requests. C
 
 ## Purchasing and backup
 
-Open **Purchasing / Receiving** from Orders on either the host or Remote Connection. Both use the store's saved worksheet and purchase orders.
+After connecting, use **Orders**, **Item Catalog**, or **Sales Records** above the tabs. These buttons open the same full-size screens as the register with data from the connected store. Use **Vendor Directory** under Suppliers to add or update a distributor.
 
-1. Create or edit a vendor, select an item and use **Assign Vendor**. Enter an order quantity and **Save Draft**. **Cases** multiplies by the item's case units; tables show selling units.
-2. Select the vendor and choose **Place Vendor Draft**. Enter an order number, optional delivery date and notes. This saves the order and outstanding quantities at the store; send the exported HTML/CSV or printed copy to the vendor yourself.
-3. In **Purchase Orders / Receiving**, receive a selected line or all remaining units. Partial deliveries keep the order open. **Cancel Remaining** preserves stock already received.
-4. **Stock Count / Delivery** can enter opening counts or the day's total received. Existing values are checked before saving so another terminal's changes cannot be silently overwritten.
+1. In **Orders**, select a distributor. Double-click an item to view details or change its distributor. Use the arrows beside **Order Units** to adjust the quantity, or move between rows with Up/Down and adjust units with Left/Right. Quantities save as you edit them. **Reset quantities** clears quantities for the selected distributor.
+2. Choose **Purchase Order** to review contact details, enter an optional delivery date and use **Place Order**. Placement records outstanding quantities at the store. Export or print a copy to send to the distributor.
+3. Choose **Receive Order** to record a delivery against a placed order. You can receive a selected line, receive all remaining units, or review a scanned invoice. **Hide Order** removes an order from the default list. Use **Show hidden orders** to find and restore it.
 
-The worksheet includes on hand, on order, draft quantities, 7/30/90-day sales, month/year totals, last sale/receipt, cost and margin. Unknown stock/cost remains unentered. Catalog setup adds class, bin, par/reorder values, shelf quantities, notes and discount eligibility. **Retry Unconfirmed** restores an interrupted placement/receiving request using its original ID; do not recreate the order while it is unconfirmed.
+**Retry Unconfirmed** in Receive Order resumes an interrupted placement or receiving operation using its original request ID.
 
 **Download Backup** in Remote Connection saves a consistent store database ZIP to the home PC. Protect that file as store data. Remote management keys can change purchasing/inventory and download backups; give them only to trusted managers. Store checkout keys cannot use those write/backup endpoints. Software versions are still checked and installed only in **Settings → Updates**.
 
@@ -31,7 +30,7 @@ The worksheet includes on hand, on order, draft quantities, 7/30/90-day sales, m
 2. Keep **127.0.0.1** selected for a same-PC trial. Choose **Start Host**.
 3. Choose **Copy Remote Pairing**. This key cannot record checkout sales.
 4. Put **Start-Remote-Connection.cmd** beside your extracted `kPOS.exe` and open it, run `kPOS.exe --remote`, or choose **Records > Remote Connection** (Ctrl+Shift+J). This window needs no register installation or local database. The old `--home` option and `Start-Home-Terminal.cmd` remain aliases. The update ZIP still contains only `kPOS.exe`; launchers/guides are separate release assets.
-5. Choose **Paste Pairing Details**, then **Connect / Refresh**. Search inventory, select an item, enter units, and choose **Request Order**, or build a draft with **Add to Order** and review it in Orders.
+5. Choose **Paste Pairing Details**, then **Connect / Refresh**. Use **Orders** to work directly in the store's supplier worksheet. To ask a store operator to review an item first, use **Request Order** or build a list with **Add to Order** and review it in **Order Requests**.
 6. At the store, choose **Refresh Requests**, select the request, then **Add to Order Draft**. Open Orders to continue the normal purchase-order process. Data changes update open views automatically.
 
 For another PC on the same store network, select the store PC's private IPv4 address. For access from home, first establish a private VPN and select its IPv4 address. Tailscale's 100.64.0.0/10 addresses are accepted alongside RFC1918 private addresses. Configure access only between the intended devices, and scope a Windows Firewall inbound TCP rule to those devices and the selected port (default 17443). The app does not alter the firewall, configure a VPN, or forward router ports. Do not publish this preview API directly to the internet.

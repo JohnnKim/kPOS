@@ -37,6 +37,12 @@ public sealed class HomeHostWindowTests
                     Click("Connect / Refresh");
                     await Ready();
                     Assert.AreEqual(selectedBarcode, ((HomeStock)items.CurrentRow!.DataBoundItem!).Barcode, "Refreshing must preserve the selected item before ordering.");
+                    await OpenSharedWindow<OrderForm>("Orders…", form =>
+                        Descendants(form).OfType<DataGridView>().Any(grid => grid.Columns.Contains("Order Units") && grid.Rows.Count > 0));
+                    await OpenSharedWindow<ProductListForm>("Item Catalog…", form =>
+                        Descendants(form).OfType<DataGridView>().Any(grid => grid.Columns.Contains("VendorCode") && grid.Rows.Count > 0));
+                    await OpenSharedWindow<RecordsForm>("Sales Records…", form =>
+                        Descendants(form).OfType<DataGridView>().Any(grid => grid.Visible && grid.Columns.Contains("Total")));
                     var tabs = Descendants(window).OfType<TabControl>().Single();
                     tabs.SelectedIndex = 1;
                     // Switching again before the catalog request returns must still load Records.
@@ -74,6 +80,30 @@ public sealed class HomeHostWindowTests
             Application.Run(window);
             Assert.IsNull(failure, failure?.ToString());
             void Click(string text) => Descendants(window).OfType<Button>().Single(button => button.Text == text).PerformClick();
+            async Task OpenSharedWindow<T>(string button, Func<T, bool> loaded) where T : Form
+            {
+                bool opened = false;
+                string details = "The window did not open.";
+                using var timer = new System.Windows.Forms.Timer { Interval = 25 };
+                DateTime deadline = DateTime.UtcNow.AddSeconds(5);
+                timer.Tick += (_, _) =>
+                {
+                    var form = Application.OpenForms.OfType<T>().FirstOrDefault();
+                    if (form is null) return;
+                    details = string.Join(" | ", Descendants(form).OfType<Label>().Select(label => label.Text));
+                    opened = loaded(form);
+                    if (opened || DateTime.UtcNow >= deadline) form.Close();
+                };
+                await Ready();
+                var action = Descendants(window).OfType<Button>().Single(control => control.Text == button);
+                await Until(() => action.Enabled && action.Visible);
+                timer.Start();
+                action.PerformClick();
+                await Until(() => !Application.OpenForms.OfType<T>().Any() && (opened || DateTime.UtcNow >= deadline));
+                timer.Stop();
+                Assert.IsTrue(opened, $"{button} did not load its shared window. {details}");
+                await Ready();
+            }
             Task Ready() => Until(() => Descendants(window).OfType<Label>().Any(label => label.Text == "● Connected" && label.ForeColor == Color.DarkGreen));
             static async Task Until(Func<bool> condition)
             {

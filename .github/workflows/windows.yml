@@ -32,7 +32,7 @@ jobs:
       - name: Build Release
         run: dotnet build "$env:TEST_PROJECT" --configuration Release --no-restore -warnaserror
       - name: Run automated tests
-        run: dotnet test --project "$env:TEST_PROJECT" --configuration Release --no-build --minimum-expected-tests 1 --report-trx --results-directory "$env:RUNNER_TEMP/test-results"
+        run: dotnet test --project "$env:TEST_PROJECT" --configuration Release --no-build --minimum-expected-tests 1 --output Detailed --report-trx --results-directory "$env:RUNNER_TEMP/test-results"
       - name: Upload test report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

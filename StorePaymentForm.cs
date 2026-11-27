@@ -56,7 +56,7 @@ internal sealed class StorePaymentForm : PosForm
         retry.Click += async (_, _) => await SubmitAsync(fixedCommit!.Payment.Method);
         cancel.Click += async (_, _) =>
         {
-            if(MessageBox.Show(this, "Cancel this unconfirmed record? Cash/card payment will not be reversed. If already saved, the store returns its receipt.", "Cancel Checkout", MessageBoxButtons.YesNo,
+            if(MessageBox.Show(this, "Cancel this unconfirmed record? Cash/card payment will not be reversed. If already saved, the store returns its receipt.", "Cancel Checkout", MessageBoxButtons.YesNoCancel,
                 MessageBoxIcon.Question, MessageBoxDefaultButton.Button1) != DialogResult.Yes) return;
             SetBusy(true);
             try { Receipt = await cancelAtStore(); committed = true; DialogResult = Receipt is null ? DialogResult.Cancel : DialogResult.OK; Close(); }
