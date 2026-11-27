@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Kpos.Tests;
@@ -8,6 +9,56 @@ namespace Kpos.Tests;
 [TestClass]
 public sealed class BackupExportTests
 {
+    [TestMethod]
+    public void UpgradeBacksUpSchema18PurchaseOrdersBeforeAddingVisibility()
+    {
+        var root = Directory.CreateTempSubdirectory("kpos-v18-upgrade-");
+        try
+        {
+            var folders = new RegisterFolders(root.FullName);
+            folders.Create();
+            Guid orderId = Guid.NewGuid();
+            using (var data = new RegisterData(folders.Database))
+            {
+                var item = data.FindProduct("101")!;
+                long supplier = data.SaveDistributor(null, new("Distributor"));
+                data.PlacePurchase(new(orderId, supplier, "EXISTING-1", null, "", [new(item.Barcode, 8)]));
+                data.ReceivePurchase(new(Guid.NewGuid(), orderId, [new(item.Barcode, 3)]));
+            }
+            using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = folders.Database, Pooling = false }.ToString()))
+            {
+                connection.Open();
+                connection.CreateCollation("ITEM_CODE", StringComparer.OrdinalIgnoreCase.Compare);
+                using var downgrade = connection.CreateCommand();
+                downgrade.CommandText = "ALTER TABLE purchase_orders DROP COLUMN hidden; PRAGMA user_version=18;";
+                downgrade.ExecuteNonQuery();
+            }
+
+            folders.BackUpBeforeSchemaUpgrade();
+            Assert.AreEqual(18L, RegisterData.ReadSchemaVersion(folders.Database));
+            using (var archive = ZipFile.OpenRead(Directory.GetFiles(folders.Backups, "before-upgrade-*.zip").Single()))
+            {
+                string previous = Path.Combine(root.FullName, "before-upgrade.db");
+                archive.GetEntry("Database/register.db")!.ExtractToFile(previous);
+                Assert.AreEqual(18L, RegisterData.ReadSchemaVersion(previous));
+                using var purchasing = archive.GetEntry("Purchasing/purchasing.json")!.Open();
+                var saved = JsonSerializer.Deserialize<PurchasingSnapshot>(purchasing)!.Orders.Single();
+                Assert.AreEqual(orderId, saved.Id);
+                Assert.AreEqual(3L, saved.Lines[0].Received);
+                Assert.IsFalse(saved.Hidden);
+            }
+
+            using var upgraded = new RegisterData(folders.Database);
+            Assert.AreEqual((long)RegisterData.SchemaVersion, RegisterData.ReadSchemaVersion(folders.Database));
+            var order = upgraded.ReadPurchaseOrders().Single();
+            Assert.AreEqual(orderId, order.Id);
+            Assert.AreEqual(5L, order.Lines[0].Remaining);
+            upgraded.HidePurchase(orderId, true);
+            Assert.IsTrue(upgraded.ReadPurchaseOrders().Single().Hidden);
+        }
+        finally { root.Delete(recursive: true); }
+    }
+
     [TestMethod]
     public void ExportCanSelectReportsAndDatesIndependentlyOfTheDatabaseAndSavedArchives()
     {

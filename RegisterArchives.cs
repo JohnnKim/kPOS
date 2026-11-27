@@ -54,11 +54,16 @@ internal sealed partial class RegisterData
                     using (var copy = File.OpenRead(snapshot))
                         sha256 = Convert.ToHexStringLower(SHA256.HashData(copy));
                     archive.CreateEntryFromFile(snapshot, "Database/register.db", options.Compression);
-                    using var purchasing=new RegisterData(snapshot,readOnly:true);
-                    using var schema=purchasing.Command("PRAGMA user_version");
-                    if(Convert.ToInt32(schema.ExecuteScalar())>=15) {
-                    using(var details=new StreamWriter(archive.CreateEntry("Purchasing/purchasing.json",options.Compression).Open()))details.Write(JsonSerializer.Serialize(purchasing.ReadPurchasing()));
-                    using(var catalog=new StreamWriter(archive.CreateEntry("Catalog/item-details.json",options.Compression).Open()))catalog.Write(JsonSerializer.Serialize(purchasing.ReadCatalogDetails()));
+                    using var purchasing = new RegisterData(snapshot, readOnly: true);
+                    using var schema = purchasing.Command("PRAGMA user_version");
+                    long snapshotVersion = (long)schema.ExecuteScalar()!;
+                    if (snapshotVersion >= 15)
+                    {
+                        // Update backups are written before the live database is migrated.
+                        using (var details = archive.CreateEntry("Purchasing/purchasing.json", options.Compression).Open())
+                            JsonSerializer.Serialize(details, purchasing.ReadPurchasing(snapshotVersion >= PurchaseOrderVisibilitySchemaVersion));
+                        using (var catalog = archive.CreateEntry("Catalog/item-details.json", options.Compression).Open())
+                            JsonSerializer.Serialize(catalog, purchasing.ReadCatalogDetails());
                     }
 
                 }

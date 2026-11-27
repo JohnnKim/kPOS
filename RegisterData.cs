@@ -314,7 +314,7 @@ internal sealed partial class RegisterData : IDisposable
             using var upgraded = Command("PRAGMA user_version=18", transaction);
             upgraded.ExecuteNonQuery();
         }
-        if (currentVersion < 19)
+        if (currentVersion < PurchaseOrderVisibilitySchemaVersion)
         {
             using var hideOrders = Command("ALTER TABLE purchase_orders ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)); PRAGMA user_version=19;", transaction);
             hideOrders.ExecuteNonQuery();
