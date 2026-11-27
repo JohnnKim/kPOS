@@ -14,6 +14,7 @@ internal sealed class InstallationForm : PosForm
     private readonly ProgressBar progress = new() { Dock = DockStyle.Fill, Visible = false, Style = ProgressBarStyle.Marquee };
     private int step;
     private bool installing;
+    private string? registrationError;
     public RegisterFolders? InstalledFolders { get; private set; }
 
     public InstallationForm(string settings, string? executable, bool locate = false, string? initialDirectory = null)
@@ -62,7 +63,8 @@ internal sealed class InstallationForm : PosForm
                 : $"Welcome to kPOS v{ReleaseVersion.RunningVersion}.\n\nSetup installs kPOS and its records in one folder. You can use the default location or choose another folder. No administrator account or separate .NET installation is required.\n\nChoose Next to select the installation folder.",
             1 => locate ? "Select the folder containing your existing Database/register.db. Your records will be preserved."
                 : "Choose where to install kPOS. The application, database, archives, and backups will be stored here. Existing register data is preserved.",
-            _ => $"kPOS is ready.\n\nInstallation folder:\n{InstalledFolders?.Root}\n\nChoose Finish to open the register."
+            _ => $"kPOS is ready.\n\nInstallation folder:\n{InstalledFolders?.Root}\n\nChoose Finish to open the register." +
+                (registrationError is null ? "" : $"\n\nWindows registration could not finish. {registrationError}")
         };
     }
 
@@ -82,7 +84,7 @@ internal sealed class InstallationForm : PosForm
             next.Enabled = back.Enabled = browse.Enabled = directory.Enabled = cancel.Enabled = false;
             progress.Visible = true;
             description.Text = "Installing kPOS and checking the database…";
-            await Task.Run(() => RegisterInstallation.Install(folders, settings, executable));
+            registrationError = await Task.Run(() => RegisterInstallation.Install(folders, settings, executable));
             InstalledFolders = folders;
             step = 2;
             RefreshStep();

@@ -138,6 +138,9 @@ internal static class Program
                 return;
             }
 
+            if (InstallationExecutable is not null)
+                _ = WindowsAppRegistration.TryRegister(folders, settings);
+
             using (session)
             {
                 string? destination;

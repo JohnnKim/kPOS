@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using Microsoft.Win32;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Kpos.Tests;
@@ -93,6 +95,55 @@ public sealed class InstallationTests
         Assert.IsNotNull(data.FindProduct("101"));
         Assert.IsTrue(Directory.Exists(fixture.Source.Backups));
         Assert.IsTrue(Directory.Exists(fixture.Source.DailyArchives));
+    }
+
+    [STATestMethod]
+    public void WindowsRegistrationCreatesAndRepairsShortcutAndTracksInstalledFolder()
+    {
+        using var fixture = new Folders();
+        string programs = Path.Combine(fixture.Root, "Start Menu Programs");
+        string shortcut = Path.Combine(programs, "kPOS.lnk");
+        string original = Path.Combine(fixture.Source.Root, "kPOS.exe");
+        string moved = Path.Combine(fixture.Target, "kPOS.exe");
+        Directory.CreateDirectory(fixture.Source.Root);
+        Directory.CreateDirectory(fixture.Target);
+        File.Copy(Environment.ProcessPath!, original);
+        File.Copy(Environment.ProcessPath!, moved);
+        string key = @"Software\kPOS.RegistrationTest." + Guid.NewGuid().ToString("N");
+        try
+        {
+            WindowsAppRegistration.Register(original, programs, Registry.CurrentUser, key);
+            Assert.AreEqual(original, ReadTarget(shortcut));
+            File.Delete(shortcut);
+            WindowsAppRegistration.Register(original, programs, Registry.CurrentUser, key);
+            Assert.AreEqual(original, ReadTarget(shortcut));
+
+            WindowsAppRegistration.Register(moved, programs, Registry.CurrentUser, key);
+            Assert.AreEqual(moved, ReadTarget(shortcut));
+            using var entry = Registry.CurrentUser.OpenSubKey(key)!;
+            Assert.AreEqual("kPOS", entry.GetValue("DisplayName"));
+            Assert.AreEqual(fixture.Target, entry.GetValue("InstallLocation"));
+            Assert.AreEqual($"\"{moved}\",0", entry.GetValue("DisplayIcon"));
+            Assert.IsFalse(string.IsNullOrWhiteSpace((string?)entry.GetValue("DisplayVersion")));
+        }
+        finally { Registry.CurrentUser.DeleteSubKeyTree(key, throwOnMissingSubKey: false); }
+
+        static string ReadTarget(string path)
+        {
+            Assert.IsTrue(File.Exists(path));
+            object shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!;
+            object? link = null;
+            try
+            {
+                link = ((dynamic)shell).CreateShortcut(path);
+                return (string)((dynamic)link).TargetPath;
+            }
+            finally
+            {
+                if (link is not null) Marshal.FinalReleaseComObject(link);
+                Marshal.FinalReleaseComObject(shell);
+            }
+        }
     }
 
     private sealed class Folders : IDisposable
