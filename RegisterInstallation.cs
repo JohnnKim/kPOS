@@ -27,7 +27,7 @@ internal static class RegisterInstallation
         "kPOS", "installation-folder.txt");
     public static string DefaultDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "kPOS");
 
-    public static void Install(RegisterFolders folders, string settings, string? executable)
+    public static string? Install(RegisterFolders folders, string settings, string? executable)
     {
         folders.Create();
         using var session = RegisterSession.Open(folders);
@@ -45,6 +45,7 @@ internal static class RegisterInstallation
             if (previous is not null) folders.RestoreExecutable(previous);
             throw;
         }
+        return executable is null ? null : WindowsAppRegistration.TryRegister(folders, settings);
     }
 
     public static void ValidateDestination(RegisterFolders source, string destination)
